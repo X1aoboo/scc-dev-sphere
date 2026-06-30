@@ -2755,23 +2755,1097 @@ MVP 过程文件收敛规则：
 - `advisory-confirmation.json` 负责人工确认建议项的结果。
 - 该文件属于少数必要的机器可读过程件，不并入 review matrix。
 
-## Q62：是否需要对 PRD/技术方案做一轮 MVP 瘦身审查？
+## Q62：MVP 是否需要保留 `task-list` 和 `task-switch` 两个独立命令？
 
-**用户问题**
+**我的问题**
 
-可以。
+MVP 是否需要保留 `task-list` 和 `task-switch` 两个独立命令？
 
-**我的回复**
+我的判断是不建议保留独立命令。它们不是需求开发主流程能力，只是任务导航能力；命令越多，用户和模型越容易选错入口。任务列表和任务切换能力可以由 `workflow/status` 通过参数承担。
 
-做一轮只删减和收敛、不新增能力的瘦身审查。第一版应减少辅助入口、辅助脚本和辅助目录，避免插件设计膨胀成流程平台。
+**用户回复**
+
+能力需要保留，同意裁剪独立命令，按照支持参数方式来实现。
 
 **阶段性结论**
 
-MVP 瘦身结果：
+`task-list` 和 `task-switch` 能力保留，但不作为 MVP 独立命令：
 
-- `task-list`、`task-switch` 不作为独立命令；由 `workflow` 或 `status` 通过参数承担。
-- `backend-development`、`frontend-development`、`fullstack-change-planning` 不作为独立 skill 目录；由 `feature-plan-implementation` 和 `feature-implement` 按需加载专项上下文。
-- 多个确定性脚本收敛为 `scripts/devsphere.js` 单入口。
-- 删除任务工作区中的 `links/` 和 `conversations/` 目录。
-- repo 绑定写入 `state.json.linkedRepos`。
-- bugfix/refactor/performance 只保留扩展方向，不把示例命令纳入 MVP 插件包。
+- 不提供 `/scc-dev-sphere:task-list`。
+- 不提供 `/scc-dev-sphere:task-switch`。
+- 任务列表能力由 `/scc-dev-sphere:workflow list` 或等价参数实现。
+- 任务切换能力由 `/scc-dev-sphere:workflow switch <task-id>` 或等价参数实现。
+- `/scc-dev-sphere:status` 继续负责查看当前任务状态。
+
+## Q63：是否保留前端、后端、全栈三个开发专项 Skill？
+
+**我的问题**
+
+是否保留 `backend-development`、`frontend-development`、`fullstack-change-planning` 三个独立 skill 目录？
+
+我的建议是暂时保留。它们不是导航命令，而是开发阶段真正的能力模块，和“Agent 可按需加载 Skill”的核心设计一致。
+
+**用户回复**
+
+同意，保留。
+
+**阶段性结论**
+
+MVP 保留三个开发专项 Skill：
+
+- `backend-development`
+- `frontend-development`
+- `fullstack-change-planning`
+
+DEV Agent 默认仍是统一开发责任角色，不拆分为常驻前端/后端 Agent；开发专项 Skill 由 DEV 在实现计划和代码落地阶段按需加载。
+
+## Q64：确定性脚本是否收敛成一个 `devsphere.js` 单入口？
+
+**我的问题**
+
+是否保留多个 `devsphere-*.js` 脚本，还是收敛成一个 `devsphere.js` 单入口？
+
+我的建议是保留多个脚本。它们是确定性工具，不是用户入口；按职责拆开更利于测试和维护，不会增加用户认知负担。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留多个确定性脚本：
+
+- `devsphere-state.js`
+- `devsphere-review-matrix.js`
+- `devsphere-approval.js`
+- `devsphere-guard.js`
+- `devsphere-workspace.js`
+
+这些脚本不直接面向用户，不属于命令入口膨胀；它们按职责拆分，服务于状态读写、评审矩阵、批准记录、Hook 守门和工作区管理。
+
+## Q65：是否保留 `links/` 目录？
+
+**我的问题**
+
+是否保留 `links/` 目录，尤其是 `links/repos.json`？
+
+我的建议是保留。任务工作区可能不在代码仓库下，repo 绑定是跨仓实现和 hook 定位的关键关系，单独文件比塞进 `state.json` 更清晰。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留 `links/` 目录：
+
+- `links/repos.json` 用于记录任务与一个或多个代码仓库的绑定关系。
+- 任务工作区可以独立于代码仓库存在。
+- repo 绑定是实现阶段、Hook 守门、代码修改范围校验的关键输入。
+- 不把 repo 绑定塞进 `state.json`。
+
+## Q66：是否保留 `conversations/` 目录？
+
+**我的问题**
+
+是否保留 `conversations/` 目录？
+
+我的建议是不保留独立目录。设计协同过程里真正有价值的内容应该进入对应 `*-decisions.md`；原始聊天转储价值低、噪声大，也容易产生隐私和体积问题。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 不保留 `conversations/` 目录：
+
+- 不保存原始聊天转储。
+- 人机协同中的有效决策进入对应阶段决策文件。
+- 假设确认、风险接受、范围裁剪等也进入对应 `*-decisions.md`。
+- 这样满足过程可追溯，同时避免把任务工作区变成聊天日志归档。
+
+## Q67：MVP 技术方案是否列出具体 bugfix 扩展命令？
+
+**我的问题**
+
+是否保留 bugfix 扩展示例命令在 MVP 技术方案里？
+
+我的建议是保留“扩展方向”，但删除具体 bugfix 命令清单。因为 MVP 不实现 bugfix，列出具体命令容易让读者误以为第一版要交付这些入口。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 技术方案不列具体 bugfix 命令清单：
+
+- 保留 task type 前缀命名原则。
+- 保留 bugfix/refactor/performance 作为后续扩展方向。
+- 不在 MVP 命令入口章节列 `/scc-dev-sphere:bugfix-*` 具体命令。
+- 避免把非 MVP 范围误读为第一版交付入口。
+
+## Q68：task type 工作区目录是否动态创建？
+
+**用户问题**
+
+这些工作区目录应该是创建任务时动态创建的吧？
+
+**我的回复**
+
+对，这些目录应该是创建任务时按 task type 动态创建，不应该在 `.devsphere/tasks/` 下提前铺一堆空目录。MVP 实际行为应是 `feature-init` 只创建 `.devsphere/tasks/feature/<task-id>/...`。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+task type 工作区目录采用动态创建：
+
+- MVP 只由 `feature-init` 创建 `.devsphere/tasks/feature/<task-id>/...`。
+- 不预创建 `bugfix/`、`refactor/`、`performance/` 空目录。
+- 后续实现对应 workflow 时，再由对应 init 命令创建对应 task type 目录。
+- 技术方案保留 task type 分层原则，但目录示例只展示 MVP 实际创建内容。
+
+## Q69：是否保留 `templates/` 下的分类模板目录？
+
+**我的问题**
+
+`templates/` 下是否需要保留 `approvals/verification/` 等多个模板目录？
+
+我的建议是保留。模板目录不是运行时过程文件，也不是用户命令；它能让各阶段输出结构稳定，尤其对 Claude Code skill 很有价值。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留 `templates/` 下的分类模板目录：
+
+- `templates/artifacts/`
+- `templates/reviews/`
+- `templates/approvals/`
+- `templates/verification/`
+
+模板目录不属于任务过程文件膨胀；它们用于约束输出结构，提高 Skill 生成稳定性和 Hook 校验可预测性。
+
+## Q70：`status` 是否需要作为独立命令保留？
+
+**我的问题**
+
+`status` 是否需要作为独立命令保留？
+
+我的建议是保留。它是高频只读入口，和 `workflow` 的“推进/导航”语义不同；保留能减少误操作风险。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留独立 `status` 命令：
+
+- `/scc-dev-sphere:status` 是高频只读入口。
+- `status` 只读取和展示当前任务状态，不推进 workflow。
+- `workflow` 负责导航、下一步建议和带参数的任务列表/切换能力。
+- 保留 `status` 有助于降低误操作风险。
+
+## Q71：是否保留 `knowledge-query` 独立 Skill？
+
+**我的问题**
+
+是否需要保留 `knowledge-query` 独立 Skill？
+
+我的建议是保留。它不是用户入口，而是多个 Agent/Skill 复用的查询策略能力；如果把知识查询逻辑散落到 SA/SE/MDE/TEST 各自 skill 里，后续证据格式和引用规范会很难统一。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留 `knowledge-query` 独立 Skill：
+
+- 它不是用户命令入口，而是内部复用能力。
+- SA、SE、MDE、TEST、DEV 等 Agent 可按需调用。
+- 它统一知识库查询策略、证据筛选、证据不足判断和引用格式。
+- 避免每个角色 Skill 各自实现一套知识查询逻辑。
+
+## Q72：是否保留四个阶段设计命令？
+
+**我的问题**
+
+`feature-design-business`、`feature-design-solution`、`feature-design-implementation`、`feature-design-test` 四个阶段命令是否都要保留？
+
+我的建议是保留。虽然命令数量多一点，但它们是人工模式、局部重跑和修订的关键入口；如果只保留一个 `feature-design --stage xxx`，参数会变复杂，误操作风险反而更高。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留四个阶段设计命令：
+
+- `/scc-dev-sphere:feature-design-business`
+- `/scc-dev-sphere:feature-design-solution`
+- `/scc-dev-sphere:feature-design-implementation`
+- `/scc-dev-sphere:feature-design-test`
+
+这些命令用于明确处理单一设计产物，支持 strict-human-loop、局部重跑、人工指定阶段推进和 `--mode revise` 修订场景。
+
+## Q73：`feature-review` 是否拆成多个阶段评审命令？
+
+**我的问题**
+
+`feature-review` 是否保留一个统一命令，还是拆成 `feature-review-business`、`feature-review-solution` 等多个命令？
+
+我的建议是保留统一 `feature-review`，通过参数指定评审对象，例如 `/scc-dev-sphere:feature-review solution-design`。评审逻辑高度一致，拆成多个命令会增加重复。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留统一 `feature-review` 命令：
+
+- 不拆分 `feature-review-business`、`feature-review-solution` 等命令。
+- 通过参数指定评审对象，例如 `/scc-dev-sphere:feature-review solution-design`。
+- 支持阶段评审和集成评审。
+- 统一命令内部根据评审对象读取 review matrix 和必要评审者规则。
+
+## Q74：`feature-verify` 是否作为独立命令保留？
+
+**我的问题**
+
+`feature-verify` 是否作为 MVP 独立命令保留？
+
+我的建议是保留。虽然验证可以被 `feature-implement` 末尾触发，但独立 `verify` 对重跑测试、转测前复核、失败后恢复很关键。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留独立 `feature-verify` 命令：
+
+- `/scc-dev-sphere:feature-verify` 用于实现后的验证和转测前复核。
+- 支持失败后重跑验证。
+- 支持在代码已修改但验证未完成时恢复流程。
+- `feature-implement` 可以在末尾建议或触发验证，但不替代独立验证入口。
+
+## Q75：`feature-plan-implementation` 是否独立于 `feature-implement`？
+
+**我的问题**
+
+`feature-plan-implementation` 是否需要独立命令，还是并入 `feature-implement`？
+
+我的建议是保留独立命令。你已经明确“设计批准后不能直接编码，必须先生成开发执行计划”，所以计划和执行必须是两个入口，尤其高风险或 strict 模式下计划要人工确认。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留独立 `feature-plan-implementation` 命令：
+
+- 设计最终批准后不能直接进入代码修改。
+- DEV 必须先生成开发执行计划。
+- 高风险或 `strict-human-loop` 模式下，开发执行计划需要人工确认。
+- `feature-implement` 只能在开发执行计划存在且满足确认要求后执行。
+
+## Q76：repo 绑定应存放在 `links/repos.json` 还是 `state.json.linkedRepos`？
+
+**我的问题**
+
+repo 绑定到底放在 `links/repos.json`，还是 `state.json.linkedRepos`？
+
+当前文档存在冲突：Q65 已确认保留 `links/repos.json`，不把 repo 绑定塞进 `state.json`；但技术方案的 `state.json` 示例里仍有 `linkedRepos` 字段。两套事实来源并存会导致 Hook 和 workflow 判断不一致。
+
+**用户回复**
+
+同意删除 `state.json` 示例里的 `linkedRepos` 字段。
+
+**阶段性结论**
+
+repo 绑定唯一事实来源为 `links/repos.json`：
+
+- `state.json` 只保存流程状态，不保存 repo 绑定明细。
+- `links/repos.json` 保存任务与一个或多个代码仓库的绑定关系。
+- Hook、实现计划和代码修改范围校验读取 `links/repos.json`。
+- 避免 `state.json.linkedRepos` 与 `links/repos.json` 形成重复状态。
+
+## Q77：是否保留 `implementation-plan-approval.json`？
+
+**我的问题**
+
+`implementation-plan-approval.json` 是否真的需要？
+
+技术方案的批准目录包含 `design-final-approval.json` 和 `implementation-plan-approval.json`。前面已确认开发执行计划独立存在，并且高风险或 `strict-human-loop` 模式下计划需要人工确认。这里的问题是，计划确认事实是否需要独立 approval 文件。
+
+我的建议是保留 `implementation-plan-approval.json`。这不是阶段设计批准文件，而是代码执行前的计划确认闸口，和“不要新增阶段 approval 文件”不冲突。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保留 `implementation-plan-approval.json`：
+
+- 它记录高风险或 `strict-human-loop` 模式下开发执行计划的人工确认事实。
+- 它不是阶段设计 approval 文件。
+- Hook 可以用它判断开发执行计划是否满足确认要求。
+- 计划确认事实不混入开发执行计划正文或 `state.json`。
+
+## Q78：`state.json` 是否同时保留 `overallStage` 和 `status`？
+
+**我的问题**
+
+`state.json` 里是否同时保留 `overallStage` 和 `status`？
+
+当前示例里同时存在 `overallStage: design` 和 `status: in_progress`，但任务整体状态又包含 `design_in_progress`、`approved_for_implementation` 等状态。两个字段如果都可变，后续很容易出现互相矛盾。
+
+我的建议是删除 `overallStage`，只保留 `status` 作为任务整体状态机字段。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`state.json` 只保留 `status` 作为任务整体状态机字段：
+
+- 删除 `overallStage`。
+- `status` 使用 `initialized`、`design_in_progress`、`approved_for_implementation` 等任务整体状态。
+- 阶段细节交给 `stages.*.status`。
+- Hook 同步最终批准状态时写入 `status=approved_for_implementation`。
+
+## Q79：`approvalStatus` 和 `allowedCodeChange` 是否还需要保留？
+
+**我的问题**
+
+`approvalStatus` 和 `allowedCodeChange` 是否还需要保留？
+
+当前 `state.json` 同时有 `status=approved_for_implementation`、`approvalStatus=approved`、`allowedCodeChange=true`，三个字段都在表达是否允许进入代码落地。如果三套字段并存，后续很容易出现互相矛盾的状态。
+
+我的建议是删除 `approvalStatus` 和 `allowedCodeChange`。批准事实由 approval 文件承载，流程准入状态由 `status=approved_for_implementation` 表达。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`state.json` 删除 `approvalStatus` 和 `allowedCodeChange`：
+
+- `status=approved_for_implementation` 是流程准入状态。
+- `approvals/design-final-approval.json` 是最终设计批准事实。
+- 必要时 `approvals/implementation-plan-approval.json` 是开发执行计划确认事实。
+- Hook 判断是否允许代码修改时，读取 `status`、approval 文件、开发执行计划和 `links/repos.json`，不再读取 `approvalStatus` 或 `allowedCodeChange`。
+
+## Q80：最终设计批准记录是否需要记录所有阶段设计产物？
+
+**我的问题**
+
+`feature-approve` 前面定义的批准对象是 `integrated-design.md` 及其引用的阶段设计产物，但技术方案示例中的 `approvedArtifacts` 只记录了 `integrated-design.md` 的 hash。
+
+这里有一个一致性问题：如果只锁定汇总设计，不锁定业务设计、方案设计、实现设计、测试设计这些事实来源，后续阶段文档被改动时，批准记录无法发现。
+
+我的建议是：`design-final-approval.json` 的 `approvedArtifacts` 必须同时记录所有最终批准涉及的阶段设计产物 hash。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`design-final-approval.json` 的 `approvedArtifacts` 必须记录所有最终批准涉及的设计产物 hash：
+
+- `artifacts/business-design.md`
+- `artifacts/solution-design.md`
+- `artifacts/implementation-design.md`
+- `artifacts/test-design.md`
+- `artifacts/integrated-design.md`
+
+阶段设计文档是事实来源，`integrated-design.md` 是最终人工批准视图。这个调整不新增文件，只提高批准记录的准确性。
+
+## Q81：`state.json` 中是否保留 `stages.*.reviewStatus`？
+
+**我的问题**
+
+`state.json` 里的 `stages.*.reviewStatus` 是否还需要保留？
+
+我的判断是应该删除。它会和两类信息重复：阶段推进状态已经有 `stages.*.status`，评审事实状态应该以 `reviews/review-matrix.json` 和具体 review 文件为准。
+
+如果 `reviewStatus` 留在 `state.json`，后续很容易出现 `stages.solutionDesign.status=human_approved`，但 `reviewStatus=pending_human` 这种不一致。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+删除 `state.json` 中的 `stages.*.reviewStatus`：
+
+- `stages.*.status` 只表达阶段推进状态。
+- 评审状态事实来源是 `reviews/review-matrix.json` 和具体 review 文件。
+- `state.json` 不重复保存评审状态，避免状态漂移。
+
+## Q82：任务整体状态是否需要正常终态？
+
+**我的问题**
+
+当前任务整体状态需要一个明确的正常终态，否则工作流完成后只能停在 `verification_ready` 或其他中间态，无法表达“插件流程已结束”。
+
+我的建议是只保留一个终态：`completed`。不要增加 `archived`、`delivered`、`accepted`、`released` 这些复杂状态。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 任务整体状态保留唯一正常终态 `completed`：
+
+- `completed` 表示开发、验证和转测交付包已完成，插件工作流结束。
+- 上线、发布、归档不属于 MVP 状态机。
+- 不新增 `archived`、`delivered`、`accepted`、`released` 等状态。
+
+## Q83：评审矩阵中的风险字段是否统一为 `accepted_risk`？
+
+**我的问题**
+
+`review-matrix.json` 示例里问题类型统计用了 `acceptedRisk`，但评审问题分类定义的是 `accepted_risk`。
+
+我的建议是统一成 `accepted_risk`。这三个值本质上是枚举项，不是普通业务字段。枚举项在 Markdown、JSON、脚本参数里保持完全一致，后续少很多映射和解释。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+统一使用 `accepted_risk`：
+
+- `review-matrix.json` 的 `issues` 统计字段使用 `accepted_risk`。
+- Markdown、JSON、脚本参数中的评审问题类型保持一致。
+- 不引入 `acceptedRisk` 到机器可读结构中。
+
+## Q84：谁可以把任务状态置为 `completed`？
+
+**我的问题**
+
+既然已经有 `completed`，必须明确谁有资格把任务置为 `completed`。
+
+我的建议是：只有 `/scc-dev-sphere:feature-verify` 可以把任务状态更新为 `completed`，而且必须同时满足两个条件：
+
+1. 本地验证完成并通过，或者验证失败项已被人工明确接受为风险。
+2. 转测交付包已生成，包含验证结果、变更摘要、已接受风险、测试建议。
+
+`feature-implement` 不能直接置为 `completed`，因为代码写完不等于可交付。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+只有 `feature-verify` 可以将任务状态更新为 `completed`：
+
+- 本地验证必须完成并通过，或失败项已被人工明确接受为风险。
+- 必须生成转测交付包。
+- 转测交付包包含验证结果、变更摘要、已接受风险和测试建议。
+- `feature-implement` 不能直接置为 `completed`。
+
+## Q85：MVP 是否保留“最终交付包”这个术语？
+
+**我的问题**
+
+文档里同时出现“最终交付包”和“转测包”。这两个词如果都保留，会让范围变模糊：到底是给 TEST 的转测材料，还是完整交付归档材料？
+
+我的建议是 MVP 统一叫“转测包”，不要再使用“最终交付包”。`accepted_risk` 的要求改成：
+
+- 必须进入 `decisions/*-decisions.md`
+- 必须进入 `integrated-design.md` 风险汇总
+- 若代码落地后仍相关，必须进入转测包
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 不再使用“最终交付包”作为正式术语：
+
+- 代码落地后的交付材料统一称为“转测包”。
+- `accepted_risk` 必须进入决策记录。
+- `accepted_risk` 必须进入 `integrated-design.md` 风险汇总。
+- 若风险在代码落地后仍相关，必须进入转测包。
+
+## Q86：任务整体状态流转如何定义，`implementation_in_progress` 是否保留？
+
+**我的问题**
+
+前面提出代码修改准入时，我把 `implementation_in_progress` 处理得不够清楚。你提醒“阶段状态只记录稳定边界，不记录 `drafting`、`ai_reviewing` 这类命令执行中的瞬时状态”是对的。
+
+这里需要区分两层状态：
+
+- `stages.*.status`：阶段产物状态，只记录稳定边界。
+- `state.status`：任务整体状态，记录任务流程所在区间。
+
+`implementation_in_progress` 如果定义为“代码落地阶段已开始，可能包含多轮编码、修复、补测试”，它就是稳定边界，可以保留。
+
+我的建议是保留 `implementation_in_progress`，但明确整体状态流转和代码修改准入：
+
+```text
+initialized
+  -> assessed
+  -> design_in_progress
+  -> review_in_progress
+  -> design_ready
+  -> approved_for_implementation
+  -> implementation_planned
+  -> implementation_in_progress
+  -> verification_ready
+  -> completed
+```
+
+`human_input_required` 和 `blocked` 是异常/等待态，不是主线必经状态。代码修改准入状态只包括：
+
+```text
+implementation_planned
+implementation_in_progress
+```
+
+`approved_for_implementation` 只表示最终设计已批准，允许生成开发执行计划；不能直接绕过开发执行计划进入代码修改。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+保留 `implementation_in_progress`，但按稳定任务区间定义：
+
+- `approved_for_implementation`：最终设计已批准，允许生成开发执行计划。
+- `implementation_planned`：开发执行计划已生成，必要时已人工确认，允许代码落地。
+- `implementation_in_progress`：代码落地阶段已开始，允许多轮编码、修复和补测试。
+- `verification_ready`：代码落地完成，等待或正在执行验证与转测包生成。
+- `completed`：验证和转测包完成。
+
+代码修改准入状态只包括 `implementation_planned` 和 `implementation_in_progress`。
+
+## Q87：什么时候可以进入 `implementation_planned`？
+
+**我的问题**
+
+`feature-plan-implementation` 现在说“高风险或 strict 模式下等待人工确认”，但状态机里 `implementation_planned` 是代码落地准入状态。
+
+这里必须明确：什么时候能从 `approved_for_implementation` 进入 `implementation_planned`？
+
+我的建议是：
+
+- 普通任务：`feature-plan-implementation` 生成开发执行计划后，直接进入 `implementation_planned`
+- 高风险或 `strict-human-loop`：必须生成 `implementation-plan-approval.json` 后，才能进入 `implementation_planned`
+- 如果计划生成了但待人工确认，状态保持 `approved_for_implementation`，不能进入代码落地
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+进入 `implementation_planned` 的规则如下：
+
+- 普通任务在开发执行计划生成后进入 `implementation_planned`。
+- 高风险或 `strict-human-loop` 模式必须先生成 `implementation-plan-approval.json`。
+- 计划已生成但待人工确认时，任务状态保持 `approved_for_implementation`。
+- `implementation_planned` 是代码落地准入状态，不能在计划确认缺失时提前进入。
+
+## Q88：任务整体状态是否应避免记录人工决策、评审中、验证中这类过程动作？
+
+**我的问题**
+
+你指出人工决策只是一个瞬时动作，设计过程中可能频繁发生。如果把它定义为任务整体状态，就要频繁切换和恢复状态，带来复杂的状态维护成本。评审、验证也是过程，有问题后回到设计或开发循环，不一定适合频繁在两个状态之间切换。
+
+我的建议是把任务整体状态从“过程动作状态”改成“稳定阶段状态”。不要把人工决策、评审中、验证中这类过程动作放进 `state.status`。
+
+简化后的整体状态为：
+
+```text
+initialized
+assessed
+designing
+design_ready
+approved_for_implementation
+implementation_planned
+implementing
+verification_ready
+completed
+blocked
+```
+
+其中：
+
+- `designing` 覆盖设计生成、AI 评审、人工澄清、设计修订、再评审循环。
+- `implementing` 覆盖编码、验证失败后的修复、补测试、再验证前的开发调整。
+- `verification_ready` 表示代码实现认为已完成，等待最终验证结果和转测包生成。
+- `blocked` 只用于无法继续推进的稳定阻塞，不用于普通人工确认。
+- 人工决策不进 `state.status`，只写入 `decisions/*-decisions.md` 或 approval 文件。
+
+代码修改准入状态改为：
+
+```text
+implementation_planned
+implementing
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+任务整体状态采用稳定阶段状态，不记录过程动作：
+
+- 删除 `design_in_progress`、`review_in_progress`、`human_input_required`、`implementation_in_progress`。
+- 新增/使用 `designing` 和 `implementing` 承载循环过程。
+- 设计与评审循环保持在 `designing`，直到无阻塞后进入 `design_ready`。
+- 开发与验证修复循环保持在 `implementing`，直到代码实现认为可验证后进入 `verification_ready`。
+- 人工决策不进入 `state.status`，写入决策记录或批准记录。
+- 代码修改准入状态为 `implementation_planned` 和 `implementing`。
+
+## Q89：是否保留 `verification_ready`？
+
+**我的问题**
+
+按前面的简化思路，“验证中”不应该是任务状态；但 `verification_ready` 如果定义为“代码实现阶段认为已完成，准备生成最终验证结果和转测包”，它不是验证过程状态，而是实现阶段到完成阶段之间的稳定闸口。
+
+我的建议是保留 `verification_ready`，但定义清楚：
+
+- `implementing`：开发、修复、补测试、验证失败后的回修都在这里循环。
+- `verification_ready`：实现 Agent 认为代码已经完成，进入最终验证和转测包生成闸口。
+- `feature-verify` 验证通过并生成转测包后进入 `completed`。
+- `feature-verify` 发现可修复问题时，状态回到 `implementing`。
+- 不新增 `verifying` / `verification_failed`。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+保留 `verification_ready`：
+
+- 它是最终验证和转测包生成闸口，不是“验证中”过程状态。
+- 验证通过并生成转测包后进入 `completed`。
+- 验证失败但可修复时回到 `implementing`。
+- 验证失败且无法继续推进时进入 `blocked`，并记录阻塞原因。
+- 不新增 `verifying` 或 `verification_failed`。
+
+## Q90：谁负责把任务推进到 `verification_ready`？
+
+**我的问题**
+
+`feature-verify` 现在的描述略别扭：它既把任务状态更新为 `verification_ready`，又执行验证和转测包生成。
+
+如果 `verification_ready` 是“准备验证”的稳定闸口，更合理的是由 `feature-implement` 在认为代码落地完成时，把状态从 `implementing` 推到 `verification_ready`。`feature-verify` 只消费 `verification_ready`，验证通过后进入 `completed`，失败可修复则回到 `implementing`。
+
+我的建议是：
+
+- `feature-implement` 完成代码落地后，更新 `status=verification_ready`
+- `feature-verify` 要求当前状态为 `verification_ready`
+- `feature-verify` 成功后更新 `completed`
+- `feature-verify` 失败可修复时回到 `implementing`
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`verification_ready` 由 `feature-implement` 推进：
+
+- `feature-implement` 启动代码落地时进入 `implementing`。
+- `feature-implement` 认为代码落地完成、可进入最终验证时，进入 `verification_ready`。
+- `feature-verify` 只消费 `verification_ready`，不负责把实现阶段推进到验证闸口。
+- `feature-verify` 验证通过并生成转测包后进入 `completed`。
+- `feature-verify` 失败可修复时回到 `implementing`。
+
+## Q91：什么时候从 `designing` 进入 `design_ready`？
+
+**我的问题**
+
+状态机简化后，`feature-review` 产出 `blocking=0` 后“同步阶段状态为 `ai_review_passed`”这句话只覆盖了阶段状态，但没有说明任务整体什么时候从 `designing` 进入 `design_ready`。
+
+我的建议是：
+
+- 单个阶段评审通过：只更新对应 `stages.*.status=ai_review_passed` 或 `human_approved`
+- 所有阶段达到当前 workflow mode 要求，且 `integrated-design` 完成一致性评审无阻塞后，任务整体进入 `design_ready`
+- `design_ready` 不表示人工最终批准，只表示设计材料已准备好进入 `feature-approve`
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`design_ready` 的进入条件如下：
+
+- 所有阶段达到当前 workflow mode 要求。
+- `integrated-design` 已生成或刷新。
+- 集成一致性评审无阻塞。
+- 阶段评审只更新阶段状态，不直接更新任务整体为 `design_ready`。
+- `design_ready` 不是人工最终批准，只是进入 `feature-approve` 的前置状态。
+
+## Q92：`feature-approve` 是否必须要求任务处于 `design_ready`？
+
+**我的问题**
+
+`feature-approve` 是否应该要求当前任务状态必须是 `design_ready`？
+
+我的建议是必须要求。否则理论上只要 blocking 归零、advisory 处理完，就可能在阶段尚未完整、集成设计未准备好的情况下生成最终批准记录。
+
+规则可以简单定义为：
+
+- `feature-approve` 只允许在 `state.status=design_ready` 时执行
+- 执行成功后进入 `approved_for_implementation`
+- 如果设计被修订，状态从 `design_ready` 回到 `designing`，并重新走集成评审
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`feature-approve` 必须要求 `state.status=design_ready`：
+
+- `design_ready` 是最终人工批准的前置状态。
+- `feature-approve` 成功后进入 `approved_for_implementation`。
+- `design_ready` 后如果发生设计修订，任务整体状态退回 `designing`。
+- 设计修订后必须重新完成受影响阶段评审和集成一致性评审。
+
+## Q93：批准机制章节是否也需要补充 `design_ready` 前置条件？
+
+**我的问题**
+
+技术方案第 10 节“批准机制”还有一句旧表述：
+
+`feature-approve` 默认只处理代码落地前的最终设计批准，批准对象是 `integrated-design.md` 及其引用的阶段设计产物。
+
+这句话没有错，但缺少刚确认的 `design_ready` 前置条件，容易和 13.6 形成轻微不一致。
+
+我的建议是在批准机制章节也补一句：
+
+- `feature-approve` 只能在 `state.status=design_ready` 时生成 `design-final-approval.json`
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+批准机制章节同步补充 `design_ready` 前置条件：
+
+- `feature-approve` 只能在 `state.status=design_ready` 时生成 `design-final-approval.json`。
+- 该规则和 13.6 `feature-approve` 命令语义保持一致。
+- 阶段级人工确认仍不生成代码落地批准。
+
+## Q94：`advisory-confirmation` 章节是否也需要补充完整批准条件？
+
+**我的问题**
+
+技术方案里 `advisory-confirmation.json` 一节还有一句：
+
+`只有当所有 advisory 都在该索引中存在人工确认结果，且没有被转换后未关闭的 blocking 时，feature-approve 才能生成批准记录。`
+
+这句话也缺少 `design_ready` 前置条件。我的建议统一改成：
+
+- `feature-approve` 生成批准记录必须同时满足：
+  - `state.status=design_ready`
+  - 所有 `advisory` 已人工确认
+  - 没有未关闭 `blocking`
+  - `accepted_risk` 已进入决策记录和 `integrated-design`
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`advisory-confirmation` 章节同步补充完整批准条件：
+
+- `state.status=design_ready`。
+- 所有 `advisory` 已人工确认。
+- 没有未关闭 `blocking`。
+- `accepted_risk` 已写入决策记录，并已进入 `integrated-design.md` 风险汇总。
+
+## Q95：任务整体 `blocked` 和阶段 `blocked` 如何区分？
+
+**我的问题**
+
+当前保留了任务整体 `blocked`，阶段也有 `stages.*.status=blocked`。这可能重复，但我不建议删除其中任何一个，因为粒度不同。
+
+我的建议是补一条边界规则：
+
+- 能归属到某个阶段的问题，写 `stages.<stage>.status=blocked`
+- 影响整个任务推进、或无法归属单一阶段的问题，写 `state.status=blocked`
+- 普通人工澄清不使用 blocked，只记录 decision，任务仍保持 `designing` 或 `implementing`
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`blocked` 按影响范围选择写入位置：
+
+- 阶段级问题写入对应 `stages.<stage>.status=blocked`。
+- 任务级问题写入 `state.status=blocked`。
+- 普通人工澄清不进入 `blocked`，只写入决策记录。
+- `blocked` 只表达无法继续推进的稳定阻塞。
+
+## Q96：`stages` 是否是所有工作流的必选结构？
+
+**我的问题**
+
+你指出当前阶段状态给人的感觉只是对应 feature 的设计阶段。整个任务阶段状态已经定义得比较完善，后续适配其他工作流，应该优先针对任务整体状态。
+
+我的修正建议是：不要把 `stages` 设计成插件全局固定结构，也不要过早引入所有 workflow 都必须定义 stages/statuses 的模板系统。
+
+更克制的设计是：
+
+- `state.status` 是主状态机，跨工作流复用。
+- `stages` 是可选的 workflow-specific 细分进度，只在确实需要细粒度阶段追踪时使用。
+- MVP 的 `stages.businessDesign / solutionDesign / implementationDesign / testDesign` 只服务 feature 设计阶段。
+- 其他工作流初期可以不使用 `stages`，只用 `state.status` 和对应过程产物。
+- 等 bugfix/refactor 真有复杂阶段追踪需求时，再为该 workflow 定义自己的 `stages`。
+
+**用户回复**
+
+我同意你这种设计。
+
+**阶段性结论**
+
+`stages` 降级为可选的 workflow-specific 扩展结构：
+
+- `state.status` 是跨工作流复用的任务整体状态。
+- `stages` 不是插件全局固定结构，也不是扩展新 workflow 的必经机制。
+- MVP 只定义 feature 需求开发工作流的设计阶段 `stages`。
+- 后续 workflow 默认优先复用任务整体状态。
+- 只有当某个 workflow 需要阶段可视化、阶段评审或阶段批准时，才定义自己的 `stages`。
+
+## Q97：feature 的 `stages` 是否需要包含实现阶段，以及阶段状态如何维护？
+
+**我的问题**
+
+你提出两个问题：当前 `stages` 仅有设计阶段，没有实现阶段，是否属于设计缺失？同时内部的 `stages` 具体要怎么维护状态？
+
+我的判断是不算设计缺失，也不建议把实现阶段放进 feature 的 `stages`。当前 feature 的 `stages` 是为了管理多份设计产物的细粒度状态，它们都有独立产物、独立评审、独立修订闭环，所以需要 stage 状态。实现和验证已经由任务整体状态、开发执行计划、验证结果和转测包表达。
+
+建议规则：
+
+- 不给 feature `stages` 增加实现阶段。
+- `state.status` 管任务主流程：设计、批准、计划、实现、验证、完成。
+- `stages` 只管当前 workflow 中需要细粒度追踪的子产物/子阶段。
+- feature MVP 的 `stages` 只覆盖设计阶段。
+- 阶段状态只由对应命令或确定性 Hook/脚本更新，不由 Agent 在正文里自由声明。
+
+阶段状态维护建议：
+
+- `feature-design-*` 生成或更新对应设计产物后，阶段状态进入 `drafted`。
+- `feature-review <stage>` 发现 `blocking` 时，阶段状态进入 `ai_rework_required`。
+- `feature-review <stage>` 无 `blocking` 时，`auto-design` 和 `collaborative-design` 下阶段状态进入 `ai_review_passed`。
+- `strict-human-loop` 或阶段人工确认后，阶段状态进入 `human_approved`。
+- 人工要求修改已评审阶段时，阶段状态进入 `human_rework_required`。
+- 无法继续推进且能归属该阶段时，阶段状态进入 `blocked`。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+feature 的 `stages` 不包含实现和验证阶段：
+
+- 实现和验证由 `state.status`、开发执行计划、验证结果和转测包表达。
+- feature `stages` 只覆盖设计产物级追踪。
+- 这样避免 `stages.implementation` 与 `state.status=implementing / verification_ready / completed` 形成重复状态。
+- 阶段状态由命令或确定性 Hook/脚本维护，Agent 不能自由声明。
+
+## Q98：设计阶段由谁判断完成，谁调度评审？
+
+**我的问题**
+
+你修正了前面的流程理解：按照之前讨论的方案，应该是 workflow 根据任务选择对应 Agent，调用相关 Skill 执行任务。以需求分析为例，workflow 调用 SA Agent，SA Agent 加载需求分析 Skill 和你协同讨论；SA Agent 判断分析是否完成并告诉主会话，主会话再判断需要进入评审，然后找 SE Agent 调用评审 Skill 进行 AI 评审。
+
+我的修正建议是：
+
+- workflow 负责流程编排：读取状态、选择阶段、选择 Agent/Skill、调度评审、决定进入设计/评审/返工/批准。
+- Agent + Skill 负责执行专业任务，并判断自己负责的产物是否达到该 Skill 定义的完成条件。
+- Agent 返回阶段产物、关键结论和 `ready_for_review` 信号。
+- workflow 接收 `ready_for_review` 后，调度正式 AI 评审闭环。
+- `feature-review` 可以由用户显式调用，也可以由 workflow 自动调度。
+- 设计协同期间的自检不等于正式 AI 评审，不能单独触发 `ai_review_passed`。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+正式职责边界如下：
+
+- Agent/Skill 负责专业产物生成和产物完成判断。
+- workflow 负责阶段推进和评审调度。
+- `drafted -> ai_review_passed` 不是由用户是否手动调用 `/feature-review` 决定，而是由正式 AI 评审闭环是否完成决定。
+- 正式 AI 评审闭环必须产出 review 明细并更新 `review-matrix.json`。
+- 设计 Skill 内部自检只能用于改进产物，不能替代正式评审。
+
+## Q99：feature 阶段状态是否还需要 rework / review_required / blocked？
+
+**我的问题**
+
+你指出 `rework_required` 这类中间状态意义不大：如果遇到设计返工，直接切回或保持 `drafted` 就可以。同时你也指出 `blocked` 场景不应该太硬，很多外部知识缺失或代码仓不可访问都可以由人补充，不应直接阻塞团队设计流程。
+
+我的修正建议是把 feature 阶段状态收敛为 4 个稳定边界：
+
+```text
+not_started
+drafted
+ai_review_passed
+human_approved
+```
+
+阶段状态含义：
+
+- `not_started`：该阶段还没有设计产物。
+- `drafted`：已有阶段设计产物，协同补信息、设计修订、等待人工反馈、评审返工都保持在该状态。
+- `ai_review_passed`：正式 AI 评审闭环通过，且无未关闭 `blocking`。
+- `human_approved`：人工确认该阶段可用。
+
+`blocked` 不再作为 feature 阶段状态。`blocked` 只保留为任务级极窄异常兜底：当前任务无法在本插件流程内继续推进，且不能通过普通人工补充信息、人工决策或记录假设解决。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+feature 阶段状态最终收敛为 4 个：
+
+- `not_started`
+- `drafted`
+- `ai_review_passed`
+- `human_approved`
+
+删除阶段状态中的 `ai_rework_required`、`human_review_required`、`human_rework_required`、`blocked`。
+
+阶段状态维护规则：
+
+- 没有产物时是 `not_started`。
+- 设计产物生成或修订后进入 `drafted`。
+- 评审存在阻塞、人工反馈问题、等待补充信息或设计返工时保持或回到 `drafted`。
+- 正式 AI 评审无未关闭阻塞后进入 `ai_review_passed`。
+- 人工确认后进入 `human_approved`。
+- `blocked` 只作为任务级兜底异常状态。
+
+## Q100：阶段级人工 OK 如何落盘？
+
+**我的问题**
+
+阶段状态简化后，需要明确“人工 OK”如何落盘。
+
+我的建议是：
+
+- workflow / `feature-review` 在 AI 正式评审通过后暂停，提示你人工评审。
+- 你回复 `OK` 后，对应阶段进入 `human_approved`。
+- 你反馈问题后，对应阶段保持或回到 `drafted`，并记录问题，workflow 再调度对应设计 Agent 修订。
+- 阶段级人工 OK 不生成 approval 文件。
+- 阶段级人工确认事实写入对应 review 明细或 `decisions/*-decisions.md`。
+- 最终代码落地批准仍只由 `feature-approve` 生成 `design-final-approval.json`。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+阶段级人工确认作为 `feature-review` 流程中的交互节点处理：
+
+- AI 正式评审通过后暂停等待人工评审。
+- 用户回复 `OK` 后，阶段状态进入 `human_approved`。
+- 用户反馈问题后，阶段状态保持或回到 `drafted`，workflow 调度对应设计 Agent 修订。
+- 阶段级人工确认不生成 approval 文件。
+- 确认事实写入 review 明细或对应 decisions 文件。
+- `feature-approve` 仍是唯一生成 `design-final-approval.json` 的最终设计批准入口。
+
+## Q101：strict-human-loop 是否引入额外阶段状态？
+
+**我的问题**
+
+在阶段状态已经收敛为 `not_started`、`drafted`、`ai_review_passed`、`human_approved` 后，`strict-human-loop` 的语义需要同步收敛。
+
+我的建议是：
+
+- `strict-human-loop` 不引入额外阶段状态。
+- `strict-human-loop` 只提高阶段推进门槛，不改变状态机。
+- 后续阶段启动前，前置阶段必须达到 `human_approved`。
+- AI 正式评审通过后，workflow 必须暂停并提示人工评审。
+- 用户回复 `OK` 后，阶段进入 `human_approved`。
+- 用户反馈问题后，阶段保持或回到 `drafted`，再由 workflow 调度设计 Agent 修订。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`strict-human-loop` 是门禁策略，不是独立状态机：
+
+- 不新增 `human_review_required`、`human_rework_required` 等中间状态。
+- AI 正式评审通过只说明可以进入人工确认点。
+- 人工 OK 后才进入 `human_approved`。
+- 人工反馈问题后回到或保持 `drafted`。
+- 状态流转仍沿用 feature 阶段的 4 个稳定边界。
+
+## Q102：collaborative-design 的局部人工门禁如何定义？
+
+**我的问题**
+
+`collaborative-design` 中“复杂阶段可人工切换为要求 `human_approved`”这句话过于模糊。如果让 Agent 在执行中临时判断某阶段是否需要人工门禁，workflow 会变得不可预测，状态恢复和问题追踪也会变复杂。
+
+我的建议是引入轻量配置 `humanGateStages`：
+
+```json
+"humanGateStages": ["businessDesign", "solutionDesign"]
+```
+
+含义：
+
+- `collaborative-design` 默认阶段达到 `ai_review_passed` 后即可作为后续 AI 设计输入。
+- 被列入 `humanGateStages` 的阶段，必须达到 `human_approved` 后才能推进依赖它的后续阶段。
+- `humanGateStages` 不新增状态，不新增模式，只改变阶段推进门槛。
+- Agent 不得在执行中自行改变该配置；如需调整，必须由 workflow 记录人工决策后更新。
+
+**用户回复**
+
+同意，新增的 `humanGateStages` 需要在 assess 阶段就让使用者指定。也同意补充边界：如果设计过程中确实发现阶段风险比 assess 时判断更高，可以人工决策后调整 `humanGateStages`，并记录到决策文件；Agent 不能自行修改。
+
+**阶段性结论**
+
+`collaborative-design` 使用 `humanGateStages` 做局部人工门禁：
+
+- `feature-assess` 在用户选择 `collaborative-design` 时，必须让用户指定 `humanGateStages`，或明确确认为空。
+- `humanGateStages` 写入 `state.json`。
+- 未列入 `humanGateStages` 的阶段达到 `ai_review_passed` 即可推进。
+- 列入 `humanGateStages` 的阶段必须达到 `human_approved` 才能推进。
+- 该配置不新增阶段状态，不改变状态机。
+- 设计过程中确需调整时，只能由人工决策触发，workflow 记录决策后更新配置；Agent 不得自行修改。
