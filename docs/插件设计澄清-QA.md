@@ -2,6 +2,8 @@
 
 本文档记录插件设计澄清过程中的关键问题、用户回复、阶段性判断与后续设计影响。
 
+注意：本文是历史澄清记录，后续 Q&A 可能覆盖早期阶段性判断。实现时以 PRD、技术方案和较新的 Q&A 结论为准；明确被覆盖的旧结论不得作为当前实现依据。
+
 ## Q1：插件第一阶段最应该优化哪一个核心瓶颈？
 
 **问题**
@@ -3849,3 +3851,894 @@ feature 阶段状态最终收敛为 4 个：
 - 列入 `humanGateStages` 的阶段必须达到 `human_approved` 才能推进。
 - 该配置不新增阶段状态，不改变状态机。
 - 设计过程中确需调整时，只能由人工决策触发，workflow 记录决策后更新配置；Agent 不得自行修改。
+
+## Q103：state.json 是否需要保留 interactionMode？
+
+**我的问题**
+
+你指出技术方案 §4.2 的 `state.json` 示例里出现了 `"interactionMode": "standard"`，但 PRD 没有定义该字段，技术方案正文也没有定义它的取值、语义，以及它和 `workflowMode` 的关系。
+
+我的判断是这是设计残留，MVP 不应该保留：
+
+- `interactionMode` 没有产品语义定义。
+- 它和 `workflowMode` 容易重叠，例如 `collaborative-design` 已经表达协同设计方式。
+- 当前 `workflowMode + humanGateStages` 已足够表达三种工作流差异和局部门禁。
+- 继续保留会误导实现者把它当成必填状态字段。
+
+建议从技术方案 `state.json` 示例中删除 `interactionMode`。后续如果真实需要交互策略，再重新设计命名和语义，不在 MVP 预留空字段。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP `state.json` 不保留 `interactionMode`：
+
+- 从技术方案示例中删除该字段。
+- 当前交互差异由 `workflowMode` 和 `humanGateStages` 表达。
+- 不引入未定义取值、未定义语义的状态字段。
+
+## Q104：feature-design-* 是否需要 MVP 独立支持 --mode rerun？
+
+**我的问题**
+
+Claude 评审指出：PRD §7.3 只显式要求 `--mode revise`，但技术方案 §13.4 把阶段命令扩展成 `normal / revise / rerun` 三种模式。其中 `rerun` 没有 PRD 要求，也没有单独 Q&A 确认。
+
+我的判断是 `--mode rerun` 不应该作为 MVP 必需能力：
+
+- `revise` 处理的是高风险场景：已人工批准或已被下游使用的产物被修改，必须可审计。
+- `rerun` 处理的是便利性场景：AI 生成失败、补充上下文后重新生成。
+- 对未 `human_approved` 的阶段，重新生成完全可以归入 `--mode normal`。
+- 如果保留 `rerun`，还必须定义是否覆盖 `drafted` 产物、是否保存历史、是否清空 review、是否保留 evidence、是否重置 stage 状态，复杂度不值得。
+
+建议 MVP 只保留两个模式：
+
+```text
+--mode normal
+--mode revise
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 阶段设计命令不提供独立 `--mode rerun`：
+
+- `--mode normal`：创建或更新未人工批准的阶段产物；AI 生成失败、上下文补充后的再次生成也归入该模式。
+- `--mode revise`：修订已人工批准或已进入下游使用的阶段产物，必须记录原因、影响范围、受影响阶段和重新评审要求。
+- 后续如果引入 `rerun`，必须先定义历史产物保留、review/evidence/decision 处理和阶段状态重置规则。
+
+## Q105：人工确认闸口应该绑定外部调用方式，还是定义在 Skill 内部？
+
+**我的问题**
+
+围绕 Claude Code plugin 的 skill/command 机制，我们重新澄清了一个边界：`feature-approve`、`feature-implement` 这类动作是否必须由用户显式 slash 调用，才能保证安全？
+
+我的修正判断是：不必须。安全性不应该绑定外部调用方式，而应该绑定 Skill 内部闸口和确定性校验。
+
+更准确的设计是：
+
+- workflow 负责读取持久化状态，判断当前任务、当前阶段和下一步动作。
+- workflow 可以调度对应 Agent/Skill 执行具体事项。
+- 高风险 Skill 自己必须内置人工确认闸口。
+- 无论 Skill 是用户显式调用，还是 workflow 自动调度，都必须在生效前展示确认摘要、等待人工确认并落盘确认事实。
+- scripts/hooks 再对状态变更、批准记录和代码修改准入做确定性复核。
+
+**用户回复**
+
+是的，workflow 用来控制整体流程，根据持久化的状态文件来判断当前是哪个开发任务，处于哪个阶段，应该让哪个 Agent 执行什么具体事项。人工确认闸口应该是 Skill 内部定义的，和外部调用方式没有关系。
+
+**阶段性结论**
+
+人工确认闸口定义在 Skill 内部，不绑定外部调用方式：
+
+- 用户 slash 调用不能绕过 Skill 内部确认。
+- workflow 自动调度也不能绕过 Skill 内部确认。
+- 对审批、实现、风险接受、修订已批准产物等高风险动作，必须先完成确认摘要展示、人工确认、确认事实落盘和状态校验。
+- workflow 负责流程编排和调度，Agent 负责职责视角，Skill 负责具体方法和内部闸口，scripts/hooks 负责确定性硬校验。
+
+## Q106：双子代理评审发现的规范和功能设计问题如何处理？
+
+**我的问题**
+
+你要求创建两个评审子代理，分别从 Claude Code Plugins 开发规范和插件使用功能设计角度独立审查 PRD、技术方案和 Q&A，并修复能直接修复的问题。
+
+评审发现的可直接修复问题包括：
+
+- 技术方案中 hooks 目录结构写成多个事件 JSON，不符合插件 `hooks/hooks.json` 结构。
+- Hook 章节未区分可阻断事件和 `PostToolUse` 这类事后事件。
+- 技术方案中 `mcpServers` 作为插件组件表述不准确，应使用插件根目录 `.mcp.json`。
+- 技术方案残留阶段级 `blocked`，与 feature 阶段 4 状态模型冲突。
+- PRD/技术方案把所有阶段 AI 评审通过后都写成暂停等待人工确认，和 `auto-design`、`humanGateStages` 规则冲突。
+- 技术方案 §13 对 Skill 的说明没有体现 workflow 选择 Agent、Agent 加载/执行 Skill 的执行链路。
+
+**用户要求**
+
+创建两个评审子代理，分别从 Claude Code Plugins 开发规范和插件使用功能设计角度独立评审；对于出现的问题进行修复，如果有需要用户决策或补充信息的点再提问。
+
+**阶段性结论**
+
+已修复并同步到正式文档：
+
+- hooks 插件结构统一为 `hooks/hooks.json`。
+- Hook 阻断规则明确使用 `PreToolUse` / `PermissionRequest` / `UserPromptExpansion` 等可阻断事件；`PostToolUse` 只用于登记、提示或补救。
+- MCP 插件配置表述改为根目录 `.mcp.json`。
+- 阶段级 `blocked` 残留删除；失败、缺信息、需决策时阶段保持或回到 `drafted`，只有任务无法继续推进时才写 `state.status=blocked`。
+- 阶段人工确认改为按 `workflowMode` 和 `humanGateStages` 判断：`strict-human-loop` 全阶段暂停；`collaborative-design` 仅门禁阶段暂停；`auto-design` 不做阶段级人工门禁。
+- §13 明确执行链路：workflow 读取状态并选择 Agent，Agent 加载/执行 Skill，Skill 负责方法和内部闸口，scripts/hooks 做确定性校验。
+- Q95/Q97 中关于阶段级 `blocked`、`ai_rework_required`、`human_rework_required` 的早期建议已被 Q99 废弃；当前 feature 阶段状态只保留 `not_started`、`drafted`、`ai_review_passed`、`human_approved`。
+
+## Q107：accepted_risk 是否应从 AI 评审问题类型中拆出？
+
+**我的问题**
+
+双子代理评审指出：`accepted_risk` 同时被定义为 AI 评审问题类型和人工接受结果，会造成语义漏洞。AI 如果能“发现 accepted_risk”，实现者可能误以为 AI 可以直接接受风险，绕过人工确认。
+
+我的建议是按奥卡姆剃刀收敛：不增加复杂严重级别，只把风险模型拆清楚：
+
+- AI 评审只能提出 `risk_candidate`。
+- `accepted_risk` 不是 AI 评审问题类型，而是人工明确接受后的结果类型。
+- 只有人工确认后，`risk_candidate` 或 advisory 中体现的风险才可转换为 `accepted_risk`。
+- `accepted_risk` 必须进入 `decisions/*-decisions.md`、`integrated-design.md` 风险汇总；若代码落地后仍相关，进入转测包。
+
+**用户回复**
+
+同意，后续设计上要给予奥卡姆剃刀定律来分析。
+
+**阶段性结论**
+
+风险模型收敛为：
+
+- AI 评审问题类型使用 `blocking`、`advisory`、`risk_candidate`。
+- `accepted_risk` 只作为人工确认后的风险接受结果。
+- AI 不得自行生成 `accepted_risk`。
+- 后续设计默认按奥卡姆剃刀原则处理：能用现有状态、产物和确认机制表达的问题，不新增状态、文件或模式。
+
+## Q108：advisory 的人工动作是否要改名？
+
+**我的问题**
+
+双子代理评审指出：当前 `advisory` 的人工动作 `accept/reject/convert_to_blocking` 语义反直觉。尤其是 `accept` 被定义为“不采纳或暂不处理”，但普通用户会自然理解成“采纳建议”，容易误操作。
+
+按奥卡姆剃刀原则，不增加额外状态，只把动作名改清楚：
+
+```text
+apply
+no_change
+convert_to_blocking
+```
+
+含义：
+
+- `apply`：采纳建议，回到对应设计产物修订。
+- `no_change`：确认不改或暂不处理。
+- `convert_to_blocking`：升级为阻塞项，走 blocking 修订和复核闭环。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`advisory` 人工动作改为：
+
+- `apply`
+- `no_change`
+- `convert_to_blocking`
+
+废弃早期 `accept/reject/convert_to_blocking` 表述。`advisory no_change` 不等于 `accepted_risk`；如果不改的理由本质是接受风险，必须转为 `accepted_risk` 并进入决策记录和风险汇总。
+
+## Q109：普通低风险任务进入 `implementation_planned` 后，首次改代码前是否仍需人工确认？
+
+**我的问题**
+
+当前状态机里，普通任务在开发执行计划生成后可以进入 `implementation_planned`，而 `implementation_planned` 又是代码修改准入状态。这里存在一个细微但重要的风险：普通低风险任务可能在计划生成后静默进入代码修改，用户还没来得及确认“现在真的要改仓库”。
+
+按奥卡姆剃刀原则，我不建议新增状态或 approval 文件，只补一个动作级闸口：
+
+- `feature-implement` 首次真正执行代码修改前，展示实现摘要、目标 repo、预计修改范围、验证命令和主要风险。
+- 等待人工明确确认后，才从 `implementation_planned` 进入 `implementing` 并开始修改代码。
+- 确认事实写入实现日志，不新增独立批准文件。
+- 进入 `implementing` 后，同范围内的修复、补测试和验证失败回修不重复确认。
+- 如果实际修改范围超出批准设计或开发执行计划，必须停止并回到设计/计划环节重新确认。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+保留 `implementation_planned` 作为代码修改准入状态，但它不是“可静默改代码”的状态。首次代码修改前必须由 `feature-implement` 完成动作级人工确认；确认后进入 `implementing`。这个设计不新增状态、不新增 approval 文件，只在实现日志中记录确认事实。
+
+## Q110：TSE 评审文件应命名为 `test-review.md` 还是 `tse-review.md`？
+
+**我的问题**
+
+测试角色已统一改名为 TSE，但技术方案的评审文件路径仍有 `test-review.md`。这不是功能冲突，但会造成命名口径不一致：`sa-review.md`、`mde-review.md`、`dev-review.md` 都按评审 Agent 命名，只有测试视角按领域命名。
+
+我的建议是改为 `tse-review.md`：
+
+- 评审矩阵主体是评审 Agent，不是测试设计产物。
+- `tse-review.md` 和 SA/MDE/DEV 的文件命名规则一致。
+- `test-design/` 仍保留作为被评审产物目录，不和 TSE 评审者命名混用。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+正式设计中，TSE 作为评审者输出的评审文件统一命名为 `tse-review.md`。早期 Q&A 中出现的 `test-review.md` 仅作为历史讨论示例，后续实现以 PRD、技术方案和本条 Q&A 为准。
+
+## Q111：workflow 是否应作为普通用户默认主入口？
+
+**我的问题**
+
+在端到端场景走查中，我把 `feature-init`、`feature-assess`、`feature-approve`、`feature-plan-implementation`、`feature-implement`、`feature-verify` 等底层 Skill 直接写成了用户动作。你指出这不符合预期：`workflow` Skill 应该支撑全流程，普通用户不应该被要求手动串联这些阶段 Skill。
+
+我的修正判断是：正式设计应明确“默认用户交互入口”和“底层能力入口”的区别。
+
+推荐策略：
+
+- 普通用户默认通过 `/scc-dev-sphere:workflow` 推进全流程。
+- `/scc-dev-sphere:status` 用于查看当前任务、阶段、阻塞项、待确认事项和下一步建议。
+- `feature-init`、`feature-assess`、`feature-design-*`、`feature-review`、`feature-approve`、`feature-plan-implementation`、`feature-implement`、`feature-verify` 等阶段 Skill 仍保留，但定位为：
+  - workflow 内部调度入口；
+  - 专家用户手动介入入口；
+  - 修订、恢复、调试、单阶段重跑入口。
+- 端到端用户场景中，不应把底层阶段 Skill 描述为普通用户的常规操作路径。
+- 高风险动作的安全性仍由 Skill 内部确认闸口、scripts/hooks 确定性校验和状态文件共同保证，而不是依赖用户是否通过 workflow 调用。
+
+不建议完全隐藏阶段 Skill，因为这会削弱人工修订、异常恢复、调试和专家介入能力；也不建议把 workflow 和所有阶段 Skill 平级呈现为普通用户都要掌握的操作路径，因为这会让流程看起来像手动命令串联。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 默认用户交互模型采用 **workflow/status 主入口 + 阶段 Skill 高级入口**：
+
+- `/scc-dev-sphere:workflow` 是普通用户推进需求开发任务的默认主入口。
+- `/scc-dev-sphere:status` 是普通用户查看状态、待办和下一步建议的默认辅助入口。
+- 阶段 Skill 是 workflow 可调用的底层能力，同时作为专家介入、异常恢复、修订和调试入口保留。
+- 后续 PRD、技术方案和端到端场景描述，应优先用 workflow 展示用户动作；底层 Skill 只在“插件内部响应 / 触发组件 / 高级介入”中体现。
+
+## Q112：实现设计和测试设计是否必须完成阶段评审后才能进入集成一致性评审？
+
+**我的问题**
+
+端到端场景走查中，我在实现设计和测试设计生成后直接进入了 `integrated-design consistency review`，缺少 `implementation-design review` 和 `test-design review` 的正式阶段评审。你指出这是流程缺失。
+
+我的修正判断是：集成一致性评审不能替代任何阶段产物的正式评审。
+
+推荐策略：
+
+- `implementationDesign` 生成后，必须触发 `implementation-design review`。
+  - 基础评审者：SE、DEV、TSE。
+  - blocking 必须由 MDE 修订，并由提出问题的评审 Agent 复核关闭。
+  - advisory / risk_candidate 必须进入人工确认或风险处理清单。
+- `testDesign` 生成后，必须触发 `test-design review`。
+  - 基础评审者：SA、SE、MDE。
+  - blocking 必须由 TSE 修订，并由提出问题的评审 Agent 复核关闭。
+  - advisory / risk_candidate 必须进入人工确认或风险处理清单。
+- 只有 `businessDesign`、`solutionDesign`、`implementationDesign`、`testDesign` 都达到当前 workflow mode 要求的可用状态后，workflow 才能生成或刷新 `integrated-design.md`。
+- `integrated-design consistency review` 只检查业务、方案、实现、测试之间的一致性，不替代阶段产物正式评审。
+- Hook/script 在推进 `design_ready` 时必须校验阶段评审矩阵，不能只看 integrated review 是否通过。
+
+**用户回复**
+
+继续。
+
+**阶段性结论**
+
+实现设计和测试设计必须先完成各自阶段正式评审，才能进入集成一致性评审：
+
+- `implementation-design review` 和 `test-design review` 是必经阶段评审。
+- 集成一致性评审只做跨产物一致性检查，不承担阶段评审职责。
+- workflow 生成或刷新 `integrated-design.md` 的前置条件，是所有阶段产物都已达到当前 workflow mode 要求的可用状态。
+- `design_ready` 的状态同步必须同时校验阶段评审矩阵和集成一致性评审结果。
+
+## Q113：各设计阶段的知识查询责任是否需要显式写成阶段规则？
+
+**我的问题**
+
+端到端场景走查中，我只在业务分析阶段明显体现了知识查询，在 SE、MDE、TSE 设计阶段没有充分展开。你指出这与预期不一致。
+
+我的修正判断是：正式设计不能只泛泛写“按需查询”，应补充各阶段最低查询责任和 evidence 落盘要求；但也不应把查询变成机械全量检索。
+
+推荐策略：
+
+- SA / `businessDesign`：
+  - 查询业务流程、业务规则、历史需求、存量功能行为。
+  - 产出 knowledge evidence。
+  - 用于支撑业务规则、范围边界、术语和异常流程。
+- SE / `solutionDesign`：
+  - 查询历史方案、架构规范、接口规范、跨模块约束、兼容性约束。
+  - 产出 knowledge evidence；必要时产出轻量 repository evidence。
+  - 用于支撑系统边界、接口契约、数据影响和兼容性影响。
+- MDE / `implementationDesign`：
+  - 查询模块历史实现、代码结构、关键调用链、技术规范、已有实现模式。
+  - 产出 knowledge evidence 和 repository evidence。
+  - 用于支撑模块影响面、实现拆解、修改范围和开发风险。
+- TSE / `testDesign`：
+  - 查询历史缺陷、测试规范、验收规则、回归范围、已有测试资产。
+  - 产出 knowledge evidence；必要时产出 repository evidence。
+  - 用于支撑验收点、测试策略、回归建议和风险测试。
+- DEV / 实现计划和代码落地：
+  - 查询目标 repo、实现模式、测试命令、开发规范。
+  - 产出 repository evidence。
+  - 用于支撑开发执行计划、文件范围和验证命令。
+
+边界规则：
+
+- 不是每个阶段都必须机械查询所有来源。
+- 如果某阶段判断无需查询某类来源，必须在阶段产物或 evidence registry 中记录未查询原因。
+- 凡是声明存量事实、代码现状、历史约束或外部规范，就必须引用 evidence ID。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+各设计阶段保留“按需查询”原则，但必须具备阶段最低查询责任：
+
+- 每个阶段需要根据职责主动判断是否查询对应知识库或代码仓。
+- 被实际采用的查询结果必须保存为 evidence 并在产物中引用。
+- 未查询某类预期来源时，应记录未查询原因，避免读者误以为已查证。
+- 不能用无 evidence 的方式声明存量事实、代码现状、历史约束或外部规范。
+
+## Q114：AI 决策记录和人机协同决策记录是否应由 Hook 一并维护？
+
+**我的问题**
+
+你提出：AI 决策记录，以及人和 AI 协同设计过程中的决策记录动作，是否适合让 Hook 也一并维护。
+
+我的判断是：适合让 Hook/scripts 维护决策记录的账务层，但不适合让 Hook 维护决策语义内容。
+
+推荐策略：
+
+- Skill / Agent / Human 负责决策语义：
+  - 决策背景是什么；
+  - 有哪些可选方案；
+  - 最终选择是什么；
+  - 为什么这样选；
+  - 风险和后续影响是什么；
+  - assumption / advisory / risk_candidate 是否被人工确认。
+- Hook / scripts 负责决策账务：
+  - 分配或校验 decision ID；
+  - 校验决策条目格式；
+  - 更新 `decisions/decision-index.json`；
+  - 校验 Markdown 决策条目和 index 是否一致；
+  - 校验 `accepted_risk` 是否进入 decision 和 `integrated-design.md`；
+  - 校验 `assumption` 是否有关联人工确认；
+  - 在状态推进前检查必要决策记录是否齐备。
+
+明确禁止 Hook 做这些事：
+
+- 自动生成决策语义内容；
+- 自动接受 assumption；
+- 自动把 `risk_candidate` 转成 `accepted_risk`；
+- 自动决定 advisory 是 `apply`、`no_change` 还是 `convert_to_blocking`；
+- 自动替用户补充选择理由。
+
+核心规则：
+
+```text
+Skill/Agent/Human 决定“决策内容是什么”
+Hook/scripts 维护“决策是否被正确登记、索引、引用和校验”
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+决策记录采用语义层和账务层分离：
+
+- 决策语义内容由对应 Skill/Agent 在人机协同中生成，并由人工确认关键结论。
+- Hook/scripts 负责决策记录的结构校验、ID/索引维护、引用完整性校验和状态推进前的一致性检查。
+- Hook 不生成决策语义，不自动接受 assumption/advisory/risk，不替代人工确认。
+- `decision-index.json` 可由 Hook/scripts 维护；`*-decisions.md` 的语义条目由 Skill/Agent 根据人工确认写入。
+
+## Q115：Hook 是否需要补充显式 Event Matrix？
+
+**我的问题**
+
+端到端场景走查中，我只在少数步骤显式体现了 Hook。你指出 Hook 不应该只是几个节点才出现，而应在流程中持续承担守门、登记和一致性检查职责。
+
+我的修正判断是：正式设计需要补充 Hook Event Matrix，明确每类 Hook 在流程中的职责边界，同时继续保持 Hook 不做业务推理。
+
+推荐策略：
+
+- `UserPromptExpansion`：
+  - 拦截直接 slash 调用高风险 Skill 的准入检查。
+  - 例如未到 `design_ready` 时直接调用 approve，未到 `implementation_planned` / `implementing` 时直接调用 implement。
+- `PreToolUse` / `PermissionRequest`：
+  - 阻断代码修改、文件写入、危险命令等高风险工具调用。
+  - 校验 active task、repo 绑定、状态、批准记录、开发计划和修改范围。
+- `PostToolUse`：
+  - 只做登记、索引、状态同步、提示和一致性复核。
+  - 例如 artifact 生成后登记，review 生成后更新 review matrix，approval 写入后校验 hash 和同步 state。
+  - 不能作为阻断安全边界。
+- 状态同步 Hook：
+  - 只做确定性同步，例如 artifact 存在 -> `drafted`，review matrix blocking=0 -> `ai_review_passed`。
+  - 不判断设计质量，不关闭 blocking，不接受 advisory/risk。
+- 过程件登记 Hook：
+  - 更新 artifact/review/evidence/decision/approval 索引。
+  - 校验 ID 唯一性和引用完整性。
+- 一致性检查 Hook：
+  - 检查 `accepted_risk` 是否进入 decision 和 `integrated-design.md`。
+  - 检查 advisory 是否已人工确认。
+  - 检查 `design_ready` 前阶段评审矩阵和 integrated review 是否齐备。
+
+边界仍然保持：
+
+```text
+Hook = guard + registry + consistency checker
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+PRD 和技术方案需要补充 Hook Event Matrix：
+
+- 可阻断类 Hook 必须绑定 `UserPromptExpansion`、`PreToolUse` 或 `PermissionRequest` 等可阻断事件。
+- `PostToolUse` 只能用于登记、索引、状态同步、提示和一致性复核，不能作为阻断安全边界。
+- Hook 可以贯穿流程持续维护状态、过程件索引和一致性检查，但不做业务/设计推理。
+- Hook 不判断设计质量，不关闭 blocking，不接受 advisory/risk，不替代人工确认。
+
+## Q116：workflow adapter 应如何实现，避免 feature 流程污染未来扩展？
+
+**我的问题**
+
+我提出 workflow 需要补充下一步动作决策表后，你指出：`workflow` 其实完全适配 feature 场景，如果把 feature 全流程直接写进统一 `workflow`，未来扩展 bugfix/refactor/performance 可能不好维护。随后你进一步追问：workflow adapter 具体实现方案是什么，不能只停留在抽象概念。
+
+我的修正判断是：`workflow` adapter 不应做成独立 runtime，也不应做复杂插件框架。MVP 中应落成 Claude Code plugin 可实现的形态：统一 `workflow` Skill 做 taskType 分发，每个 taskType 有自己的 workflow adapter Skill 和确定性脚本模块。
+
+推荐实现结构：
+
+```text
+/scc-dev-sphere:workflow
+  -> skills/workflow/SKILL.md
+  -> 读取 .devsphere/current-task.json
+  -> 识别 taskType
+  -> taskType=feature 时委派给 feature workflow adapter
+```
+
+插件结构补充：
+
+```text
+skills/
+  workflow/
+    SKILL.md
+  workflow-feature/
+    SKILL.md
+  status/
+    SKILL.md
+scripts/
+  devsphere-workflow.js
+  workflows/
+    feature-workflow.js
+```
+
+职责边界：
+
+- `skills/workflow/SKILL.md`：统一用户入口，读取 current task，判断 taskType，把请求分发给对应 workflow adapter。
+- `skills/workflow-feature/SKILL.md`：feature 专属编排规则，知道 `businessDesign`、`solutionDesign`、`implementationDesign`、`testDesign`、`integrated-design` 等 feature 阶段。
+- `scripts/devsphere-workflow.js`：通用确定性工具，负责读取 current task、加载 state、校验 taskPath、输出下一步动作结构。
+- `scripts/workflows/feature-workflow.js`：feature next-step resolver，根据 `state.status`、`stages`、`workflowMode`、`humanGateStages`、review matrix、approval 判断下一步。
+- `skills/status/SKILL.md`：统一状态入口；taskType 特有状态由对应 adapter 提供摘要。
+
+`feature-workflow.js` 不直接生成文档、不调用 Agent、不修改正文，只输出结构化 next action。例如：
+
+```json
+{
+  "taskType": "feature",
+  "currentStatus": "designing",
+  "nextAction": {
+    "kind": "run_skill",
+    "skill": "feature-design-business",
+    "agent": "sa",
+    "reason": "businessDesign is not started",
+    "expectedOutputs": [
+      "artifacts/business-design.md",
+      "reviews/business-design/se-review.md"
+    ],
+    "afterCompletion": "run_feature_review"
+  },
+  "requiresHumanInput": false,
+  "guards": [
+    "active_task_exists",
+    "stage_not_human_approved"
+  ]
+}
+```
+
+遇到人工确认时输出：
+
+```json
+{
+  "taskType": "feature",
+  "currentStatus": "designing",
+  "nextAction": {
+    "kind": "human_confirm",
+    "prompt": "businessDesign has passed AI review and requires human approval because it is listed in humanGateStages.",
+    "onApprove": "mark_stage_human_approved",
+    "onReject": "record_feedback_and_revise"
+  },
+  "requiresHumanInput": true
+}
+```
+
+执行链路：
+
+```text
+workflow Skill
+  -> 调用 devsphere-workflow.js / feature-workflow.js 计算 nextAction
+  -> nextAction.kind=run_skill 时选择 Agent 并执行对应 Skill
+  -> nextAction.kind=human_confirm 时展示确认摘要并等待用户确认
+  -> 执行后由 Hook/scripts 校验并同步状态
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+workflow adapter 采用 **统一入口 + taskType 分发 + taskType 专属 adapter**：
+
+- `/scc-dev-sphere:workflow` 是统一用户入口，不直接写死 feature 全流程。
+- workflow 内部基于 `taskType` 分发到对应 workflow adapter。
+- MVP 只实现 `feature` adapter。
+- feature adapter 由 `skills/workflow-feature/SKILL.md` 和 `scripts/workflows/feature-workflow.js` 组成。
+- adapter 的确定性脚本只计算 next action 和准入条件，不生成设计正文，不替代 Agent/Skill。
+- `workflow` Skill 根据 next action 调用对应 Agent/Skill 或暂停等待人工确认。
+- 后续 bugfix/refactor/performance 通过新增自己的 adapter 扩展，不复用 feature 的 `stages` 和评审矩阵。
+
+## Q117：adapter 的 `nextAction` 是否需要定义稳定 schema？
+
+**我的问题**
+
+在 Q116 中，我们确认 workflow adapter 通过确定性脚本输出结构化 next action。但如果只提供示例 JSON，不定义最小稳定 schema，`workflow` Skill、`workflow-feature` adapter、`status` Skill 和后续 bugfix/refactor adapter 之间的接口容易漂移。
+
+我的建议是：MVP 需要定义轻量 `nextAction` schema，但不引入复杂 DSL、条件表达式或自建 runtime。
+
+推荐最小字段：
+
+```json
+{
+  "taskType": "feature",
+  "taskId": "FEAT-20260629-001",
+  "adapter": "workflow-feature",
+  "currentStatus": "designing",
+  "currentStage": "businessDesign",
+  "nextAction": {
+    "kind": "run_skill",
+    "skill": "feature-design-business",
+    "agent": "sa",
+    "reason": "businessDesign is not started",
+    "expectedInputs": [],
+    "expectedOutputs": [
+      "artifacts/business-design.md"
+    ],
+    "afterCompletion": [
+      "feature-review business-design"
+    ]
+  },
+  "requiresHumanInput": false,
+  "humanPrompt": null,
+  "guards": [
+    "active_task_exists",
+    "stage_not_human_approved"
+  ],
+  "stateEffects": {
+    "allowed": [
+      "stages.businessDesign.status -> drafted"
+    ],
+    "forbidden": [
+      "state.status -> approved_for_implementation"
+    ]
+  },
+  "onFailure": {
+    "statePolicy": "keep_current_state",
+    "recordTo": [
+      "reviews/business-design/se-review.md",
+      "decisions/business-design-decisions.md"
+    ]
+  }
+}
+```
+
+MVP 支持的 `nextAction.kind`：
+
+- `run_skill`：workflow 调用某个 Skill/Agent。
+- `human_confirm`：暂停等待人工确认。
+- `show_status`：只展示状态，不推进。
+- `blocked`：展示阻塞原因和恢复建议。
+- `completed`：展示完成态。
+
+边界规则：
+
+- schema 只描述下一步动作，不直接执行动作。
+- `stateEffects` 只是声明允许/禁止的状态影响，最终仍由 Skill + Hook/scripts 校验。
+- `afterCompletion` 是建议的后续动作，不允许绕过 workflow 再次判断。
+- 不引入复杂 DSL、条件表达式或自建 runtime。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+workflow adapter 必须输出稳定的最小 `nextAction` schema：
+
+- `workflow` Skill、taskType adapter、`status` Skill 和后续 taskType adapter 共享同一接口契约。
+- MVP 只支持 `run_skill`、`human_confirm`、`show_status`、`blocked`、`completed` 五类 next action。
+- adapter 只计算和描述下一步动作，不执行动作、不生成正文、不替代 Skill/Agent/Human。
+- `stateEffects`、`guards`、`onFailure` 用于表达准入、状态影响边界和失败策略，最终仍由 Skill、scripts 和 Hook 做确定性校验。
+
+## Q118：status 是否需要独立 taskType adapter？
+
+**我的问题**
+
+我提出 `status` 也可以按 taskType adapter 展示，例如新增 `status-feature` Skill 或 `scripts/statuses/feature-status.js`。你提醒需要用奥卡姆剃刀原则设计，不要过度设计，应继续围绕最开始端到端方案走查识别的问题解决。
+
+我的修正判断是：MVP 不需要独立 status adapter。当前只有 feature workflow 是完整闭环，`status` 只读展示，不推进流程，没必要提前抽象出 status adapter 层。
+
+推荐策略：
+
+```text
+/scc-dev-sphere:status
+  -> 读取 current-task.json
+  -> 读取 state.json
+  -> taskType=feature 时展示 feature 状态摘要
+  -> 其他 taskType 暂时提示“未实现完整 workflow”
+```
+
+feature status 最小展示：
+
+- taskId / taskType / workflowMode / status。
+- `businessDesign` / `solutionDesign` / `implementationDesign` / `testDesign` 阶段状态。
+- 未关闭 blocking 数量。
+- 待人工确认的 advisory / risk_candidate / assumption。
+- 是否已有 design final approval。
+- 是否已有 implementation plan。
+- repo 是否绑定。
+- 当前 nextAction 摘要。
+
+边界规则：
+
+- `status` 不修改文件。
+- `status` 不推进状态。
+- `status` 可以调用 workflow resolver 只读计算 nextAction，但不能执行。
+- 不新增 `status-feature` Skill，不新增 status adapter 目录。
+- 等第二个 taskType 真正进入实现时，再评估是否抽出 status adapter。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 保持 `status` 轻量化：
+
+- `/scc-dev-sphere:status` 是统一只读状态入口。
+- MVP 内部只针对 `taskType=feature` 做 feature 状态摘要展示。
+- `status` 可只读复用 workflow resolver 的 `nextAction`，但不得执行动作或推进状态。
+- 不提前新增独立 status adapter；等第二个 taskType 真正实现时再抽象。
+
+## Q119：阶段 Skill 参数是否统一使用显式参数和结构化 args？
+
+**我的问题**
+
+在讨论 feature next-step decision table 时，我写了 `feature-review business-design` 和 `"afterCompletion": ["feature-review business-design"]`。你指出：当前 Skill 设计中是否支持这种用法并不清楚。这个质疑是正确的。
+
+当前设计已经明确：Claude Code plugin skill 命令名不使用空格子命令；空格后的内容只能理解为传给 Skill 的参数，而不是命令名的一部分。为了避免误解，阶段 Skill 参数应统一使用显式参数格式，workflow nextAction 中也不应把参数拼进命令字符串。
+
+推荐策略：
+
+- 不使用空格子命令表达语义。
+- 阶段评审目标统一使用显式参数：
+
+```text
+/scc-dev-sphere:feature-review --target business-design
+/scc-dev-sphere:feature-review --target solution-design
+/scc-dev-sphere:feature-review --target implementation-design
+/scc-dev-sphere:feature-review --target test-design
+/scc-dev-sphere:feature-review --target integrated-design
+```
+
+- 阶段设计修订继续使用：
+
+```text
+/scc-dev-sphere:feature-design-solution --mode revise
+```
+
+- workflow nextAction 里 Skill 调用必须拆成结构化字段：
+
+```json
+{
+  "skill": "feature-review",
+  "args": {
+    "target": "business-design"
+  }
+}
+```
+
+而不是：
+
+```json
+{
+  "skill": "feature-review --target business-design"
+}
+```
+
+或：
+
+```json
+{
+  "skill": "feature-review business-design"
+}
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+阶段 Skill 参数统一采用显式参数和结构化 args：
+
+- 用户显式调用时使用 `--target`、`--mode` 等长参数。
+- `feature-review` 通过 `--target <artifact>` 指定评审对象。
+- workflow nextAction 中 `skill` 只保存 Skill 名，参数保存到 `args` 对象。
+- `afterCompletion` 不再保存命令字符串；如需表达后续建议动作，也使用结构化对象。
+- 后续 feature decision table 必须使用该参数规范。
+
+## Q120：feature-review 的评审 Agent 应由谁指定？
+
+**我的问题**
+
+在继续设计 feature next-step decision table 时，我提出在 `feature-review` 的参数中传入 `reviewers` 或 `reviewer`。你指出这和预期冲突：`feature-review` 的使用者是 Agent，Agent 的职责视角不应该通过 Skill 参数模拟。
+
+我的修正判断是：这个质疑是正确的。`feature-review` 参数只应表达“评审哪份设计文档”，评审视角来自执行该 Skill 的 Agent 本身。workflow / feature adapter 负责根据 review matrix 决定调度哪些 Agent。
+
+正确边界：
+
+```text
+workflow 决定调用哪个 Agent
+Agent 加载 feature-review Skill
+feature-review Skill 根据当前 Agent 职责视角执行评审
+```
+
+因此：
+
+- `feature-review` 参数只保留 `--target <artifact>`。
+- 不设计 `--reviewer` 参数。
+- reviewer 阵容由 workflow / feature adapter 根据基础评审矩阵 + 风险增强规则计算。
+- workflow 通过 `agentExecutions[]` 指定哪些 Agent 执行同一个 `feature-review` Skill。
+- Skill 不负责选择 Agent，也不通过参数模拟 Agent 身份。
+
+nextAction 示例：
+
+```json
+{
+  "kind": "run_skill",
+  "skill": "feature-review",
+  "mode": "multi_agent",
+  "agentExecutions": [
+    {
+      "agent": "sa",
+      "args": {
+        "target": "solution-design"
+      },
+      "expectedOutput": "reviews/solution-design/sa-review.md"
+    },
+    {
+      "agent": "mde",
+      "args": {
+        "target": "solution-design"
+      },
+      "expectedOutput": "reviews/solution-design/mde-review.md"
+    },
+    {
+      "agent": "tse",
+      "args": {
+        "target": "solution-design"
+      },
+      "expectedOutput": "reviews/solution-design/tse-review.md"
+    }
+  ],
+  "reviewMatrixRef": "reviews/review-matrix.json"
+}
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`feature-review` 不接收 `reviewer` 参数：
+
+- Agent 由 workflow / feature adapter 调度。
+- Agent 职责视角来自 Agent 自身定义。
+- `feature-review` 只消费 `target` 参数，表示被评审的设计产物。
+- 多 Agent 评审通过 `nextAction.agentExecutions[]` 表达。
+- 该设计保持“Agent 决定职责视角，Skill 决定执行方法”的边界。
+
+## Q121：Feature next-step decision table 的最小版本如何定义？
+
+**我的问题**
+
+在确认 workflow adapter、`nextAction` schema、阶段 Skill 参数规范，以及 `feature-review` 的 Agent 调度边界后，需要回到最核心的问题：feature adapter 在不同状态下到底如何选择下一步动作。
+
+我的建议是：定义最小 feature 决策表，只覆盖 MVP 主路径和必要异常，不做复杂分支 DSL。
+
+决策表：
+
+| 当前状态 / 条件 | workflow 下一步 | nextAction 形态 | 暂停点 | 关键产物 |
+|---|---|---|---|---|
+| 无 active task | 提示用户创建 feature task | `show_status` | 等待需求输入 | 无 |
+| `initialized` | 执行需求复杂度/风险评估 | `run_skill feature-assess` | 等待用户确认 `workflowMode` / `humanGateStages` | assessment、state |
+| `assessed` | 进入设计阶段，推进业务设计 | `run_skill feature-design-business`，`agent=sa` | 需求不完整时澄清 | `business-design.md` |
+| `designing` + `businessDesign` 未可用 | 生成/修订业务设计；完成后 SE 正式评审 | 先 `feature-design-business agent=sa`，后 `feature-review args.target=business-design agentExecutions=[se]` | strict/humanGate 命中时人工确认 | business artifact、SE review |
+| `businessDesign` 可用，`solutionDesign` 未可用 | 生成/修订方案设计；完成后 SA/MDE/TSE 正式评审 | 先 `feature-design-solution agent=se`，后 `feature-review args.target=solution-design agentExecutions=[sa,mde,tse]` | strict/humanGate 命中时人工确认 | solution artifact、reviews |
+| `solutionDesign` 可用，`implementationDesign` 未可用 | 生成/修订实现设计；完成后 SE/DEV/TSE 正式评审 | 先 `feature-design-implementation agent=mde`，后 `feature-review args.target=implementation-design agentExecutions=[se,dev,tse]` | strict/humanGate 命中时人工确认 | implementation artifact、reviews |
+| `solutionDesign` 可用，`testDesign` 未可用 | 生成/修订测试设计；完成后 SA/SE/MDE 正式评审 | 先 `feature-design-test agent=tse`，后 `feature-review args.target=test-design agentExecutions=[sa,se,mde]` | strict/humanGate 命中时人工确认 | test artifact、reviews |
+| 四个阶段都可用，但无 `integrated-design.md` 或集成评审未通过 | 生成/刷新 integrated design；执行集成一致性评审 | `feature-design` 的 integrated 生成动作；后 `feature-review args.target=integrated-design agentExecutions=[sa,se,mde,tse]` | blocking/advisory/risk/assumption 待处理时暂停 | integrated design、integrated review |
+| 所有阶段评审和集成评审通过，advisory/risk/assumption 均处理完成 | 进入 `design_ready` | `show_status` + scripts/hooks 同步 | 无 | state 更新 |
+| `design_ready` | 发起最终设计批准 | `run_skill feature-approve` | 等待人工最终批准 | `design-final-approval.json` |
+| `approved_for_implementation` | 生成开发执行计划 | `run_skill feature-plan-implementation agent=dev` | 高风险/strict 时等待计划批准 | implementation plan |
+| `implementation_planned` | 发起代码落地 | `run_skill feature-implement agent=dev` | 首次修改代码前动作级确认 | implementation log、代码变更 |
+| `implementing` | 继续实现、修复、补测试；完成后进入验证闸口 | `run_skill feature-implement agent=dev` | 范围越界时暂停并回到计划/设计 | code changes、tests |
+| `verification_ready` | 执行验证并生成转测包 | `run_skill feature-verify`，默认 DEV 执行，必要时 TSE 视角补充转测建议 | 验证失败且需人工接受风险时暂停 | verification result、test handoff |
+| `completed` | 展示完成状态，不推进 | `completed` | 无 | 完成摘要 |
+| `blocked` | 展示阻塞原因和恢复建议，不推进 | `blocked` | 等待人工处理 | blocked reason |
+
+可用状态规则：
+
+- `auto-design`：阶段达到 `ai_review_passed`。
+- `collaborative-design`：未列入 `humanGateStages` 的阶段达到 `ai_review_passed`；列入的阶段达到 `human_approved`。
+- `strict-human-loop`：阶段达到 `human_approved`。
+
+必要异常规则：
+
+- 如果 review 有 blocking：nextAction 回到对应设计 Agent 修订。
+- 如果存在 advisory 未确认：nextAction 变为 `human_confirm`，要求人工选择 `apply / no_change / convert_to_blocking`。
+- 如果存在 risk_candidate：nextAction 变为 `human_confirm`，要求人工决定是否转 `accepted_risk` 或回到设计修订。
+- 如果存在 assumption 未确认：nextAction 变为 `human_confirm` 或需求澄清。
+- 如果知识查询不足但产物声明了存量事实：nextAction 回到对应设计阶段补 evidence。
+- 如果命中 CIE 风险：review matrix 追加 CIE，相关 review 的 `agentExecutions[]` 增加 `cie`。
+- 如果代码修改范围超出批准范围：停止实现，回到设计修订或开发计划修订。
+
+MVP 边界：
+
+- workflow 每次只推进一个最小下一步，不跨多个高风险阶段。
+- implementation/test 依赖上允许部分并行，但 MVP 顺序推进：先 implementationDesign，再 testDesign。
+- 所有状态同步仍由 scripts/hooks 做确定性校验。
+- 这张表是 `scripts/workflows/feature-workflow.js` 的 resolver 规则，不是新状态机。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 接受最小 feature decision table，作为 feature workflow adapter 的实现依据：
+
+- feature adapter 只覆盖 MVP 主路径和必要异常。
+- workflow 每次只推进一个最小 nextAction。
+- 多 Agent review 通过 `agentExecutions[]` 表达。
+- implementationDesign 和 testDesign 在 MVP 中顺序推进，不做真实并行调度。
+- 该决策表不新增状态机，只把已有状态机的 feature 调度规则显式化。
