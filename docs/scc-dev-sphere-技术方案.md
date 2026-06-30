@@ -5,7 +5,7 @@
 `scc-dev-sphere` 作为 Claude Code plugin 实现，不自建 Agent runtime。插件通过 Claude Code 原生组件组合完成需求开发工作流：
 
 - `skills`：阶段命令和复用能力。
-- `agents/custom subagents`：SA、SE、MDE、DEV、TEST、CIE 等角色上下文，按需调用。
+- `agents/custom subagents`：SA、SE、MDE、DEV、TSE、CIE 等角色上下文，按需调用。
 - `hooks`：流程硬闸口。
 - `scripts`：确定性状态读写、校验、矩阵更新。
 - `mcpServers`：私域知识库接入预留。
@@ -64,7 +64,7 @@ scc-dev-sphere/
     se.md
     mde.md
     dev.md
-    test.md
+    tse.md
     cie.md
   hooks/
     pre-tool-use.json
@@ -446,8 +446,8 @@ reviews/
 
 ```text
 business-design -> SE
-solution-design -> SA、MDE、TEST
-implementation-design -> SE、DEV、TEST
+solution-design -> SA、MDE、TSE
+implementation-design -> SE、DEV、TSE
 test-design -> SA、SE、MDE
 ```
 
@@ -456,9 +456,9 @@ test-design -> SA、SE、MDE
 风险命中时追加评审者：
 
 - 部署、配置、流水线、环境、发布策略：CIE。
-- 安全、权限、审计：安全视角，MVP 可由 SE/TEST 兼任。
+- 安全、权限、审计：安全视角，MVP 可由 SE/TSE 兼任。
 - 性能、容量、稳定性：SE/MDE 性能视角。
-- 数据迁移或数据模型变更：MDE/DEV/TEST 数据影响检查。
+- 数据迁移或数据模型变更：MDE/DEV/TSE 数据影响检查。
 
 ### 8.3 review-matrix.json
 
@@ -466,7 +466,7 @@ test-design -> SA、SE、MDE
 {
   "artifacts": {
     "solution-design": {
-      "requiredReviewers": ["SA", "MDE", "TEST"],
+      "requiredReviewers": ["SA", "MDE", "TSE"],
       "status": "in_review",
       "issues": {
         "blocking": 1,
@@ -482,7 +482,7 @@ test-design -> SA、SE、MDE
           "status": "blocking",
           "file": "reviews/solution-design/mde-review.md"
         },
-        "TEST": {
+        "TSE": {
           "status": "passed_with_advice",
           "file": "reviews/solution-design/test-review.md"
         }
@@ -528,7 +528,7 @@ accepted_risk
     {
       "advisoryId": "ADV-001",
       "artifact": "solution-design",
-      "reviewer": "TEST",
+      "reviewer": "TSE",
       "sourceReview": "reviews/solution-design/test-review.md",
       "decision": "accept",
       "reason": "测试方案已覆盖该边界，暂不修改方案设计",
@@ -1003,7 +1003,7 @@ DEV 专项能力：
 - `frontend-development`：前端页面、组件、交互、状态管理、接口适配等变更。
 - `fullstack-change-planning`：前后端联动、接口契约、联调顺序和回归路径。
 
-### TEST
+### TSE
 
 - 测试设计。
 - 按需查询历史缺陷、测试规范、验收规则并保存 knowledge evidence。

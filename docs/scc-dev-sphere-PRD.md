@@ -20,7 +20,7 @@ MVP 聚焦 **需求从设计到代码落地**：
 - SE：软件系统设计师，关注系统方案、架构一致性、接口契约。
 - MDE：模块开发 Owner，关注模块实现方案、影响面、功能点拆解。
 - DEV：开发工程师，关注代码实现、本地验证、开发风险反馈；默认作为统一开发责任角色，按需启用前端/后端专项上下文。
-- TEST：测试工程师，关注测试策略、验收点、回归风险。
+- TSE：测试工程师，关注测试策略、验收点、回归风险。
 - CIE：构建、CI/CD、部署和环境管理，按风险触发参与。
 
 ## 3. MVP 范围
@@ -75,7 +75,7 @@ MVP 聚焦 **需求从设计到代码落地**：
 
 插件采用双层映射：
 
-- 外层保留 SA、SE、MDE、DEV、TEST、CIE 等团队熟悉的岗位语义。
+- 外层保留 SA、SE、MDE、DEV、TSE、CIE 等团队熟悉的岗位语义。
 - 内层按产物责任定义边界。
 
 Command/workflow 负责阶段推进，Skill 负责能力复用，Agent 负责角色视角，Hook 负责硬闸口。
@@ -86,7 +86,7 @@ Agent 与 Skill 的边界规则：
 Agent 决定职责视角，Skill 决定执行方法。
 ```
 
-同一个 Skill 可以被不同 Agent 加载，但输出必须体现 Agent 的职责视角。例如 DEV 使用评审 Skill 时关注可编码性、代码影响和开发风险；MDE 使用评审 Skill 时关注模块边界、实现拆解和技术一致性；TEST 使用评审 Skill 时关注可测性、验收标准和回归风险。MVP 不设计 Skill 权限矩阵。
+同一个 Skill 可以被不同 Agent 加载，但输出必须体现 Agent 的职责视角。例如 DEV 使用评审 Skill 时关注可编码性、代码影响和开发风险；MDE 使用评审 Skill 时关注模块边界、实现拆解和技术一致性；TSE 使用评审 Skill 时关注可测性、验收标准和回归风险。MVP 不设计 Skill 权限矩阵。
 
 ### 4.4 Hook 不是隐藏工作流引擎
 
@@ -164,14 +164,14 @@ AI 读取需求输入，输出：
 - `businessDesign`：SA 负责需求业务设计。
 - `solutionDesign`：SE 负责需求方案/系统方案设计。
 - `implementationDesign`：MDE 负责实现设计。
-- `testDesign`：TEST 负责测试设计。
+- `testDesign`：TSE 负责测试设计。
 
 各设计 Agent 在自己的阶段按需查询知识：
 
 - SA：查询业务流程、业务规则、历史需求。
 - SE：查询存量功能设计、架构规范、接口规范。
 - MDE：查询模块历史实现方案、代码结构、技术规范。
-- TEST：查询历史缺陷、测试规范、验收规则。
+- TSE：查询历史缺陷、测试规范、验收规则。
 - DEV：在代码落地阶段查询代码仓、开发规范、已有实现模式。
 
 查询到并实际使用的知识必须作为证据过程件保存到任务工作区。
@@ -206,7 +206,7 @@ feature 阶段状态由对应命令或确定性 Hook/脚本维护：没有产物
 设计阶段采用有依赖的部分并行：
 
 - 业务设计先完成，并经过 SE 评审闭环后稳定。
-- 方案设计在业务设计稳定后展开，并经过 SA、MDE、TEST 评审闭环。
+- 方案设计在业务设计稳定后展开，并经过 SA、MDE、TSE 评审闭环。
 - 在 `auto-design` 中，方案设计达到 `ai_review_passed` 后，实现设计和测试设计可以并行展开；在 `collaborative-design` 中，如果 `solutionDesign` 未列入 `humanGateStages`，达到 `ai_review_passed` 后即可并行展开，如果已列入则必须达到 `human_approved`；在 `strict-human-loop` 中，必须达到 `human_approved`。
 - `strict-human-loop` 不引入额外阶段状态，只提高阶段推进门槛：AI 正式评审通过后必须暂停等待人工确认；用户回复 `OK` 后进入 `human_approved`，用户反馈问题后回到或保持 `drafted`。
 - 实现设计和测试设计各自完成交叉评审和必要修订。
@@ -220,8 +220,8 @@ feature 阶段状态由对应命令或确定性 Hook/脚本维护：没有产物
 
 ```text
 business-design -> SE
-solution-design -> SA、MDE、TEST
-implementation-design -> SE、DEV、TEST
+solution-design -> SA、MDE、TSE
+implementation-design -> SE、DEV、TSE
 test-design -> SA、SE、MDE
 ```
 
@@ -230,8 +230,8 @@ test-design -> SA、SE、MDE
 评审发生在每个关键设计阶段之后：
 
 - `business-design review`：SE 评审业务设计质量。
-- `solution-design review`：SA、MDE、TEST 评审方案设计。
-- `implementation-design review`：SE、DEV、TEST 评审实现设计。
+- `solution-design review`：SA、MDE、TSE 评审方案设计。
+- `implementation-design review`：SE、DEV、TSE 评审实现设计。
 - `test-design review`：SA、SE、MDE 评审测试设计。
 - `integrated-design consistency review`：检查业务、方案、实现、测试之间的一致性。
 
