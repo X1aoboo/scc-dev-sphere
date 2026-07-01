@@ -4742,3 +4742,535 @@ MVP 接受最小 feature decision table，作为 feature workflow adapter 的实
 - 多 Agent review 通过 `agentExecutions[]` 表达。
 - implementationDesign 和 testDesign 在 MVP 中顺序推进，不做真实并行调度。
 - 该决策表不新增状态机，只把已有状态机的 feature 调度规则显式化。
+
+## Q122：workflow 编排链路中的 Skill 集成契约如何界定？
+
+**我的问题**
+
+workflow 需要稳定地调用 Skill、追踪产物并判断状态，但 Skill 自身可能承载不同形态的能力。若在插件设计中对 Skill 做固定分类，容易把插件编排边界和 Skill 自身设计边界混在一起。
+
+因此需要明确：workflow 编排链路只依赖可调用性、入参、产物和状态表达等集成信息，不对 Skill 自身能力形态做额外假设。
+
+建议决策：
+
+- `/workflow` 推进任务时，依赖集成契约识别可调用 Skill、传递参数、追踪产物、判断状态并生成下一步建议。
+- workflow adapter 调用 Skill 时，只依赖一组最小集成信息，不依赖 Skill 的能力分类。
+- 进入本插件 workflow 编排链路的 Skill，需要在自身说明中声明最小集成契约。
+- 最小集成契约包含：可调用入口或 Skill 名称、必要入参、主要产物路径或产物类型、完成 / 阻塞 / 失败 / 待确认的状态表达、是否允许返回 `nextAction`。
+- MVP 不新增 Skill 类型枚举，不要求所有 Skill 都有 Contract，不设计通用 Skill 标准。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+workflow 编排链路采用最小 Skill 集成契约：
+
+- workflow 只依赖可调用入口、必要入参、产物、状态表达和 `nextAction` 能力声明。
+- 只有需要被本插件 workflow 自动调用、状态识别、产物追踪的 Skill，才需要声明该契约。
+- Contract 是 workflow 集成边界，不替代 Skill 自身能力说明。
+- MVP 不引入 Skill 类型枚举、独立 contract 文件或通用 Skill 标准。
+
+## Q123：设计阶段完成后如何向 workflow 表达可进入正式评审？
+
+**我的问题**
+
+阶段设计 Skill 完成产物后，workflow 需要一个明确、稳定的交接信号来判断是否可以调度 `feature-review`。该信号只应解决“是否可评审、评审哪个产物”这一件事，不承载证据、假设、开放问题或下游失效判断。
+
+建议决策：
+
+- 不新增独立 `ready_for_review.json` 文件。
+- 阶段 Skill 完成后向 workflow 返回最小完成结果。
+- 完成结果只包含 `status`、`stage`、`artifact`、`reviewTarget` 四个字段。
+- `status` 只允许 `ready_for_review`、`needs_input`、`failed`。
+- `status=ready_for_review` 时，workflow 才能调度正式 `feature-review`。
+- `status=needs_input` 时，workflow 转为人工澄清或补充信息。
+- `status=failed` 时，workflow 展示失败原因，不推进状态。
+- evidence、assumption、open question 仍由设计产物正文、evidence 索引、decision 记录和 hooks 一致性检查处理。
+- 下游失效规则不放入完成信号，留到单独决策。
+
+最小示例：
+
+```json
+{
+  "status": "ready_for_review",
+  "stage": "businessDesign",
+  "artifact": "design/business-design.md",
+  "reviewTarget": "business-design"
+}
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+设计阶段完成信号采用最小结构：
+
+- 不落独立完成信号文件。
+- 只表达阶段、主产物、评审目标和完成状态。
+- workflow 只在 `ready_for_review` 时调度正式评审。
+- 其他过程信息继续由既有产物、索引、决策记录和 Hook 校验承担。
+
+**后续修正**
+
+Q126 已将 MVP 交互模型进一步收敛为“产物 + 状态驱动”。Q123 中的四字段完成信号不再作为 MVP 要求；workflow-feature 通过调用上下文、预期产物、`state.json` 和 review matrix 判断是否进入正式评审。
+
+## Q124：Skill 返回结果由谁解释并转成后续动作？
+
+**我的问题**
+
+阶段 Skill 返回的是本次执行结果，例如设计阶段是否可进入正式评审。该结果本身不应直接决定跨阶段流程，也不应由通用 `/workflow` 入口直接解释 feature 专属语义。
+
+需要明确 feature 场景下的责任链：Skill 只返回当前执行结果，`workflow-feature` / feature adapter 结合任务状态和过程件统一计算下一步 `nextAction`。
+
+建议决策：
+
+- Skill 只返回当前执行结果，不直接决定跨阶段 `nextAction`。
+- feature 场景下，`workflow-feature` / feature adapter 统一解释 Skill 返回结果。
+- `workflow-feature` 根据 `state.json`、阶段状态、review matrix、人工确认记录、批准记录和 Skill 返回结果计算下一步 `nextAction`。
+- Hook/scripts 只做确定性校验、登记和状态同步，不解释业务流程意图。
+- 通用 `/workflow` 只负责识别 `taskType` 并分发到对应 adapter，不直接解释 feature 专属返回结果。
+- 不要求所有 workflow 使用同一套 Skill 返回值；返回值契约以对应 workflow adapter 能消费为准。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+feature workflow 的后续动作由 `workflow-feature` / feature adapter 统一决策：
+
+- Skill 返回值是 adapter 的输入，不是跨阶段流程指令。
+- adapter 输出 `nextAction`，再由 `workflow` 执行或暂停。
+- scripts/hooks 校验 nextAction 对应的状态变更是否合法。
+- 后续 bugfix/refactor 等 workflow 可以定义自己的 Skill 返回值契约和 adapter 解释规则。
+
+**后续修正**
+
+Q126 将 Skill 返回值进一步降级为可选的轻量执行结果。MVP 中 workflow-feature 主要依据状态文件、过程产物和确定性索引判断下一步，不依赖复杂 Skill 返回消息协议。
+
+## Q125：`human_confirm` 的确认结果如何落盘和校验？
+
+**我的问题**
+
+`human_confirm` 是 workflow adapter 计算出来的暂停动作。用户确认后，需要有确定性落盘位置供 hooks/scripts 校验，但不应新增一套全局确认系统。
+
+建议决策：
+
+- `human_confirm` 不引入统一 `human-confirmation.json` 或全局确认注册表。
+- `human_confirm` 只描述本次需要确认什么、可选动作是什么、确认结果应写到哪里。
+- 最小字段为 `kind`、`confirmType`、`target`、`options`、`writeTo`。
+- workflow 负责展示确认项并收集用户选择。
+- 对应 Skill/script 负责把确认结果写入既有过程件。
+- hooks/scripts 只校验 `writeTo` 指向位置是否存在有效记录。
+- Hook 不得自动替用户选择确认结果。
+- 不新增任务状态。
+
+最小示例：
+
+```json
+{
+  "kind": "human_confirm",
+  "confirmType": "advisory",
+  "target": "ADV-001",
+  "options": ["apply", "no_change", "convert_to_blocking"],
+  "writeTo": "reviews/advisory-confirmation.json"
+}
+```
+
+落盘规则：
+
+- 阶段人工确认：更新对应 `stages.*.status=human_approved`，确认事实写入 `decisions/*-decisions.md` 或对应 review 明细。
+- `advisory`：写入 `reviews/advisory-confirmation.json`。
+- `risk_candidate`：人工接受后写入 `decisions/*-decisions.md`，并进入 `integrated-design.md` 风险汇总。
+- `assumption`：人工确认后写入 `decisions/*-decisions.md`。
+- 实现前确认：写入 implementation log，不新增 approval 文件或任务状态。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+`human_confirm` 是确认动作描述，不是新的确认存储模型：
+
+- 确认结果按类型写入既有过程件。
+- workflow adapter 负责生成确认动作。
+- workflow 负责呈现并收集用户选择。
+- Skill/script 负责写入结果。
+- hooks/scripts 负责确定性校验。
+- MVP 不新增全局 confirmation registry 或新任务状态。
+
+**后续修正**
+
+Q126 已取消 `human_confirm` 的统一 payload 字段要求。MVP 仅保留 `human_confirm` 作为 `nextAction.kind`，确认内容由具体场景生成，确认结果仍写入既有过程件。
+
+## Q126：MVP 是否将 workflow 与 Skill 的交互收敛为“产物 + 状态驱动”？
+
+**我的问题**
+
+继续为简单 Skill 调用工作流定义多个消息传输结构，会让 MVP 复杂度超过实际需要。对于 feature workflow，workflow 已经知道当前任务、阶段、预期产物和待调用 Skill，因此不需要让 Skill 再返回阶段、产物、评审目标等重复信息。
+
+建议将 MVP 收敛为：
+
+```text
+workflow-feature 读状态
+workflow-feature 决定调用哪个 Skill
+Skill 执行并生成或更新约定产物
+workflow-feature 通过状态文件和过程产物判断下一步
+hooks/scripts 做必要校验
+```
+
+建议决策：
+
+- workflow-feature 不依赖复杂 Skill 返回消息协议。
+- Skill 的核心职责是生成或更新约定产物。
+- workflow-feature 根据当前 task、当前阶段、预期产物、`state.json`、`review-matrix.json`、decision/approval 文件判断下一步。
+- Skill 执行结果最多只区分 `success`、`needs_input`、`failed`；不承载阶段、产物、reviewTarget 等 workflow 已知信息。
+- `human_confirm` 保留为 `nextAction.kind`，但不定义统一确认 payload；确认内容由具体场景生成，结果写入既有过程件。
+- 不新增 `ready_for_review` 消息结构。
+- 不新增 `invalidations.json`。
+- 不新增全局 confirmation registry。
+- 已评审/已批准产物修订后的下游处理，MVP 采用状态回退和重新评审/批准，不做复杂失效索引。
+
+**用户回复**
+
+同意，MVP 先简单设计。
+
+**阶段性结论**
+
+MVP 采用“产物 + 状态驱动”的 workflow/Skill 交互模型：
+
+- workflow-feature 是流程判断中心。
+- Skill 不返回跨阶段指令，也不承担消息协议编排职责。
+- 产物、状态文件、review matrix、decision/approval 文件是 workflow 判断下一步的主要依据。
+- hooks/scripts 只做确定性校验和状态同步。
+- Q123-Q125 中过细的完成信号和确认 payload 设计被该收敛决策覆盖。
+
+## Q127：workflow adapter 是否应该被设计成 Agent/Skill 执行器？
+
+**我的问题**
+
+对 PRD 和技术方案进行设计质量评审后，我指出一个核心边界风险：当前文档把 workflow adapter 写得像“脚本级 Agent/Skill 调度器”，例如 adapter 计算 `nextAction` 后，workflow 调用对应 Agent/Skill。这个表达容易虚构一个 Claude Code plugin 并不直接提供的 Agent runtime。
+
+我的判断是：
+
+```text
+feature-workflow.js = deterministic next-action resolver
+不是 executor，不是 scheduler，不是 runtime
+```
+
+也就是说，`scripts/workflows/feature-workflow.js` 输出的不是随便参考的建议，而是基于当前状态和过程件计算出的确定性下一步合法动作描述。但它只决定“下一步应该是什么”，不直接执行动作。
+
+更准确的边界：
+
+```text
+feature-workflow.js 决定 nextAction
+workflow Skill 读取 nextAction
+workflow Skill 在 Claude Code 会话中引导使用对应 Agent/Skill
+产物落盘后，scripts/hooks 校验执行结果和状态变更
+```
+
+因此文档应避免写：
+
+```text
+adapter 调用 Agent
+script 调用 Skill
+workflow 调度 Agent runtime
+```
+
+应改为：
+
+```text
+adapter 计算 nextAction
+workflow Skill 根据 nextAction 引导 Claude Code 会话使用对应 Agent/Skill
+agentExecutions[] 表示期望参与角色清单，不是脚本级调度计划
+scripts/hooks 校验产物、状态和批准记录
+```
+
+**用户回复**
+
+同意。用户进一步确认：脚本执行是确定性动作，因此“建议”一词容易误导。这里的准确含义是确定性的下一步决议描述，而不是随意建议；但脚本仍不直接调用 Agent/Skill 或生成业务产物。
+
+**阶段性结论**
+
+正式设计收敛为：
+
+- `feature-workflow.js` 是 deterministic next-action resolver。
+- `nextAction` 是确定性下一步合法动作描述，不是执行指令队列。
+- adapter/script 不直接调用 Agent，不直接调用 Skill，不生成设计正文，不修改业务产物。
+- `workflow` Skill 根据 `nextAction` 在 Claude Code 会话中引导使用对应 Agent/Skill。
+- `agentExecutions[]` 若保留，只表示期望参与的 Agent/角色清单，不是脚本级调度计划。
+- scripts/hooks 只做确定性校验、登记和状态同步。
+
+## Q128：`nextAction` schema 是否需要从执行 DSL 收敛成最小动作描述？
+
+**我的问题**
+
+在完成 Q127 后，继续评审发现 `nextAction` schema 仍然过重。虽然文档说它不是 DSL，但字段已经包含：
+
+```text
+afterCompletion
+stateEffects
+onFailure
+guards
+requiresHumanInput
+humanPrompt
+agentExecutions[]
+```
+
+这些字段会让实现者以为 MVP 需要实现 guard 表达式系统、状态影响解释器、链式执行器、失败恢复策略和 Agent 调度计划。这个方向和“Claude Code 插件 + 奥卡姆剃刀 + MVP”冲突。
+
+我的建议是把 `nextAction` 裁剪成确定性下一步动作描述，只保留：
+
+```text
+kind
+taskType
+taskId
+status
+stage
+target
+skill
+args
+agents[]
+reason
+requiredArtifacts
+expectedArtifacts
+pause
+```
+
+含义是：
+
+- 下一步是什么。
+- 为什么。
+- 面向哪个阶段/产物。
+- 建议使用哪个 Skill。
+- 期望哪些 Agent 视角。
+- 需要哪些已有产物。
+- 完成后应出现哪些产物。
+- 是否需要暂停等待人工确认。
+
+明确删除或降级：
+
+- 删除 `afterCompletion`：后续动作必须重新调用 resolver 计算。
+- 删除 `stateEffects`：状态变化由状态机、scripts 和 Hook 校验。
+- 删除 `onFailure`：失败后回到 resolver，根据当前状态和错误记录重新计算。
+- 删除 `guards`：guard 是 resolver/hook 内部实现，必要时写入 `reason`。
+- 删除 `requiresHumanInput`：`kind=human_confirm` 已表达。
+- 删除顶层 `humanPrompt`：改为 `pause.prompt`。
+- 删除 `agentExecutions[]`：统一使用 `agents[]` 表达期望参与角色清单。
+- `expectedInputs` 改为 `requiredArtifacts`，更贴合“产物 + 状态驱动”。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP `nextAction` schema 收敛为最小动作描述，不再承担执行 DSL 职责：
+
+- `nextAction` 不描述链式执行、状态影响、guard 规则或失败恢复策略。
+- `agents[]` 只表达期望 Agent/角色视角，不是调度计划。
+- 人工确认通过 `kind=human_confirm` 和 `pause` 表达。
+- 后续动作、失败恢复和状态推进都必须重新经过 resolver、scripts 和 Hook 的确定性判断。
+
+## Q129：`success / needs_input / failed` 是否应作为稳定 Skill 返回契约？
+
+**我的问题**
+
+继续评审后，我指出一个边界问题：Claude Code Skill 不是函数、RPC 或工具接口，而是模型可加载的能力说明。虽然可以在 `SKILL.md` 中要求模型按格式表达执行结果，例如 `success`、`needs_input`、`failed`，但该表达不能当作稳定机器协议。
+
+如果 workflow 推进依赖 Skill 声称自己成功，会很脆：
+
+- 模型可能漏写。
+- 模型可能改写格式。
+- 模型可能把结果混在自然语言里。
+- 模型可能声称成功但产物缺失或结构不合格。
+
+建议原则：
+
+```text
+不要信 Skill 声称自己成功。
+只信产物和脚本校验结果。
+```
+
+具体边界：
+
+- Skill 说 `success`：只能作为提示；预期产物存在、格式正确、状态转移合法，才算可推进。
+- Skill 说 `needs_input`：只能作为提示；产物中存在 open questions、missing info、未确认 assumption 或缺失 evidence 等可检查事实，才算需要人工输入。
+- Skill 说 `failed`：只能作为提示；没有生成预期产物、脚本校验失败或状态前置条件不满足，才算失败。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 不实现 Skill return protocol：
+
+- `success / needs_input / failed` 降级为会话提示约定。
+- workflow 推进必须以预期产物、状态文件、review matrix、decision/approval/evidence 索引和 scripts/hooks 校验结果为准。
+- 最小 Skill 集成契约只保留可调用入口、必要入参、主要产物路径或产物类型，以及可由脚本校验的完成标准。
+- Q126 中“Skill 执行结果最多只区分 `success / needs_input / failed`”的表述被本条覆盖。
+
+## Q130：`implementationDesign` 和 `testDesign` 是并行还是顺序推进？
+
+**我的问题**
+
+设计质量评审发现 PRD 和技术方案存在口径风险：
+
+- PRD 写方案设计稳定后，实现设计和测试设计可以并行展开。
+- 技术方案写 MVP 每次只推进一个 `nextAction`，先 `implementationDesign`，再 `testDesign`。
+
+这不是绝对矛盾，但如果不明确边界，实现者会误以为第一版要支持真实并行调度或 agent-team 编排。
+
+我的建议是区分：
+
+```text
+依赖模型：允许并行
+MVP 执行模型：顺序推进
+```
+
+含义：
+
+- 在依赖关系上，`implementationDesign` 和 `testDesign` 都可以在 `solutionDesign` 达到当前 workflow mode 要求的可用状态后开始。
+- TSE 不应该在设计逻辑上被迫等待 MDE 实现设计全部完成后才能起草测试设计。
+- 但 MVP `/workflow` 为降低实现复杂度，每次只推进一个最小 `nextAction`，固定先 `implementationDesign`，后 `testDesign`。
+- 这个顺序是 MVP 执行策略，不是设计依赖。
+- 后续如引入 agent-team 或并行 subagent 编排，再开放真实并行执行。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+正式设计统一为：
+
+- `implementationDesign` 和 `testDesign` 依赖上允许并行。
+- MVP `/workflow` 顺序推进：先 `implementationDesign`，后 `testDesign`。
+- 顺序推进不是设计依赖，仅是 MVP 执行策略。
+- 第一版不实现真实并行调度、复杂 subagent 并行或 agent-team 编排。
+
+## Q131：MVP 是否需要代码修改范围硬阻断和危险命令防护？
+
+**我的问题**
+
+针对 Hook 对 Bash / Edit / Write 等代码修改的守门能力，我原先建议区分文件编辑工具和 Bash 命令：文件编辑工具做路径级硬阻断，Bash 做风险分层、人工确认和后置 diff 校验。
+
+你进一步指出：MVP 先不做代码修改范围阻断，这个要求太严格，做不好会严重影响实际开发体验；危险命令防护也不用考虑，Claude Code 的安全沙箱已经提供对应能力。
+
+我的修正建议是进一步收敛：
+
+```text
+MVP 不做代码修改范围硬阻断。
+MVP 不做危险命令防护。
+MVP 只做流程准入、人工确认、过程记录和实现后 diff 摘要。
+```
+
+边界：
+
+- Claude Code 自身负责通用安全、危险命令确认、沙箱和工具权限。
+- `scc-dev-sphere` 只负责需求开发流程语义。
+- 插件必须阻止未完成最终设计批准、开发执行计划和首次实现确认的任务通过插件流程进入代码落地。
+- 插件不承诺阻止所有通用文件编辑、Bash 命令或代码范围越界修改。
+- 代码落地完成前，`feature-implement` 必须生成 diff summary。
+- 如果 diff summary 发现明显偏离开发执行计划的文件或模块，只提示人工确认并写入 implementation log，不作为修改前 Hook 阻断条件。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP Hook 不做通用命令安全、不做危险命令防护、不做代码修改范围硬阻断：
+
+- `UserPromptExpansion` 仍可用于高风险 Skill 的流程准入检查，例如 approve / implement / revise 的状态前置条件。
+- `PreToolUse` / `PermissionRequest` 不用于代码范围或危险命令防护；仅在需要时作为流程状态推进前的辅助校验。
+- `PostToolUse` 只用于登记、状态同步、实现后 diff 摘要、偏差提示和一致性复核。
+- `feature-implement` 首次代码落地前仍必须人工确认。
+- 实现后明显范围偏差写入 implementation log，由人工确认是否继续。
+
+## Q132：MVP 是否需要独立的 `workflow-feature` Skill？
+
+**我的问题**
+
+在继续按奥卡姆剃刀原则走查 PRD 和技术方案时，我发现 Q116 中提出的 `skills/workflow-feature/SKILL.md` 已经和后续确认的边界产生重叠：
+
+- `skills/workflow/SKILL.md` 已经是统一 workflow 用户入口。
+- `scripts/devsphere-workflow.js` 已经负责读取当前任务、加载状态、校验路径并按 `taskType` 分发。
+- `scripts/workflows/feature-workflow.js` 已经负责 feature 专属的确定性 nextAction 计算。
+
+如果 MVP 再新增一个 `workflow-feature` Skill，会形成一层不清晰的中间编排：
+
+```text
+workflow Skill
+  -> workflow-feature Skill
+  -> feature-workflow.js
+```
+
+这层既不生成产物，也不提供新的人工闸口，还容易让实现者误以为 Claude Code plugin 存在一个独立的 workflow runtime 或 Skill 调度层。
+
+我的建议是：
+
+```text
+MVP 删除/暂缓 skills/workflow-feature/
+保留 workflow Skill 作为唯一 workflow 用户入口
+保留 feature-workflow.js 作为 feature 专属 resolver
+```
+
+后续 bugfix、refactor、performance 等任务类型优先新增自己的 resolver 脚本，例如 `scripts/workflows/bugfix-workflow.js`。只有当某类 workflow 需要大量专属提示词、独特协作语言或明显不同的人机交互模式时，才考虑新增独立 workflow Skill。
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+MVP 不实现独立 `workflow-feature` Skill：
+
+- `skills/workflow/SKILL.md` 是唯一 workflow 入口。
+- `scripts/devsphere-workflow.js` 是通用确定性 workflow 工具。
+- `scripts/workflows/feature-workflow.js` 是 feature 专属 deterministic next-action resolver。
+- resolver 只计算 `nextAction`，不生成正文、不调用 Agent、不调用 Skill、不修改过程产物。
+- `workflow` Skill 根据 `nextAction` 在 Claude Code 会话中引导对应 Agent/Skill 或暂停等待人工确认。
+- 后续新增 taskType 时优先新增 resolver 脚本，不提前复制 `workflow-<type>` Skill。
+
+## Q133：文档中的 `/scc-dev-sphere:*` 入口应称为命令还是 Skill 调用？
+
+**我的问题**
+
+冻结前校验时我指出一个术语风险：当前文档大量使用“命令入口”“阶段命令”等表述，同时插件结构只设计了 `skills/<skill-name>/SKILL.md`，没有 `commands/` 目录。由于 Claude Code 中 `commands/` 和 `skills/` 有不同机制，如果继续混用“命令”这个词，后续实现者可能误以为 MVP 需要同时实现两套入口：
+
+```text
+commands/*.md
+skills/*/SKILL.md
+```
+
+你的判断是：既然 Claude Code 中 commands 有特定功能映射，文档中的表述应和 Claude Code 文档保持一致，改为技能调用更合适。
+
+我的修正建议是：
+
+```text
+MVP 不使用 Claude Code 的 commands/ 目录。
+/scc-dev-sphere:* 这类入口称为 Skill 入口或显式 Skill 调用。
+“命令”只保留给测试命令、验证命令、shell 命令、危险命令等真实 command 语境。
+```
+
+**用户回复**
+
+同意。
+
+**阶段性结论**
+
+正式文档统一采用以下口径：
+
+- MVP 不使用 Claude Code 的 `commands/` 目录。
+- 用户可显式调用的插件入口全部来自 `skills/<skill-name>/SKILL.md` 暴露的 slash-callable Skill。
+- `/scc-dev-sphere:feature-init`、`/scc-dev-sphere:workflow` 等称为 Skill 入口或显式 Skill 调用。
+- `workflow` 不调用 commands，而是根据 `nextAction` 在 Claude Code 会话中引导使用对应 Agent/Skill。
+- 文档不再使用“阶段命令”“命令入口”“推荐命令”描述插件 Skill 入口。
+- “命令”一词只保留在测试命令、验证命令、shell/Bash 命令、危险命令、安全命令等真实 command 语境。
