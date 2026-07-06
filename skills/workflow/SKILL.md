@@ -122,18 +122,49 @@ resolver 会：
 
 #### `human_confirm`
 
-展示：
+展示确认信息：
+
 ```
 ⏸️ **需要人工确认**
 
 **任务:** {nextAction.taskId}
 **阶段:** {nextAction.stage}
 {pause.prompt if nextAction.pause}
-
-请回复以继续。
 ```
 
-等待用户回复后再继续。
+根据 `nextAction.pause` 内容动态选择 AskUserQuestion 模式（遵循 `references/interaction-guidelines.md`）：
+
+**模式选择逻辑：**
+- 如果 pause 内容是确认/取消类决策（如"是否批准？"、"确认继续？"）→ 使用 **`confirm_gate`** 模式
+- 如果 pause 内容是多选项决策（如"选择处理方式"、"选择下一个阶段"）→ 使用 **`single_select`** 模式
+- 如果 pause 内容需要从非互斥项中选择多项 → 使用 **`multi_select`** 模式
+
+**AskUserQuestion 构造示例：**
+
+**confirm_gate 模式：**
+```
+header: "人工确认"
+question: "{pause.prompt}"
+options:
+  - label: "✅ 确认继续"
+    description: "确认后继续执行当前操作"
+  - label: "⏸️ 暂不继续"
+    description: "有顾虑需输入说明，请选择 Other"
+multiSelect: false
+```
+
+**single_select 模式：**
+```
+header: "选项决策"
+question: "{pause.prompt}"
+options:
+  - （根据 pause 内容动态构造 2-4 个选项，推荐项排在首位）
+multiSelect: false
+```
+
+用户也可通过 AskUserQuestion 内置的 **Other** 选项自由输入自定义内容。
+
+等待用户选择或输入后再继续。
 
 #### `show_status`
 
