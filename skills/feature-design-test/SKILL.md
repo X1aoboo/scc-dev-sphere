@@ -1,44 +1,41 @@
 ---
 name: feature-design-test
-description: Test design phase. TSE agent produces test-design.md with test strategy, cases, data, environments, and regression scope. Queries test standards, historical defects, and regression scope.
+description: 测试设计阶段。TSE Agent 产出 test-design.md，包含测试策略、用例、数据、环境和回归范围。按需查询测试规范、历史缺陷和回归范围。
 ---
 
-# Feature Design — Test Design
+# Feature Design — 测试设计
 
-Execute the test design phase. The TSE agent produces `artifacts/test-design.md` with test strategy, cases, data, environments, and regression scope.
+执行测试设计阶段。TSE Agent 产出 `artifacts/test-design.md`。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:feature-design-test [--mode revise]`
-- **Inputs:** All upstream design artifacts, test knowledge base
-- **Outputs:** `artifacts/test-design.md`, evidence snapshots in `evidence/knowledge/`
-- **Completion criteria:** `test-design.md` written with all template sections filled, stage status updated to `drafted`
+- **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
+- **入参:** 方案设计、实现设计、测试规范查询
+- **输出:** `artifacts/test-design.md`、evidence 快照
+- **完成标准:** `test-design.md` 已写入，阶段状态更新为 `drafted`
 
-## Execution
+## 执行
 
-1. Load the TSE agent.
-2. Read upstream design artifacts (business, solution, implementation) and the test design template from `templates/artifacts/test-design.md`.
-3. Query knowledge base using `knowledge-query` skill for:
-   - Existing test standards and conventions
-   - Historical defect patterns and high-risk areas
-   - Regression test scope and coverage gaps
-   - Test environments and data requirements
-4. Generate `artifacts/test-design.md` following the template.
-5. Save all knowledge results actually used as evidence in `evidence/knowledge/EV-xxx-*.md`.
-6. Update `evidence/evidence-registry.json` with new entries.
-7. Mark unverified assumptions explicitly in the design document.
-8. Update `state.json` → `stages.testDesign.status = 'drafted'`.
+1. 加载 TSE Agent。
+2. 读取方案设计和实现设计获取测试上下文，读取测试设计模板 `templates/artifacts/test-design.md`。
+3. 使用 `knowledge-query` skill 查询：
+   - 历史缺陷记录和回归范围
+   - 测试规范和验收标准
+   - 已有测试资产和覆盖率缺口
+4. 按模板生成 `artifacts/test-design.md`。
+5. 保存 evidence 快照，更新 `evidence/evidence-registry.json`。
+6. 标记无证据前提为 `assumption`。
+7. 更新 `state.json` → `stages.testDesign.status = 'drafted'`。
 
-## Revise Mode (`--mode revise`)
+## 修订模式（`--mode revise`）
 
-If `testDesign` is `human_approved`, revision requires:
-1. Record revision reason in `decisions/test-design-decisions.md`.
-2. Document impact on verification and test execution phases.
-3. After revision, flag that re-review is required.
-4. Note that testDesign is the final design phase; no downstream design phases to reset.
+如果 `testDesign` 已 `human_approved`，修订需要：
+1. 在 `decisions/test-design-decisions.md` 中记录修订原因。
+2. 记录对验证和转测交付的影响。
+3. 标记需要重新评审。
 
-## Constraints
+## 约束
 
-- Only modify `artifacts/test-design.md` and `decisions/test-design-decisions.md`.
-- Do NOT modify other phase artifacts.
-- Every test strategy claim about existing test coverage MUST cite an evidence ID.
+- 只修改 `artifacts/test-design.md` 和 `decisions/test-design-decisions.md`。
+- 验收标准必须基于可验证的业务规则。
+- 回归范围建议必须引用 evidence ID 或决策记录。

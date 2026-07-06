@@ -1,44 +1,42 @@
 ---
 name: feature-design-implementation
-description: Implementation design phase. MDE agent produces implementation-design.md with module structure, call chains, code patterns, and technical details. Queries code repositories for existing implementation context.
+description: 实现设计阶段。MDE Agent 产出 implementation-design.md，包含模块结构、调用链、代码模式和技术细节。按需查询代码仓获取存量实现上下文。
 ---
 
-# Feature Design — Implementation Design
+# Feature Design — 实现设计
 
-Execute the implementation design phase. The MDE agent produces `artifacts/implementation-design.md` with module structure, call chains, code patterns, and technical details.
+执行实现设计阶段。MDE Agent 产出 `artifacts/implementation-design.md`。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:feature-design-implementation [--mode revise]`
-- **Inputs:** Solution design from `artifacts/solution-design.md`, code repository access
-- **Outputs:** `artifacts/implementation-design.md`, evidence snapshots in `evidence/knowledge/`
-- **Completion criteria:** `implementation-design.md` written with all template sections filled, stage status updated to `drafted`
+- **入口:** `/scc-dev-sphere:feature-design-implementation [--mode revise]`
+- **入参:** 方案设计（`artifacts/solution-design.md`）、代码仓查询
+- **输出:** `artifacts/implementation-design.md`、repository evidence 快照
+- **完成标准:** `implementation-design.md` 已写入，阶段状态更新为 `drafted`
 
-## Execution
+## 执行
 
-1. Load the MDE agent.
-2. Read `artifacts/solution-design.md` and the implementation design template from `templates/artifacts/implementation-design.md`.
-3. Query code repositories using `knowledge-query` skill for:
-   - Existing module structure and organization
-   - Relevant call chains and data flow paths
-   - Code patterns and conventions in use
-   - Existing interfaces and extension points
-4. Generate `artifacts/implementation-design.md` following the template.
-5. Save all code query results actually used as evidence in `evidence/knowledge/EV-xxx-*.md`.
-6. Update `evidence/evidence-registry.json` with new entries.
-7. Mark unverified assumptions explicitly in the design document.
-8. Update `state.json` → `stages.implementationDesign.status = 'drafted'`.
+1. 加载 MDE Agent。
+2. 读取 `artifacts/solution-design.md`，读取实现设计模板 `templates/artifacts/implementation-design.md`。
+3. 按需查询代码仓中的：
+   - 受影响的模块结构和现有实现
+   - 关键调用链和依赖图
+   - 已有实现模式和技术规范
+4. 按模板生成 `artifacts/implementation-design.md`。
+5. 保存 repository evidence（路径、符号、调用关系——不复制大段源码）。
+6. 标记无证据前提为 `assumption`。
+7. 更新 `state.json` → `stages.implementationDesign.status = 'drafted'`。
 
-## Revise Mode (`--mode revise`)
+## 修订模式（`--mode revise`）
 
-If `implementationDesign` is `human_approved`, revision requires:
-1. Record revision reason in `decisions/implementation-design-decisions.md`.
-2. Document impact on downstream phases (testDesign).
-3. After revision, reset downstream phase statuses to `drafted` if affected.
-4. Flag that re-review is required.
+如果 `implementationDesign` 已 `human_approved`，修订需要：
+1. 在 `decisions/implementation-design-decisions.md` 中记录修订原因。
+2. 记录对下游阶段（testDesign）和已实现代码的影响。
+3. 修订后重置受影响阶段状态。
+4. 标记需要重新评审。
 
-## Constraints
+## 约束
 
-- Only modify `artifacts/implementation-design.md` and `decisions/implementation-design-decisions.md`.
-- Do NOT modify other phase artifacts.
-- Every code-level claim about existing behavior MUST cite an evidence ID.
+- 只修改 `artifacts/implementation-design.md` 和 `decisions/implementation-design-decisions.md`。
+- 模块变更声明必须可追溯到 evidence ID 或 decision record。
+- 代码仓影响分析必须基于实际查询结果，不能凭空推测。

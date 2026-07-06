@@ -1,44 +1,42 @@
 ---
 name: feature-design-solution
-description: Solution design phase. SE agent produces solution-design.md defining architecture, component interaction, interfaces, data flow, and technology choices. Queries architecture specs and interface contracts.
+description: 方案设计阶段。SE Agent 产出 solution-design.md，定义架构方案、组件交互、接口契约、数据流和技术选型。按需查询架构规范和接口契约。
 ---
 
-# Feature Design — Solution Design
+# Feature Design — 方案设计
 
-Execute the solution design phase. The SE agent produces `artifacts/solution-design.md` defining architecture, component interaction, interfaces, data flow, and technology choices.
+执行方案设计阶段。SE Agent 产出 `artifacts/solution-design.md`。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:feature-design-solution [--mode revise]`
-- **Inputs:** Business design from `artifacts/business-design.md`, architecture knowledge
-- **Outputs:** `artifacts/solution-design.md`, evidence snapshots in `evidence/knowledge/`
-- **Completion criteria:** `solution-design.md` written with all template sections filled, stage status updated to `drafted`
+- **入口:** `/scc-dev-sphere:feature-design-solution [--mode revise]`
+- **入参:** 业务设计（`artifacts/business-design.md`）、架构规范查询
+- **输出:** `artifacts/solution-design.md`、evidence 快照
+- **完成标准:** `solution-design.md` 已写入且模板章节完整，阶段状态更新为 `drafted`
 
-## Execution
+## 执行
 
-1. Load the SE agent.
-2. Read `artifacts/business-design.md` and the solution design template from `templates/artifacts/solution-design.md`.
-3. Query knowledge base using `knowledge-query` skill for:
-   - Existing architecture specifications
-   - Interface contracts and API documentation
-   - Compatibility constraints and dependencies
-   - Non-functional requirements and SLAs
-4. Generate `artifacts/solution-design.md` following the template.
-5. Save all knowledge results actually used as evidence in `evidence/knowledge/EV-xxx-*.md`.
-6. Update `evidence/evidence-registry.json` with new entries.
-7. Mark unverified assumptions explicitly in the design document.
-8. Update `state.json` → `stages.solutionDesign.status = 'drafted'`.
+1. 加载 SE Agent。
+2. 读取 `artifacts/business-design.md` 获取业务上下文，读取方案设计模板 `templates/artifacts/solution-design.md`。
+3. 使用 `knowledge-query` skill 查询知识库中的：
+   - 存量架构规范和标准
+   - 接口契约和 API 文档
+   - 跨模块依赖和兼容性约束
+4. 按模板生成 `artifacts/solution-design.md`。
+5. 保存 evidence 快照，更新 `evidence/evidence-registry.json`。
+6. 标记无证据前提为 `assumption`。
+7. 更新 `state.json` → `stages.solutionDesign.status = 'drafted'`。
 
-## Revise Mode (`--mode revise`)
+## 修订模式（`--mode revise`）
 
-If `solutionDesign` is `human_approved`, revision requires:
-1. Record revision reason in `decisions/solution-design-decisions.md`.
-2. Document impact on downstream phases (implementationDesign, testDesign).
-3. After revision, reset downstream phase statuses to `drafted` if affected.
-4. Flag that re-review is required.
+如果 `solutionDesign` 已 `human_approved`，修订需要：
+1. 在 `decisions/solution-design-decisions.md` 中记录修订原因。
+2. 记录对下游阶段（implementationDesign、testDesign）的影响。
+3. 修订后重置受影响阶段状态。
+4. 标记需要重新评审。
 
-## Constraints
+## 约束
 
-- Only modify `artifacts/solution-design.md` and `decisions/solution-design-decisions.md`.
-- Do NOT modify other phase artifacts.
-- Every architectural decision MUST cite an evidence ID or be marked as an assumption.
+- 只修改 `artifacts/solution-design.md` 和 `decisions/solution-design-decisions.md`。
+- 不修改其他阶段的产物。
+- 接口契约和系统边界声明必须可追溯到 evidence 或 decision record。

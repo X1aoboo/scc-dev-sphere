@@ -1,43 +1,43 @@
 ---
 name: feature-design-business
-description: Business requirement design phase. SA agent analyzes requirements, defines business rules, scope, terminology, and exception flows. Query knowledge base for existing business context.
+description: 业务设计阶段。SA Agent 分析需求，定义业务规则、范围边界、术语和异常流程。按需查询知识库获取存量业务上下文。
 ---
 
-# Feature Design — Business Design
+# Feature Design — 业务设计
 
-Execute the business design phase. The SA agent analyzes requirements and produces `artifacts/business-design.md`.
+执行业务设计阶段。SA Agent 分析需求并产出 `artifacts/business-design.md`。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:feature-design-business [--mode revise]`
-- **Inputs:** Requirement from `inputs/requirement.md`, knowledge base queries
-- **Outputs:** `artifacts/business-design.md`, evidence snapshots in `evidence/knowledge/`
-- **Completion criteria:** `business-design.md` written with all template sections filled, stage status updated to `drafted`
+- **入口:** `/scc-dev-sphere:feature-design-business [--mode revise]`
+- **入参:** 需求输入（来自 `inputs/requirement.md`）、知识库查询
+- **输出:** `artifacts/business-design.md`、evidence 快照（在 `evidence/knowledge/`）
+- **完成标准:** `business-design.md` 已写入且模板章节完整，阶段状态更新为 `drafted`
 
-## Execution
+## 执行
 
-1. Load the SA agent.
-2. Read `inputs/requirement.md` and the business design template from `templates/artifacts/business-design.md`.
-3. Query knowledge base using `knowledge-query` skill for:
-   - Existing business rules for the affected domain
-   - Historical requirement designs
-   - Current system behavior documentation
-4. Generate `artifacts/business-design.md` following the template.
-5. Save all knowledge results actually used as evidence in `evidence/knowledge/EV-xxx-*.md`.
-6. Update `evidence/evidence-registry.json` with new entries.
-7. Mark unverified premises as `assumption` in the design document.
-8. Update `state.json` → `stages.businessDesign.status = 'drafted'`.
+1. 加载 SA Agent。
+2. 读取 `inputs/requirement.md` 和业务设计模板 `templates/artifacts/business-design.md`。
+3. 使用 `knowledge-query` skill 查询知识库中的：
+   - 受影响领域的存量业务规则
+   - 历史需求设计
+   - 当前系统行为文档
+4. 按模板生成 `artifacts/business-design.md`。
+5. 将所有实际使用的知识库结果保存为 evidence（`evidence/knowledge/EV-xxx-*.md`）。
+6. 更新 `evidence/evidence-registry.json` 添加新条目。
+7. 在 design 文档中将无证据前提标记为 `assumption`。
+8. 更新 `state.json` → `stages.businessDesign.status = 'drafted'`。
 
-## Revise Mode (`--mode revise`)
+## 修订模式（`--mode revise`）
 
-If `businessDesign` is `human_approved`, revision requires:
-1. Record revision reason in `decisions/business-design-decisions.md`.
-2. Document impact on downstream phases (solutionDesign, implementationDesign, testDesign).
-3. After revision, reset downstream phase statuses to `drafted` if affected.
-4. Flag that re-review is required.
+如果 `businessDesign` 已 `human_approved`，修订需要：
+1. 在 `decisions/business-design-decisions.md` 中记录修订原因。
+2. 记录对下游阶段（solutionDesign、implementationDesign、testDesign）的影响。
+3. 修订后，将受影响的下游阶段状态重置为 `drafted`。
+4. 标记需要重新评审。
 
-## Constraints
+## 约束
 
-- Only modify `artifacts/business-design.md` and `decisions/business-design-decisions.md`.
-- Do NOT modify other phase artifacts.
-- Every factual claim about existing business behavior MUST cite an evidence ID.
+- 只修改 `artifacts/business-design.md` 和 `decisions/business-design-decisions.md`。
+- 不修改其他阶段的产物。
+- 所有关于存量业务行为的结论必须引用 evidence ID。
