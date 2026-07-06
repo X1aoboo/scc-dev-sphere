@@ -1,50 +1,47 @@
 ---
 name: workflow
-description: Main workflow entry for scc-dev-sphere. Reads current task, computes next action, and guides agent/skill execution. Use to advance any active task.
+description: scc-dev-sphere 主编排入口。读取当前任务状态，计算下一步合法动作，引导对应 Agent/Skill 执行。用于推进任何活跃任务。
 ---
 
-# Workflow -- Main Orchestrator Entry
+# Workflow — 主编排入口
 
-You are the main workflow entry point for the scc-dev-sphere plugin. Your job is to read the current task state, compute the next legitimate action via the deterministic workflow resolver, and guide the user to execute it.
+你是 scc-dev-sphere 插件的主工作流入口。你的职责是读取持久化任务状态，通过确定性 workflow resolver 计算下一步合法动作，并引导用户执行。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:workflow [list|switch <task-id>]`
-- **Inputs:** Optional sub-action via `$ARGUMENTS`
-- **Outputs:** nextAction displayed to user
-- **Completion criteria:** nextAction computed and presented
+- **入口:** `/scc-dev-sphere:workflow [list|switch <task-id>]`
+- **入参:** 可选子动作通过 `$ARGUMENTS` 传入
+- **输出:** nextAction 展示给用户
+- **完成标准:** nextAction 计算并呈现
 
-## Execution Steps
+## 执行步骤
 
-### Step 1: Parse Arguments
+### 步骤1：解析参数
 
-Check `$ARGUMENTS`:
-- `list` -> List all tasks in `.devsphere/tasks/` and show their status
-- `switch <task-id>` -> Update `current-task.json` to point to the specified task
-- (empty) -> Compute next action for the current active task
+检查 `$ARGUMENTS`：
+- `list` → 列出 `.devsphere/tasks/` 下所有任务及其状态
+- `switch <task-id>` → 更新 `current-task.json` 指向指定任务
+- （空）→ 计算当前活跃任务的下一步动作
 
-### Step 2: Handle `list` Sub-Action
+### 步骤2：处理 `list` 子动作
 
-If `$ARGUMENTS` starts with `list`:
+如果 `$ARGUMENTS` 以 `list` 开头：
 
-List tasks manually by:
-1. Reading all subdirectories of `.devsphere/tasks/`
-2. For each task directory, reading its `state.json`
-3. Displaying the task ID, status, and stage for each
+1. 读取 `.devsphere/tasks/` 下的所有子目录
+2. 对每个任务目录，读取其 `state.json`
+3. 展示每个任务的 taskId、status 和当前阶段
 
-Format the output as a table or bulleted list showing task-id, status, and current stage.
+格式化输出为表格或列表。完成后终止。
 
-Stop here after displaying.
+### 步骤3：处理 `switch` 子动作
 
-### Step 3: Handle `switch` Sub-Action
+如果 `$ARGUMENTS` 以 `switch` 开头：
 
-If `$ARGUMENTS` starts with `switch`:
+提取 `<task-id>`（`switch` 之后的第二个词）。
 
-Extract the `<task-id>` from `$ARGUMENTS`. The task-id is the second word after `switch`.
+验证任务是否存在：检查 `.devsphere/tasks/<task-id>/state.json` 是否存在。如果不存在，显示错误并列出可用任务。
 
-Verify the task exists by checking that `.devsphere/tasks/<task-id>/state.json` exists. If it does not exist, display an error listing available tasks.
-
-To switch, write `.devsphere/current-task.json` with:
+切换时更新 `.devsphere/current-task.json`：
 ```json
 {
   "activeTaskId": "<task-id>",
@@ -53,125 +50,123 @@ To switch, write `.devsphere/current-task.json` with:
 }
 ```
 
-After switching, display:
+切换后显示：
 ```
-Switched to task: <task-id>
-Run /scc-dev-sphere:workflow to see the next action.
+已切换到任务: <task-id>
+运行 /scc-dev-sphere:workflow 查看下一步动作。
 ```
+完成后终止。
 
-Stop here after switching.
+### 步骤4：无活跃任务时
 
-### Step 4: If No Active Task
-
-If `.devsphere/current-task.json` does not exist or has no `activeTaskId` (check with `node scripts/devsphere-state.js read-current-task` or by reading the file directly), display:
+如果 `.devsphere/current-task.json` 不存在或缺少 `activeTaskId`，显示：
 
 ```
-No active task found. To create a feature task, use:
+未找到活跃任务。创建 feature 任务请使用：
   /scc-dev-sphere:feature-init
 
-To list existing tasks: /scc-dev-sphere:workflow list
-To switch tasks: /scc-dev-sphere:workflow switch <task-id>
+列出已有任务：/scc-dev-sphere:workflow list
+切换任务：    /scc-dev-sphere:workflow switch <task-id>
 ```
+终止。
 
-Stop here.
+### 步骤5：计算 nextAction
 
-### Step 5: Compute nextAction
-
-Run the deterministic workflow resolver:
+运行确定性 workflow resolver：
 
 ```bash
 node scripts/devsphere-workflow.js .
 ```
 
-The resolver will:
-1. Read `.devsphere/current-task.json`
-2. Identify `taskType`
-3. Load the appropriate resolver (MVP: `scripts/workflows/feature-workflow.js`)
-4. Output a `nextAction` JSON object to stdout
+resolver 会：
+1. 读取 `.devsphere/current-task.json`
+2. 识别 `taskType`
+3. 加载对应的 resolver（MVP：`scripts/workflows/feature-workflow.js`）
+4. 输出 `nextAction` JSON 到 stdout
 
-Parse the JSON output from stdout.
+解析 stdout 中的 JSON 输出。
 
-### Step 6: Present nextAction to User
+### 步骤6：向用户展示 nextAction
 
-Based on `nextAction.kind`:
+根据 `nextAction.kind`：
 
 #### `run_skill`
 
-Display:
+展示：
 ```
-Next Action: {nextAction.reason}
+📋 **下一步动作:** {nextAction.reason}
 
-Task: {nextAction.taskId}
-Status: {nextAction.status}
-Stage: {nextAction.stage || 'N/A'}
-Target: {nextAction.target || 'N/A'}
+**任务:** {nextAction.taskId}
+**状态:** {nextAction.status}
+**阶段:** {nextAction.stage || 'N/A'}
+**目标:** {nextAction.target || 'N/A'}
 
-Recommended Action:
+**建议动作:**
   Skill: /scc-dev-sphere:{nextAction.skill}
   Agent(s): {nextAction.agents.join(', ')}
 
-Required Artifacts:
+**需要的产物:**
 {nextAction.requiredArtifacts.map(a => '  - ' + a).join('\n')}
 
-Expected Outputs:
+**预期输出:**
 {nextAction.expectedArtifacts.map(a => '  - ' + a).join('\n')}
 ```
 
-Then guide the user to execute the recommended skill. For example:
-- If `skill=feature-design-business` and `agents=[sa]`: Invoke the SA agent and instruct it to execute the `feature-design-business` skill.
-- If `skill=feature-review` and `agents=[se]`: Invoke the SE agent with the `feature-review` skill and `--target` argument from `nextAction.args.target`.
+然后引导用户执行推荐的 skill。例如：
+- 如果 `skill=feature-design-business` 且 `agents=[sa]`：调用 SA Agent，指示其执行 `feature-design-business` skill。
+- 如果 `skill=feature-review` 且 `agents=[se]`：调用 SE Agent，使用 `feature-review` skill 及 `--target` 参数（来自 `nextAction.args.target`）。
 
-Use the Agent tool to invoke the recommended agent, passing the skill name and arguments as context.
+使用 Agent tool 调用推荐的 Agent，将 skill 名称和参数作为上下文传入。
 
-**IMPORTANT:** The workflow itself does NOT generate designs, run reviews, or modify state. It ONLY tells the user what to do next.
+**重要：** workflow 本身不生成设计、不执行评审、不修改状态。它只告诉用户下一步该做什么。
 
 #### `human_confirm`
 
-Display:
+展示：
 ```
-Human Confirmation Required
+⏸️ **需要人工确认**
 
-Task: {nextAction.taskId}
-Stage: {nextAction.stage}
+**任务:** {nextAction.taskId}
+**阶段:** {nextAction.stage}
 {pause.prompt if nextAction.pause}
 
-Please respond to proceed.
+请回复以继续。
 ```
 
-Wait for the user's response before continuing.
+等待用户回复后再继续。
 
 #### `show_status`
 
-Display the status information from `nextAction.reason`. Suggest checking `/scc-dev-sphere:status` for full details.
+展示 `nextAction.reason` 中的状态信息。建议使用 `/scc-dev-sphere:status` 查看完整详情。
 
 #### `blocked`
 
-Display:
+展示：
 ```
-Blocked
+🚫 **已阻塞**
 
 {nextAction.reason}
 
-To view full status: /scc-dev-sphere:status
+查看完整状态: /scc-dev-sphere:status
 ```
 
 #### `completed`
 
-Display:
+展示：
 ```
-Task Complete
+✅ **任务完成**
 
 {nextAction.reason}
 
-To view full status: /scc-dev-sphere:status
+查看完整状态: /scc-dev-sphere:status
 ```
 
-### Step 7: After User Acts
+### 步骤7：用户执行后
 
-After the user executes the recommended agent/skill, the corresponding skill will produce artifacts and update state. The next time `/scc-dev-sphere:workflow` is called, the resolver will compute the new next action based on updated state.
+用户执行推荐的 agent/skill 后，对应的 skill 会生成产物并更新状态。下次调用 `/scc-dev-sphere:workflow` 时，resolver 将基于更新后的持久化状态重新计算 nextAction。
 
-## Constraints
+## 约束
 
-- Workflow does NOT execute agent/skill actions directly -- it only recommends.
-- Workflow does NOT modify state files -- that is the responsibility of skills and hooks.
-- Workflow always re-computes nextAction from current persistent state (no caching between calls).
+- Workflow 不直接执行 agent/skill 动作 —— 只提供建议
+- Workflow 不修改状态文件 —— 这是 skill 和 hook 的职责
+- Workflow 始终从当前持久化状态重新计算 nextAction（不跨调用缓存）

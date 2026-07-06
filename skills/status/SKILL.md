@@ -1,78 +1,78 @@
 ---
 name: status
-description: Display current task status, phase progress, pending confirmations, blocking items, risks, and next action suggestion. Read-only — does not modify state.
+description: 展示当前任务状态、各阶段进度、待确认事项、阻塞项、风险项和下一步建议。只读 —— 不修改任何状态。
 ---
 
-# Status — Read-Only Status Display
+# Status — 只读状态查看
 
-Display a comprehensive status summary of the current active task. This skill is READ-ONLY — it never modifies files, advances state, or writes decisions.
+展示当前活跃任务的完整状态摘要。本 skill 是只读的 —— 绝不修改文件、推进状态或写入决策。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:status`
-- **Inputs:** None
-- **Outputs:** Status summary displayed to user
-- **Completion criteria:** Status displayed
+- **入口:** `/scc-dev-sphere:status`
+- **入参:** 无
+- **输出:** 状态摘要展示给用户
+- **完成标准:** 状态已展示
 
-## Execution Steps
+## 执行步骤
 
-### Step 1: Read Current Task
+### 步骤1：读取当前任务
 
-Read `.devsphere/current-task.json` from the workspace root. If no active task, display "No active task" and stop.
+从 workspace 根目录读取 `.devsphere/current-task.json`。如果无活跃任务，显示「无活跃任务」并终止。
 
-### Step 2: Read State
+### 步骤2：读取状态
 
-Read `state.json` from the task path specified in current-task.json.
+从 current-task.json 指定的任务路径读取 `state.json`。
 
-### Step 3: Read Review Matrix
+### 步骤3：读取评审矩阵
 
-Read `reviews/review-matrix.json` from the task path.
+从任务路径读取 `reviews/review-matrix.json`。
 
-### Step 4: Compute nextAction (Read-Only)
+### 步骤4：计算 nextAction（只读）
 
-Run `scripts/devsphere-workflow.js` to get the next action suggestion. This is for display only — do NOT act on it.
+运行 `scripts/devsphere-workflow.js` 获取下一步建议。仅用于展示 —— 不执行任何动作。
 
-### Step 5: Display Status Summary
+### 步骤5：展示状态摘要
 
-For `taskType=feature`, display:
+对于 `taskType=feature`，展示：
 
 ```
-#  Task Status: {taskId}
+# 📊 任务状态: {taskId}
 
-**Type:** feature
-**Workflow Mode:** {workflowMode}
-**Overall Status:** {status}
+**类型:** feature
+**工作流模式:** {workflowMode}
+**整体状态:** {status}
 
-## Design Phases
-| Phase | Status | Artifact |
+## 设计阶段
+| 阶段 | 状态 | 产物 |
 |-------|--------|----------|
-| Business Design | {businessDesign.status} | {businessDesign.artifact} |
-| Solution Design | {solutionDesign.status} | {solutionDesign.artifact} |
-| Implementation Design | {implementationDesign.status} | {implementationDesign.artifact} |
-| Test Design | {testDesign.status} | {testDesign.artifact} |
-| Integrated Design | {present/not present} | artifacts/integrated-design.md |
+| 业务设计 | {businessDesign.status} | {businessDesign.artifact} |
+| 方案设计 | {solutionDesign.status} | {solutionDesign.artifact} |
+| 实现设计 | {implementationDesign.status} | {implementationDesign.artifact} |
+| 测试设计 | {testDesign.status} | {testDesign.artifact} |
+| 集成设计 | {存在/不存在} | artifacts/integrated-design.md |
 
-## Review Status
-- Blocking Issues: {total blocking count}
-- Advisory Items Pending: {total advisory count} ({confirmed}/{total} confirmed)
-- Risk Candidates: {count}
+## 评审状态
+- 阻塞项: {total blocking count}
+- 建议项待确认: {total advisory count}（已确认 {confirmed}/{total}）
+- 风险候选项: {count}
 
-## Pending Human Actions
-{list of items requiring human confirmation}
+## 待人工处理
+{需要人工确认的事项列表}
 
-## Approvals
-- Design Final Approval: {present/not present}
-- Implementation Plan Approval: {present/not present}
+## 批准记录
+- 设计最终批准: {存在/不存在}
+- 实现计划批准: {存在/不存在}
 
-## Repo Binding
-{list bound repos or "Not yet bound"}
+## 代码仓绑定
+{已绑定的 repo 列表 或 "尚未绑定"}
 
-## Next Step
+## 下一步
 {nextAction.reason}
 ```
 
-For other taskType values, display: "Task type '{taskType}' status display is not yet implemented in MVP."
+对于其他 taskType，显示：「Task type '{taskType}' 的状态展示在 MVP 中尚未实现。」
 
-### Step 6: Conclude
+### 步骤6：结束
 
-After displaying status, suggest: "Use `/scc-dev-sphere:workflow` to advance to the next step."
+状态展示后建议：「使用 `/scc-dev-sphere:workflow` 推进到下一步。」
