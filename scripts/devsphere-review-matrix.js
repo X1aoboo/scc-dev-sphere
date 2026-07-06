@@ -31,9 +31,8 @@ function initMatrix(taskPath) {
   const matrix = { artifacts: {} };
 
   for (const [artifact, reviewers] of Object.entries(BASE_REVIEWERS)) {
-    if (artifact === 'integrated-design') continue; // only created after all phases
     matrix.artifacts[artifact] = {
-      requiredReviewers: reviewers.map(r => r.toUpperCase()),
+      requiredReviewers: reviewers,
       status: 'pending',
       issues: { blocking: 0, advisory: 0, risk_candidate: 0 },
       reviews: {},

@@ -98,6 +98,48 @@ function main() {
         process.stdout.write(JSON.stringify({ taskPath }));
         break;
       }
+      case 'sync-artifact': {
+        const workspaceRoot = args[1];
+        const current = readCurrentTask(workspaceRoot);
+        if (!current || !current.activeTaskId) {
+          process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
+          process.exit(0);
+        }
+        const taskPath = path.join(workspaceRoot, current.taskPath);
+        if (!taskPath) {
+          process.stdout.write(JSON.stringify({ synced: false, reason: 'Cannot resolve task path' }));
+          process.exit(0);
+        }
+        const state = readState(taskPath);
+        if (!state || !state.stages) {
+          process.stdout.write(JSON.stringify({ synced: false, reason: 'No stages in state' }));
+          process.exit(0);
+        }
+        const updates = [];
+        for (const [stageName, stageData] of Object.entries(state.stages)) {
+          if (stageData.artifact) {
+            const artifactPath = path.join(taskPath, stageData.artifact);
+            if (fs.existsSync(artifactPath)) {
+              const stat = fs.statSync(artifactPath);
+              updates.push({
+                stage: stageName,
+                artifact: stageData.artifact,
+                exists: true,
+                size: stat.size,
+                modified: stat.mtime.toISOString(),
+              });
+            } else {
+              updates.push({
+                stage: stageName,
+                artifact: stageData.artifact,
+                exists: false,
+              });
+            }
+          }
+        }
+        process.stdout.write(JSON.stringify({ synced: true, updates }));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);

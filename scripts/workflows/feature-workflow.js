@@ -125,9 +125,8 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
               { type: 'blocking_resolution', prompt: `Stage ${stageName} has unclosed blocking issues. Resolve blocking issues before continuing.` });
           }
           // No blocking but not ai_review_passed — needs review
-          const reviewers = getDesignReviewers(stageName);
           return makeAction('run_skill', state, stageName, artifactTarget,
-            getDesignSkill(stageName), { mode: 'revise' }, reviewers,
+            getDesignSkill(stageName), { mode: 'revise' }, [getDesignAgent(stageName)],
             `Stage ${stageName} requires re-review. Revise design and re-review.`,
             [stage.artifact], [stage.artifact]);
         }

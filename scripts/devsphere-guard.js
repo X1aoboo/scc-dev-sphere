@@ -118,9 +118,15 @@ function main() {
       case 'check-approve':
         result = checkApproveEntry(workspaceRoot);
         break;
-      case 'check-advance':
-        result = checkStateAdvance(args[1], args[2]);
+      case 'check-advance': {
+        const taskPath = getTaskPath(workspaceRoot);
+        if (!taskPath) {
+          result = { allowed: false, reason: 'Cannot resolve task path.' };
+          break;
+        }
+        result = checkStateAdvance(taskPath, args[2]);
         break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);

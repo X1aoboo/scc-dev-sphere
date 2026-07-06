@@ -27,11 +27,7 @@ Check `$ARGUMENTS`:
 
 If `$ARGUMENTS` starts with `list`:
 
-```bash
-node scripts/devsphere-state.js list-tasks
-```
-
-If the above command does not support `list-tasks`, list tasks manually by:
+List tasks manually by:
 1. Reading all subdirectories of `.devsphere/tasks/`
 2. For each task directory, reading its `state.json`
 3. Displaying the task ID, status, and stage for each
@@ -48,13 +44,7 @@ Extract the `<task-id>` from `$ARGUMENTS`. The task-id is the second word after 
 
 Verify the task exists by checking that `.devsphere/tasks/<task-id>/state.json` exists. If it does not exist, display an error listing available tasks.
 
-To switch, update `.devsphere/current-task.json`:
-
-```bash
-node scripts/devsphere-state.js switch <task-id>
-```
-
-If the above command does not support `switch`, write `.devsphere/current-task.json` manually with:
+To switch, write `.devsphere/current-task.json` with:
 ```json
 {
   "activeTaskId": "<task-id>",

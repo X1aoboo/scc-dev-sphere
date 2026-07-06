@@ -1,12 +1,21 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
+    "UserPromptExpansion": [
       {
-        "matcher": "",
+        "matcher": "/scc-dev-sphere:feature-implement",
         "hooks": [
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-implement \"${CLAUDE_PLUGIN_ROOT}/..\""
+          }
+        ]
+      },
+      {
+        "matcher": "/scc-dev-sphere:feature-approve",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-approve \"${CLAUDE_PLUGIN_ROOT}/..\""
           }
         ]
       }
