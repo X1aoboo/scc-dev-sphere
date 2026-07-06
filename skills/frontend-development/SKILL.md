@@ -1,28 +1,31 @@
 ---
 name: frontend-development
-description: Frontend development context — pages, components, interactions, state management, API adaptation. Use when implementation impacts frontend code.
+description: 前端开发上下文——页面、组件、交互、状态管理、API 适配。当实现涉及前端代码时使用。
 ---
 
-# Frontend Development
+# Frontend Development — 前端开发
 
-Specialized context for frontend development tasks. Loaded by the DEV agent when implementation plan identifies frontend impact.
+前端开发任务的专项上下文。当实现计划识别出前端影响时由 DEV Agent 加载。
 
-## Focus Areas
-- Page and component implementation/modification
-- User interaction flows and event handling
-- Client-side state management
-- API request/response adaptation and error handling
-- UI styling following project conventions
-- Frontend testing (component tests, interaction tests)
+## 关注领域
 
-## Execution Guidelines
-1. Follow existing frontend patterns (component structure, styling approach, state management) in the codebase.
-2. Ensure API calls match the solution design's interface contracts — verify request/response shapes.
-3. Handle loading, empty, and error states for every data-fetching component.
-4. Write component tests for new/modified components; add interaction tests for user flows.
-5. Document any new UI dependencies or component library additions.
+- 页面和组件实现/修改
+- 用户交互流程和事件处理
+- 客户端状态管理
+- API 请求/响应适配和错误处理
+- 遵循项目约定的 UI 样式
+- 前端测试（组件测试、交互测试）
 
-## Constraints
-- Do NOT modify backend code.
-- Do NOT change API contracts — flag mismatches with the solution design for review.
-- Maintain existing UI patterns unless the design explicitly specifies changes.
+## 执行指引
+
+1. 遵循代码仓中已有的前端模式（组件结构、样式方案、状态管理）。
+2. 确保 API 调用与方案设计中的接口契约一致——验证请求/响应格式。
+3. 为每个获取数据的组件处理 loading、empty 和 error 状态。
+4. 为新增/修改的组件编写组件测试；为用户流程添加交互测试。
+5. 记录任何新增的 UI 依赖或组件库引用。
+
+## 约束
+
+- 不要修改后端代码。
+- 不要修改 API 契约——如发现前后端不一致，标记待评审。
+- 保持已有的 UI 模式，除非设计明确指定变更。

@@ -1,27 +1,71 @@
 ---
 name: feature-approve
-description: Execute final design approval. Validates design_ready preconditions, generates design-final-approval.json, advances status to approved_for_implementation. HIGH-RISK: requires human confirmation gate.
+description: 执行最终设计批准。校验 design_ready 前置条件，生成 design-final-approval.json，将状态推进到 approved_for_implementation。高风险：需要人工确认闸口。
 ---
 
-# Feature Approve — Final Design Approval
+# Feature Approve — 最终设计批准
 
-Generate the final design approval. HIGH-RISK skill with mandatory human confirmation gate.
+生成最终设计批准。这是一个高风险 Skill，带强制性人工确认闸口。
 
-## Integration Contract
-- **Entry:** `/scc-dev-sphere:feature-approve`
-- **Inputs:** State at `design_ready`, all design artifacts, review matrix
-- **Outputs:** `approvals/design-final-approval.json`, `status = approved_for_implementation`
-- **Completion criteria:** Approval record written, status updated
+## 集成契约
 
-## Precondition Checks (HARD GATE)
+- **入口:** `/scc-dev-sphere:feature-approve`
+- **入参:** 处于 `design_ready` 的状态、所有设计产物、评审矩阵
+- **输出:** `approvals/design-final-approval.json`、`status = approved_for_implementation`
+- **完成标准:** 批准记录已写入，状态已更新
+
+## 前置条件检查（硬闸口）
+
+执行前，验证全部以下条件：
 1. `state.status === 'design_ready'`
-2. All blocking issues closed
-3. All advisory items have human confirmation
-4. All accepted_risk in decisions
-5. integrated-design.md includes risk summary
+2. 评审矩阵中所有阻塞项已关闭
+3. 所有建议项在 `reviews/advisory-confirmation.json` 中有人工确认
+4. 所有 `accepted_risk` 已写入 `decisions/*-decisions.md`
+5. `integrated-design.md` 包含已接受风险摘要
 
-## Human Confirmation Gate (MANDATORY)
-Display approval summary with all artifacts and their hashes, accepted risks, scope, and limitations. Wait for explicit human "YES".
+如果任一前置条件不满足，终止并显示哪些条件未满足。
 
-## After Approval
-Generate `approvals/design-final-approval.json`, update `status = 'approved_for_implementation'`.
+## 人工确认闸口（强制）
+
+展示批准摘要：
+```
+⚠️ **最终设计批准**
+
+**任务:** {taskId}
+**待批准产物:**
+  - business-design.md (hash: {hash})
+  - solution-design.md (hash: {hash})
+  - implementation-design.md (hash: {hash})
+  - test-design.md (hash: {hash})
+  - integrated-design.md (hash: {hash})
+
+**批准范围:** {approvedScope}
+
+**已接受风险:** {count} 项
+{列出每项风险及简要说明}
+
+**限制条件:** {limitations}
+
+是否批准此设计进入代码实现？
+（输入 YES 批准，或描述顾虑）
+```
+
+等待用户明确输入"YES"才继续。"OK"或"可以"等不够明确的回复不够——要求给出清晰的"YES"。
+
+## 批准后
+
+1. 生成 `approvals/design-final-approval.json`：
+   - approvalId（APP-xxx）、type、taskId
+   - 所有已批准的产物路径及内容 hash
+   - 批准范围、限制条件
+   - approvedBy: "human"、approvedAt: 时间戳
+
+2. 更新 `state.status = 'approved_for_implementation'`。
+
+3. 展示：
+```
+✅ 设计已批准，可进入代码实现。
+
+**下一步:** /scc-dev-sphere:workflow
+  → 将引导你进入实现计划阶段。
+```

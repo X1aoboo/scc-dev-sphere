@@ -1,27 +1,30 @@
 ---
 name: fullstack-change-planning
-description: Fullstack change coordination — cross-stack planning, interface contract verification, integration order. Use when implementation spans both frontend and backend.
+description: 全栈变更协调——前后端联动规划、接口契约验证、集成顺序。当实现同时涉及前后端时使用。
 ---
 
-# Fullstack Change Planning
+# Fullstack Change Planning — 全栈变更规划
 
-Specialized context for coordinating changes that span both frontend and backend. Loaded by the DEV agent when the implementation plan identifies cross-stack impact.
+协调同时涉及前端和后端的变更的专项上下文。当实现计划识别出跨栈影响时由 DEV Agent 加载。
 
-## Focus Areas
-- Interface contract verification between frontend and backend
-- Change sequencing and dependency ordering
-- Integration point identification and testing
-- API versioning and backward compatibility
-- Coordinated rollback planning
+## 关注领域
 
-## Execution Guidelines
-1. Map all integration points between frontend and backend changes.
-2. Define the change order: which side changes first, how the other adapts.
-3. Verify API contracts are consistent between the solution design, backend implementation, and frontend consumption.
-4. Plan integration testing: what tests verify the full stack works together.
-5. Identify deployment coupling: can frontend and backend deploy independently, or must they be coordinated.
+- 前后端接口契约验证
+- 变更顺序和依赖排序
+- 集成点识别和测试
+- API 版本控制和向后兼容
+- 协调回滚计划
 
-## Constraints
-- Do NOT implement changes directly — this skill provides planning context only.
-- Flag any API contract ambiguities between frontend and backend before implementation begins.
-- Document the integration test plan in the implementation plan.
+## 执行指引
+
+1. 映射前后端变更之间的所有集成点。
+2. 定义变更顺序：哪端先改、另一端如何适配。
+3. 验证方案设计、后端实现和前端消费之间的 API 契约一致性。
+4. 规划集成测试：哪些测试验证全栈协同工作。
+5. 识别部署耦合：前后端能否独立部署，还是必须协调发布。
+
+## 约束
+
+- 不直接执行变更——本 skill 仅提供规划上下文。
+- 在实现前标记前后端之间的 API 契约歧义。
+- 在实现计划中记录集成测试方案。
