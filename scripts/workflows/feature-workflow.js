@@ -120,15 +120,31 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
           // Has been reviewed — check for blocking
           if (hasBlocking(matrix, artifactTarget)) {
             return makeHumanConfirm(state, stageName, artifactTarget,
-              `Stage ${stageName} has unclosed blocking issues. Return to design agent for revision.`);
+              `Stage ${stageName} has unclosed blocking issues. Return to design agent for revision.`,
+              [stage.artifact], [],
+              { type: 'blocking_resolution', prompt: `Stage ${stageName} has unclosed blocking issues. Resolve blocking issues before continuing.` });
           }
           // No blocking but not ai_review_passed — needs review
           const reviewers = getDesignReviewers(stageName);
           return makeAction('run_skill', state, stageName, artifactTarget,
             getDesignSkill(stageName), { mode: 'revise' }, reviewers,
-            `Stage ${stageName} has blocking issues. Revise design and re-review.`,
+            `Stage ${stageName} requires re-review. Revise design and re-review.`,
             [stage.artifact], [stage.artifact]);
         }
+      }
+
+      // ai_review_passed but not yet human_approved — requires human confirmation
+      if (stage.status === 'ai_review_passed') {
+        if (mode === 'strict-human-loop' ||
+            (mode === 'collaborative-design' && humanGates.includes(stageName))) {
+          return makeAction('human_confirm', state, stageName, stageToArtifact(stageName),
+            null, {}, [],
+            `Stage ${stageName} passed AI review. Human confirmation required before proceeding.`,
+            [stage.artifact],
+            [],
+            { type: 'stage_approval', prompt: `请确认 ${stageName} 阶段设计是否通过人工评审。回复 OK 确认通过，或提出修改意见。` });
+        }
+        // auto-design with ai_review_passed inside !isReady — defensive: fall through to catch-all
       }
 
       // Need to generate/revise design
@@ -178,6 +194,12 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
   // Check integrated review
   if (matrix && matrix.artifacts['integrated-design'] &&
       matrix.artifacts['integrated-design'].status !== 'passed') {
+    if (hasBlocking(matrix, 'integrated-design')) {
+      return makeHumanConfirm(state, 'integration', 'integrated-design',
+        'Integrated design has unclosed blocking issues. Return to design agent for revision.',
+        ['artifacts/integrated-design.md'], [],
+        { type: 'blocking_resolution', prompt: 'Integrated design has unclosed blocking issues. Resolve blocking issues before continuing.' });
+    }
     return makeAction('run_skill', state, 'integration', 'integrated-design',
       'feature-review', { target: 'integrated-design' }, ['sa', 'se', 'mde', 'tse'],
       'Integrated design needs consistency review.',
