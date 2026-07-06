@@ -1,93 +1,91 @@
 ---
 name: feature-assess
-description: Assess requirement complexity and risk, recommend workflow mode. Does NOT pre-load knowledge context — only identifies what needs investigation.
+description: 评估需求复杂度和风险，推荐工作流模式。不预加载完整知识上下文——只识别后续需要重点关注的方向。
 ---
 
-# Feature Assess — Complexity & Risk Assessment
+# Feature Assess — 复杂度与风险评估
 
-Analyze the requirement input to determine complexity, identify risk factors, and recommend a workflow mode (`auto-design`, `collaborative-design`, or `strict-human-loop`).
+分析需求输入，判断复杂度，识别风险因素，推荐工作流模式（`auto-design`、`collaborative-design` 或 `strict-human-loop`）。
 
-## Integration Contract
+## 集成契约
 
-- **Entry:** `/scc-dev-sphere:feature-assess`
-- **Inputs:** Requirement description from `inputs/requirement.md`, current state
-- **Outputs:** Assessment written to state, workflow mode confirmed by user
-- **Completion criteria:** `workflowMode` confirmed in `state.json`, status advanced to `assessed`
+- **入口:** `/scc-dev-sphere:feature-assess`
+- **入参:** 来自 `inputs/requirement.md` 的需求描述、当前 state
+- **输出:** 评估结果写入 state，工作流模式经用户确认
+- **完成标准:** `workflowMode` 在 `state.json` 中已确认，状态推进到 `assessed`
 
-## Execution Steps
+## 执行步骤
 
-### Step 1: Read Input
+### 步骤1：读取输入
 
-Read the requirement from `inputs/requirement.md` in the active task workspace. Read current `state.json`.
+从活跃任务工作区的 `inputs/requirement.md` 读取需求。读取当前 `state.json`。
 
-### Step 2: Run Risk Assessment
+### 步骤2：执行风险评估
 
-Evaluate the requirement against hard risk triggers:
+按以下硬触发条件评估需求：
 
-1. **Cross-system or cross-module impact?** — Does this change span multiple systems or modules?
-2. **Data migration or model change?** — Are there schema changes, data migrations?
-3. **Permission, security, or audit changes?** — Are auth, permissions, or audit trails affected?
-4. **External interface or compatibility changes?** — Are APIs, contracts, or protocols changing?
-5. **Performance, capacity, or stability impact?** — Are there SLAs, throughput, or reliability concerns?
-6. **Core business path?** — Does this touch the critical revenue or user path?
-7. **Irreversible operations?** — Are there destructive or non-rollback-able changes?
-8. **Deployment, config, or environment impact?** — Does this change how things are deployed or configured?
-9. **Requirement incomplete or ambiguous?** — Are there significant gaps in the requirement?
+1. **跨系统或跨模块影响？** — 变更是否涉及多个系统或模块？
+2. **数据迁移或数据模型变更？** — 是否有 schema 变更、数据迁移？
+3. **权限、安全或审计变更？** — 认证、权限或审计追踪是否受影响？
+4. **对外接口或兼容性变更？** — API、协议或契约是否变化？
+5. **性能、容量或稳定性影响？** — SLA、吞吐量或可靠性是否有要求？
+6. **核心业务链路？** — 是否涉及关键收入或用户路径？
+7. **不可逆操作？** — 是否存在破坏性或无法回滚的变更？
+8. **部署、配置或环境影响？** — 部署或配置方式是否变化？
+9. **需求不完整或存在歧义？** — 需求输入是否存在明显缺口？
 
-### Step 3: Recommend Mode
+### 步骤3：推荐模式
 
-- **0-1 risk triggers:** Recommend `auto-design`
-- **2-3 risk triggers:** Recommend `collaborative-design`
-- **4+ risk triggers:** Default recommend `strict-human-loop`
+- **0-1 个风险触发:** 推荐 `auto-design`
+- **2-3 个风险触发:** 推荐 `collaborative-design`
+- **4+ 个风险触发:** 默认推荐 `strict-human-loop`
 
-### Step 4: Present Assessment & Get Confirmation
+### 步骤4：展示评估结果并获取确认
 
-Display the assessment:
-
+展示评估：
 ```
-## Complexity & Risk Assessment
+## 复杂度与风险评估
 
-**Requirement:** {summary}
+**需求:** {摘要}
 
-**Risk Triggers Hit:**
-{list each trigger with explanation}
+**命中的风险触发条件:**
+{逐条列出触发条件及解释}
 
-**Recommended Mode:** {recommended mode}
-- auto-design: AI auto-advances design phases, human approves before code
-- collaborative-design: Selective human gates for complex phases
-- strict-human-loop: Human confirms every phase
+**推荐模式:** {推荐模式}
+- auto-design: AI 自动推进设计阶段，编码前人工最终审批
+- collaborative-design: 部分阶段人工确认，其余 AI 推进
+- strict-human-loop: 每个阶段都需要人工确认
 
-**CI/CD & Environment Risk:** {yes/no — if yes, CIE will be triggered during review}
+**CI/CD 与环境风险:** {是/否 — 如是，评审阶段将触发 CIE}
 
-Which workflow mode would you like to use?
+请选择工作流模式：
 ```
 
-### Step 5: Handle Mode Selection
+### 步骤5：处理模式选择
 
-Wait for user to confirm or change the mode.
+等待用户确认或更改模式。
 
-If `collaborative-design` is chosen, ask:
-"Which design phases need human gate confirmation? Options: businessDesign, solutionDesign, implementationDesign, testDesign. Enter comma-separated list or 'none'."
+如果选择 `collaborative-design`，追问：「哪些设计阶段需要人工门禁确认？可选：businessDesign、solutionDesign、implementationDesign、testDesign。输入逗号分隔列表或 'none'。」
 
-If a high-risk task is downgraded (e.g., from `strict-human-loop` to `auto-design`), record the decision:
-- Write to `decisions/business-design-decisions.md`:
+如果高风险任务被降级（如 `strict-human-loop` 降为 `auto-design`），记录决策：
+- 写入 `decisions/business-design-decisions.md`：
   ```markdown
-  ## D-001 Workflow Mode Downgrade
-  - **Original Recommendation:** strict-human-loop
-  - **Selected Mode:** {selected}
-  - **Reason:** {user's reason}
-  - **Accepted Risks:** {list of risk triggers being accepted}
-  - **Decision Time:** {timestamp}
-  - **Status:** accepted
+  ## D-001 工作流模式降级
+  - **原始建议:** strict-human-loop
+  - **选择模式:** {selected}
+  - **降级原因:** {用户提供的理由}
+  - **已接受风险:** {被接受的触发条件列表}
+  - **决策时间:** {timestamp}
+  - **状态:** accepted
   ```
 
-### Step 6: Update State
+### 步骤6：更新状态
 
-Update `state.json`:
-- Set `workflowMode` to the confirmed mode
-- Set `humanGateStages` to the confirmed stages (empty array if none)
-- Set `status` to `assessed`
+更新 `state.json`：
+- 设置 `workflowMode` 为确认的模式
+- 设置 `humanGateStages` 为确认的阶段列表（若无则为空数组）
+- 设置 `status` 为 `assessed`
 
-### Step 7: Complete
+### 步骤7：完成
 
-Display confirmation and suggest `/scc-dev-sphere:workflow` for the next step.
+展示确认信息并建议使用 `/scc-dev-sphere:workflow` 进入下一步。
