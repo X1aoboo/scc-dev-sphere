@@ -50,7 +50,28 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 当 blocking=0 时：
 1. 将所有建议项整理为确认清单。
 2. 写入 `reviews/advisory-confirmation.json`（含待确认建议项）。
-3. 向用户展示建议项清单，等待人工选择 `apply` / `no_change` / `convert_to_blocking`。
+
+3. 使用 **AskUserQuestion 工具**向用户展示建议项并获取决策。
+
+   **第一轮 — 筛选需处理的项（multi_select 模式）：**
+   - `header`: "建议项处理"
+   - `question`: "以下评审建议项需要你的决策。请勾选你想处理的项："
+   - `options`: 每条建议项为一个选项，label 为建议摘要（≤20字），description 说明影响范围
+   - `multiSelect`: true
+   - 若建议项 >4 个，按影响范围归类后分批提问
+
+   **第二轮 — 逐项决定处理方式（single_select 模式）：**
+   对用户选中的每一项，追问：
+   - `header`: "建议项决策"
+   - `question`: "针对「{建议摘要}」，如何处理？"
+   - `options`:
+     - `label: "✅ apply"` `description: "采纳此建议，反馈给设计 Agent 修订"`
+     - `label: "↩️ no_change"` `description: "不修改，接受当前状态"`
+     - `label: "🚫 convert_to_blocking"` `description: "升级为阻塞项，必须修复"`
+   - `multiSelect`: false
+   - 用户也可通过 Other 输入自定义处理意见
+
+4. 将用户决策结果更新到 `reviews/advisory-confirmation.json`。
 
 ### 步骤6：更新状态
 
