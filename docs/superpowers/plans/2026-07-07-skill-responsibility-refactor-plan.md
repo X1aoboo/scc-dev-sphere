@@ -12,7 +12,7 @@
 
 - Agent 定义文件（agents/*.md）不改动 — Agent → Skill 方向本身正确
 - hooks/hooks.json 不改动 — 保持纯闸口定位
-- devsphere-guard.js、devsphere-review-matrix.js、devsphere-workspace.js 不改动
+- devsphere-state.js、devsphere-guard.js、devsphere-review-matrix.js、devsphere-workspace.js 不改动
 - `.devsphere/` 目录结构、state.json schema、nextAction schema 不变
 - 每个 task commit 独立，可单独 review
 
@@ -28,8 +28,7 @@ skills/feature-design-test/SKILL.md         (修改) — 同上
 skills/feature-assess/SKILL.md              (修改) — 剥离状态写
 skills/feature-review/SKILL.md              (修改) — 剥离 Agent 调用 + 状态写
 skills/feature-design/SKILL.md              (修改) — 重构为子编排器
-scripts/devsphere-state.js                  (修改) — 新增 update-stage-status
-scripts/workflows/feature-workflow.js       (修改) — 简化 resolveDesigning
+scripts/workflows/feature-workflow.js       (修改) — 新增 sync-stage-status + 简化 resolveDesigning
 skills/workflow/SKILL.md                    (修改) — 多 Agent 派发 + 状态同步
 ```
 
@@ -423,18 +422,18 @@ git commit -m "refactor: feature-design 重构为设计子编排器"
 
 ---
 
-### Task 5: 增强 devsphere-state.js — 新增状态同步命令
+### Task 5: feature-workflow.js — 新增状态同步命令 + 简化 resolveDesigning
 
 **Files:**
-- Modify: `scripts/devsphere-state.js` — 新增 `sync-stage-status` CLI 命令
+- Modify: `scripts/workflows/feature-workflow.js` — 新增 `sync-stage-status` CLI 命令 + 简化 `resolveDesigning`
 
 **Interfaces:**
-- Consumes: workspaceRoot, state.json, review-matrix.json
-- Produces: 更新后的 state.json（确定性事实同步）
+- Consumes: workspaceRoot, state.json, review-matrix.json, taskPath
+- Produces: 更新后的 state.json（确定性事实同步）+ 简化的 nextAction
 
-- [ ] **Step 1: 新增 sync-stage-status 命令**
+- [ ] **Step 1: 在 main() 函数中新增 sync-stage-status CLI 命令**
 
-在 `devsphere-state.js` 的 `main()` 函数的 `switch` 块中，`sync-artifact` 之前新增：
+在 `feature-workflow.js` 的 `main()` 函数 switch 块末尾（`default` 之前）新增：
 
 ```javascript
 case 'sync-stage-status': {
@@ -444,7 +443,7 @@ case 'sync-stage-status': {
     process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
     process.exit(0);
   }
-  const taskPath = path.join(workspaceRoot, current.taskPath);
+  const taskPath = getTaskPath(workspaceRoot);
   const state = readState(taskPath);
   if (!state || !state.stages) {
     process.stdout.write(JSON.stringify({ synced: false, reason: 'No stages in state' }));
@@ -463,13 +462,12 @@ case 'sync-stage-status': {
     }
   }
 
-  // 评审状态同步：需读 review-matrix
-  const { readMatrix } = require('./devsphere-review-matrix');
+  // 评审状态同步
   const matrix = readMatrix(taskPath);
   if (matrix && matrix.artifacts) {
     for (const [stageName, stageData] of Object.entries(state.stages)) {
       if (stageData.status !== 'drafted') continue;
-      const artifactTarget = stageName.replace(/([A-Z])/g, '-$1').toLowerCase().replace(/^-/, '');
+      const artifactTarget = stageToArtifact(stageName);
       const artifactMatrix = matrix.artifacts[artifactTarget];
       if (artifactMatrix && artifactMatrix.issues && artifactMatrix.issues.blocking === 0 && artifactMatrix.status !== 'pending') {
         stageData.status = 'ai_review_passed';
@@ -484,42 +482,18 @@ case 'sync-stage-status': {
 }
 ```
 
-- [ ] **Step 2: 验证命令可调用**
+需要先在文件顶部添加依赖引用：`const { readCurrentTask, readState, writeState, getTaskPath } = require('./devsphere-state');`
 
-```bash
-node scripts/devsphere-state.js 2>&1 | grep 'sync-stage-status' || echo "PASS: 新命令已注册（不报 unknown command 即成功）"
-```
+- [ ] **Step 2: 替换 resolveDesigning 函数体**
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add scripts/devsphere-state.js
-git commit -m "feat: devsphere-state 新增 sync-stage-status 确定性状态同步命令"
-```
-
----
-
-### Task 6: 简化 resolver 的 resolveDesigning
-
-**Files:**
-- Modify: `scripts/workflows/feature-workflow.js:103-213`
-
-**Interfaces:**
-- Consumes: taskPath, state
-- Produces: nextAction（设计阶段统一返回 feature-design）
-
-- [ ] **Step 1: 替换 resolveDesigning 函数体**
-
-**old_string（第103-213行，整个 resolveDesigning 函数）:**
-
-需要替换为简化版：
+**old_string（第103-213行，整个 resolveDesigning 函数体）:**
 
 **new_string:**
 
 ```javascript
 function resolveDesigning(taskPath, state, stages, mode, humanGates) {
-  // All design sub-stage routing delegated to feature-design skill
-  // resolver only decides the top-level entry point
+  // All design sub-stage routing delegated to feature-design skill.
+  // resolver only decides the top-level entry point.
   return makeAction('run_skill', state, 'design', null,
     'feature-design', {}, [],
     'Task is in designing phase. Delegate to feature-design for sub-stage routing.',
@@ -527,28 +501,25 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
 }
 ```
 
-- [ ] **Step 2: 删除不再需要的辅助函数引用检查**
-
-确认 `isStageReady`、`stageToArtifact`、`getDesignSkill`、`getDesignAgent`、`getDesignReviewers`、`makeHumanConfirm` 这些辅助函数仅被 resolveDesigning 使用。保留它们以防未来使用，或仅在 resolveDesigning 不再调用时保留未使用函数（不删——遵守不改变相邻代码原则）。
-
 - [ ] **Step 3: 验证**
 
 ```bash
-grep -n 'resolveDesigning' scripts/workflows/feature-workflow.js
+# 确认新命令已注册
+grep 'sync-stage-status' scripts/workflows/feature-workflow.js
+# 确认 resolveDesigning 已简化
+grep -A3 'function resolveDesigning' scripts/workflows/feature-workflow.js
 ```
-
-确认函数签名不变，调用方式不变。
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add scripts/workflows/feature-workflow.js
-git commit -m "refactor: resolver 设计子阶段路由委托给 feature-design skill"
+git commit -m "feat: feature-workflow 新增 sync-stage-status + 简化 resolveDesigning"
 ```
 
 ---
 
-### Task 7: workflow SKILL — 多 Agent 派发 + 状态同步
+### Task 6: workflow SKILL — 多 Agent 派发 + 状态同步
 
 **Files:**
 - Modify: `skills/workflow/SKILL.md:93-148`（步骤5 run_skill 部分）
@@ -617,7 +588,7 @@ Skill: 执行 {nextAction.skill}
 所有 Agent 完成后，显式运行状态同步：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-state.js sync-stage-status ${CLAUDE_PROJECT_DIR}
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
 ```
 
 然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
@@ -638,7 +609,7 @@ git commit -m "feat: workflow 支持多 Agent 并行派发和显式状态同步"
 
 ---
 
-### Task 8: 最终验证
+### Task 7: 最终验证
 
 **Files:**
 - 无（只读验证）
@@ -658,19 +629,19 @@ grep -rn '更新.*state.json' skills/feature-design*/SKILL.md skills/feature-ass
 - [ ] **Step 3: 确认 hooks.json 未改动**
 
 ```bash
-git diff --name-only HEAD~7..HEAD | grep hooks.json && echo "WARNING" || echo "PASS: hooks.json 未改动"
+git diff --name-only HEAD~6..HEAD | grep hooks.json && echo "WARNING" || echo "PASS: hooks.json 未改动"
 ```
 
 - [ ] **Step 4: 确认 agent 定义未改动**
 
 ```bash
-git diff --name-only HEAD~7..HEAD | grep '^agents/' && echo "WARNING" || echo "PASS: agents/ 未改动"
+git diff --name-only HEAD~6..HEAD | grep '^agents/' && echo "WARNING" || echo "PASS: agents/ 未改动"
 ```
 
 - [ ] **Step 5: 最终 diff 统计**
 
 ```bash
-git diff --stat HEAD~7..HEAD
+git diff --stat HEAD~6..HEAD
 ```
 
 预期：约 10 个文件。
