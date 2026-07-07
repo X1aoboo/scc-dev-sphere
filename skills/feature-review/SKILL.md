@@ -24,9 +24,9 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 
 查找目标产物的基础评审矩阵（spec 第 9 节）。检查是否需要风险增强评审者（如 CIE 应对部署风险等）。
 
-### 步骤2：并行执行评审
+### 步骤2：执行评审
 
-对每个需要的评审 Agent，加载该 Agent 并使用 `feature-review` skill 上下文和目标产物。各 Agent 从自身职责视角评审并输出：
+以自身 Agent 职责视角评审目标产物，输出：
 - 阻塞项（必须修复）
 - 建议项（需人工决策）
 - 风险候选项（需人工接受）
@@ -39,11 +39,7 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 
 ### 步骤4：修订循环
 
-如果 blocking > 0：
-1. 将阻塞项反馈给原设计 Agent。
-2. 设计 Agent 修订产物。
-3. 原评审者复核其阻塞项。
-4. 重复直到 blocking=0 或达到最大 3 轮。
+如果 blocking > 0：修订循环由 workflow 驱动——resolver 检测到 blocking 后重新派发设计 Agent 修订，修订完成后重新派发评审 Agent 复核。循环上限 3 轮。
 
 ### 步骤5：建议项汇总
 
@@ -73,10 +69,11 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 
 4. 将用户决策结果更新到 `reviews/advisory-confirmation.json`。
 
-### 步骤6：更新状态
+### 步骤6：完成
 
-- 如果 blocking=0：更新 `stages.<phase>.status = 'ai_review_passed'`。
-- 对于集成评审：检查所有阶段是否达到要求状态 → 如果满足，可以推进到 `design_ready`。
+- 如果 blocking=0：评审通过，状态同步由 workflow 显式执行。
+- 如果 blocking > 0 且未达上限：workflow 将自动进入修订-复核循环。
+- 如果达到上限：标记未解决的阻塞项待人工处理。
 
 ## 退出条件
 
