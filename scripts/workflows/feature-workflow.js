@@ -26,9 +26,9 @@ function resolveNextAction(taskPath, state) {
 
   // --- assessed ---
   if (status === 'assessed') {
-    return makeAction('run_skill', state, 'businessDesign', 'business-design',
-      'feature-design-business', {}, ['sa'],
-      'Assessment complete. Begin business design.',
+    return makeAction('run_skill', state, 'design', null,
+      'feature-design', {}, ['sa'],
+      'Assessment complete. Begin design phase.',
       [], ['artifacts/business-design.md']);
   }
 
@@ -151,8 +151,8 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
       const designAgent = getDesignAgent(stageName);
 
       if (stage.status === 'not_started') {
-        return makeAction('run_skill', state, stageName, artifactTarget,
-          getDesignSkill(stageName), {}, [designAgent],
+        return makeAction('run_skill', state, 'design', null,
+          'feature-design', {}, [designAgent],
           `Stage ${stageName} is not started. Begin design.`,
           [], [stage.artifact || `artifacts/${artifactTarget}.md`]);
       }
