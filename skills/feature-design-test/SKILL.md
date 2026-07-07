@@ -16,8 +16,7 @@ description: 测试设计阶段。TSE Agent 产出 test-design.md，包含测试
 
 ## 执行
 
-1. 加载 TSE Agent。
-2. 读取方案设计和实现设计获取测试上下文，读取测试设计模板 `templates/artifacts/test-design.md`。
+1. 读取方案设计和实现设计获取测试上下文，读取测试设计模板 `templates/artifacts/test-design.md`。
 3. 使用 `knowledge-query` skill 查询：
    - 历史缺陷记录和回归范围
    - 测试规范和验收标准
@@ -25,7 +24,6 @@ description: 测试设计阶段。TSE Agent 产出 test-design.md，包含测试
 4. 按模板生成 `artifacts/test-design.md`。
 5. 保存 evidence 快照，更新 `evidence/evidence-registry.json`。
 6. 标记无证据前提为 `assumption`。
-7. 更新 `state.json` → `stages.testDesign.status = 'drafted'`。
 
 ## 修订模式（`--mode revise`）
 

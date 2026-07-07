@@ -16,8 +16,7 @@ description: 方案设计阶段。SE Agent 产出 solution-design.md，定义架
 
 ## 执行
 
-1. 加载 SE Agent。
-2. 读取 `artifacts/business-design.md` 获取业务上下文，读取方案设计模板 `templates/artifacts/solution-design.md`。
+1. 读取 `artifacts/business-design.md` 获取业务上下文，读取方案设计模板 `templates/artifacts/solution-design.md`。
 3. 使用 `knowledge-query` skill 查询知识库中的：
    - 存量架构规范和标准
    - 接口契约和 API 文档
@@ -25,7 +24,6 @@ description: 方案设计阶段。SE Agent 产出 solution-design.md，定义架
 4. 按模板生成 `artifacts/solution-design.md`。
 5. 保存 evidence 快照，更新 `evidence/evidence-registry.json`。
 6. 标记无证据前提为 `assumption`。
-7. 更新 `state.json` → `stages.solutionDesign.status = 'drafted'`。
 
 ## 修订模式（`--mode revise`）
 
