@@ -1,95 +1,91 @@
 ---
 name: feature-design
-description: 设计编排入口。读取 state.json，只推进当前允许推进的下一个设计阶段。不会自动覆盖已人工批准的阶段产物，除非使用 --mode revise。
+description: 设计阶段子编排器。读取 state.json，确定下一步应推进的设计子阶段并返回结构化路由结果。不调用 Agent，不写状态。
 ---
 
-# Feature Design — 设计编排
+# Feature Design — 设计子编排
 
-编排设计阶段的推进。本 skill 是设计阶段的唯一编排入口——读取当前状态，按工作流模式自动推进多个设计阶段，在需要时暂停等待用户确认。
-
-与 `feature-workflow.js` resolver 配合工作：resolver 判断整体状态并推荐 `feature-design`，本 skill 负责内部阶段路由和 Agent 派发的具体执行。
+本 skill 是设计阶段的子编排器。在 main 会话中运行（agents=[]），根据 state.json 判断当前该推进哪个设计子阶段，输出结构化路由结果供 workflow 派发 Agent。
 
 ## 集成契约
 
-- **入口:** `/scc-dev-sphere:feature-design [--mode revise]`
-- **入参:** 当前 state.json
-- **输出:** 推进一个或多个设计阶段（business → solution → implementation → test → integrated）
-- **完成标准:** 推进到所有阶段完成或被用户暂停
+- **入口:** `/scc-dev-sphere:feature-design`
+- **入参:** state.json
+- **输出:** 结构化路由结果 `{ stage, skill, agent, reason }`
+- **完成标准:** 返回路由结果
 
-## 执行
+## 执行步骤
 
 ### 步骤1：读取状态
 
-1. 读取 `state.json`，获取 `workflowMode` 和 `stages` 中各个阶段的状态。
-2. 按阶段顺序 [businessDesign, solutionDesign, implementationDesign, testDesign] 找出第一个未完成阶段。
-3. 如果所有阶段已完成 → 跳到步骤4（生成集成设计）。
+读取 `state.json`，获取 `workflowMode`、`humanGateStages` 和 `stages`。
 
-### 步骤2：执行当前阶段
+### 步骤2：阶段顺序
 
-1. 根据当前阶段名称确定对应的 Agent：
-   - businessDesign → SA Agent（`feature-design-business` skill）
-   - solutionDesign → SE Agent（`feature-design-solution` skill）
-   - implementationDesign → MDE Agent（`feature-design-implementation` skill）
-   - testDesign → TSE Agent（`feature-design-test` skill）
+按顺序检查：businessDesign → solutionDesign → implementationDesign → testDesign
 
-2. **不覆盖已 `human_approved` 的阶段**（除非使用 `--mode revise` 参数）。
+### 步骤3：阶段→Skill 映射
 
-3. 加载对应 Agent，使用 Agent tool（`background: true`）执行：
-   - agent 名：对应角色的 agent 名称
-   - prompt 上下文：当前阶段 skill 名称、任务 ID 和路径
-   - `--mode revise`：如果传入该参数，在 Agent 上下文中标记修订模式
+| 阶段 | Skill | Agent |
+|------|-------|-------|
+| businessDesign | feature-design-business | sa |
+| solutionDesign | feature-design-solution | se |
+| implementationDesign | feature-design-implementation | mde |
+| testDesign | feature-design-test | tse |
 
-### 步骤3：检查轮回（按工作流模式决定）
+### 步骤4：Mode 门禁判断
 
-阶段任务完成后，检查状态并决定是否继续：
+阶段已就绪的条件（按 mode）：
+- `auto-design`：阶段 status == `ai_review_passed` 或 `human_approved`
+- `collaborative-design`：列入 `humanGateStages` 的阶段需 `human_approved`，其余 `ai_review_passed`
+- `strict-human-loop`：阶段 status == `human_approved`
 
-**如果 `workflowMode === 'auto-design'`：**
-- 自动回到步骤1，推进下一个阶段
-- 不向用户展示中间状态，连贯推进直到所有阶段完成或被阻塞
+### 步骤5：遍历阶段
 
-**如果 `workflowMode === 'strict-human-loop'`：**
-- 在每阶段完成后暂停
-- 使用 **AskUserQuestion**（遵循 `single_select` 模式）：
-  - `header`: "阶段完成"
-  - `question`: "当前阶段 {阶段名} 已完成。是否继续下一阶段 {下一阶段名}？"
-  - `options`:
-    - `label: "✅ 继续下一阶段 (Recommended)"` `description: "开始下一阶段设计工作"`
-    - `label: "⏸️ 暂停"` `description: "暂停编排流程"`
-  - `multiSelect`: false
-  - 用户选择继续 → 回到步骤1
-  - 用户选择暂停 → 展示步骤5 的完成摘要
+对每个阶段按顺序：
+1. 如阶段不存在 → 跳过
+2. 如阶段未就绪：
+   - `status=not_started` → 返回路由结果，通知 workflow 派发对应 Agent 开始该阶段设计
+   - `status=drafted` → 检查 review matrix 是否有未关闭 blocking
+     - 有 blocking → 返回路由结果，skill=对应阶段 design skill（修订模式），agent=对应设计 Agent
+     - 无 blocking 但未通过评审 → 返回路由结果，skill=feature-review，agent=对应评审者列表
+   - `status=ai_review_passed` 但 mode 要求 human_approved → 返回 `human_confirm`
+3. 如阶段已就绪 → 继续下一阶段
 
-**如果 `workflowMode === 'collaborative-design'`：**
-- 根据 `state.humanGateStages` 判断下一阶段是否需要人工门禁
-- 如果下一阶段在 humanGateStages 中 → 使用同上 AskUserQuestion 暂停
-- 如果下一阶段不在 humanGateStages 中 → 自动回到步骤1
+### 步骤6：全部阶段完成
 
-### 步骤4：生成集成设计
+如果全部 4 个阶段都满足 mode 要求的就绪状态：
+1. 检查 `artifacts/integrated-design.md` 是否存在
+   - 不存在 → 返回路由结果，skill=feature-design（集成模式），agent=[sa, se, mde, tse]
+2. 检查集成设计评审
+   - 未评审或有 blocking → 返回路由结果，skill=feature-review，target=integrated-design
+3. 全部通过 → 返回完成状态
 
-当全部 4 个阶段达到要求状态后：
-1. 加载 SA、SE、MDE、TSE Agent 分别执行各自的集成部分
-2. 生成/刷新 `artifacts/integrated-design.md`
-3. 如果 `integrated-design.md` 已存在且所有阶段未变更 → 跳过（避免无变更生成）
+### 步骤7：输出格式
 
-### 步骤5：完成
-
-展示完成摘要：
-
+```json
+{
+  "stage": "businessDesign",
+  "skill": "feature-design-business",
+  "agent": "sa",
+  "reason": "businessDesign is not_started"
+}
 ```
-📋 设计阶段完成摘要
 
-**已完成阶段:**
-{列出所有已达 ai_review_passed 或 human_approved 的阶段及状态}
+多 Agent 场景（集成设计、评审）：
 
-**集成设计:** artifacts/integrated-design.md
-
-**下一步:** /scc-dev-sphere:workflow
-  → 进入评审或推进到下一阶段。
+```json
+{
+  "stage": "solutionDesign",
+  "skill": "feature-review",
+  "agents": ["sa", "mde", "tse"],
+  "reason": "solutionDesign is drafted and ready for formal review"
+}
 ```
 
 ## 约束
 
-- 绝不覆盖已 `human_approved` 的阶段，除非使用 `--mode revise`
-- 不修改状态文件 —— 状态更新由各阶段 skill 负责（通过各自的执行步骤和 hook）
-- 不执行评审 —— 评审由 `feature-review` skill 在 workflow 层面处理
-- 不处理 `human_confirm` —— 这是 resolver 和 workflow 的职责
+- 不调用 Agent tool
+- 不修改 state.json 或任何状态文件
+- 不覆盖已 `human_approved` 的阶段（除非 `--mode revise`）
+- 修订模式规则不变：记录原因、影响范围，重置受影响阶段
