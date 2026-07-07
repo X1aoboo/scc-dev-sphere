@@ -124,24 +124,40 @@ resolver 会：
 - 用户可通过 Other 输入自定义指令
 
 **用户确认后（选择继续）：**
-使用 **Agent tool** 自动调用 `nextAction.agents` 中的第一个 Agent（使用 `background: true`），将 skill 名称和参数作为上下文传入：
 
-- 构造 Agent 的 prompt，包含：
-  - 当前任务的任务 ID 和路径
-  - 需要执行的 skill 名称（`nextAction.skill`）和模式参数（`nextAction.args`）
-  - 需要的产物路径（`nextAction.requiredArtifacts`）
-  - 预期输出产物路径（`nextAction.expectedArtifacts`）
-- 使用 `agents` 字段中的第一个 agent 名
-- 使用 `model: "sonnet"`（编排任务需要中等推理能力）
+#### 无 Agent 场景（agents 为空）
 
-示例 dispatch 结构：
+在 main 会话中直接执行 `nextAction.skill`。完成后根据输出继续派发。
+
+特别地，如果 `nextAction.skill === 'feature-design'`，执行其子编排逻辑得到结构化路由结果（`{ stage, skill, agent/agents, reason }`），然后按下方 Agent 派发逻辑处理该路由结果。
+
+#### 单 Agent 场景（agents 含 1 个元素）
+
+使用 **Agent tool** 派发单个 Agent（`background: true`）：
+
+- agentName: `nextAction.agents[0]`
+- model: `"sonnet"`
+- prompt 包含：
+  - 任务 ID 和路径
+  - skill 名称和参数
+  - 产物路径
+
+#### 多 Agent 场景（agents 含 2+ 个元素）
+
+**并行**使用 **Agent tool** 派发所有 Agent（每个 `background: true`）：
+
+- 对 `nextAction.agents` 中的每个 agentName，各派发一个 Agent tool
+- 每个 Agent 的 prompt 包含相同的 skill 和任务上下文，但注明自身职责视角
+
+#### Agent 完成后
+
+所有 Agent 完成后，显式运行状态同步：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
 ```
-Skill: 执行 {nextAction.skill}
-任务: {nextAction.taskId}
-阶段: {nextAction.stage || 'N/A'}
-需要的产物: {nextAction.requiredArtifacts}
-预期输出: {nextAction.expectedArtifacts}
-```
+
+然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
 
 **如果用户选择暂停：**
 保持当前状态，等待用户稍后再次运行 `/scc-dev-sphere:workflow`。
