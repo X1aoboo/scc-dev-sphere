@@ -151,11 +151,22 @@ resolver 会：
 
 #### Agent 完成后
 
-所有 Agent 完成后，显式运行状态同步：
+所有 Agent 完成后，执行以下同步流程：
 
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
-```
+1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `initialized → assessed` 迁移：
+
+   ```bash
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages>
+   ```
+
+   - `<workflowMode>` 为 feature-assess 中用户确认的模式：`auto-design` / `collaborative-design` / `strict-human-loop`
+   - `<humanGateStages>` 为逗号分隔的阶段名（仅 `collaborative-design` 时需要，其余模式可省略第4个参数），如 `businessDesign,testDesign`
+
+2. **阶段状态同步：**
+
+   ```bash
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
+   ```
 
 然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
 

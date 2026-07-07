@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { readMatrix, hasBlocking } = require('../devsphere-review-matrix');
-const { readCurrentTask, readState, writeState, getTaskPath } = require('./devsphere-state');
+const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -230,6 +230,32 @@ function main() {
 
       writeState(taskPath, state);
       process.stdout.write(JSON.stringify({ synced: true, updated }));
+      break;
+    }
+    case 'set-task-status': {
+      const workspaceRoot = args[1];
+      const newStatus = args[2];
+      const workflowMode = args[3];
+      const humanGateStages = args[4] ? args[4].split(',') : [];
+
+      const current = readCurrentTask(workspaceRoot);
+      if (!current || !current.activeTaskId) {
+        process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
+        process.exit(0);
+      }
+      const taskPath = getTaskPath(workspaceRoot);
+      const state = readState(taskPath);
+      if (!state) {
+        process.stdout.write(JSON.stringify({ synced: false, reason: 'No state file' }));
+        process.exit(0);
+      }
+
+      if (newStatus) state.status = newStatus;
+      if (workflowMode) state.workflowMode = workflowMode;
+      if (humanGateStages.length > 0) state.humanGateStages = humanGateStages;
+
+      writeState(taskPath, state);
+      process.stdout.write(JSON.stringify({ synced: true, status: state.status, workflowMode: state.workflowMode }));
       break;
     }
     default:
