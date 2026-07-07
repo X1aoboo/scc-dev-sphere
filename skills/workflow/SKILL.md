@@ -92,7 +92,8 @@ resolver 会：
 
 #### `run_skill`
 
-展示：
+展示状态摘要：
+
 ```
 📋 **下一步动作:** {nextAction.reason}
 
@@ -101,10 +102,6 @@ resolver 会：
 **阶段:** {nextAction.stage || 'N/A'}
 **目标:** {nextAction.target || 'N/A'}
 
-**建议动作:**
-  Skill: /scc-dev-sphere:{nextAction.skill}
-  Agent(s): {nextAction.agents.join(', ')}
-
 **需要的产物:**
 {nextAction.requiredArtifacts.map(a => '  - ' + a).join('\n')}
 
@@ -112,13 +109,38 @@ resolver 会：
 {nextAction.expectedArtifacts.map(a => '  - ' + a).join('\n')}
 ```
 
-然后引导用户执行推荐的 skill。例如：
-- 如果 `skill=feature-design-business` 且 `agents=[sa]`：调用 SA Agent，指示其执行 `feature-design-business` skill。
-- 如果 `skill=feature-review` 且 `agents=[se]`：调用 SE Agent，使用 `feature-review` skill 及 `--target` 参数（来自 `nextAction.args.target`）。
+然后使用 **AskUserQuestion 工具**获取用户决策（遵循 `references/interaction-guidelines.md` 中的 `single_select` 模式）：
 
-使用 Agent tool 调用推荐的 Agent，将 skill 名称和参数作为上下文传入。
+- `header`: "下一步"（≤12字）
+- `question`: "{nextAction.reason} 是否继续？"
+- `options`:
+  - `label: "✅ 继续执行" (Recommended)` `description: "自动执行 {nextAction.skill} skill，加载 {nextAction.agents.join(', ')} Agent"`
+  - `label: "⏸️ 暂停"` `description: "暂不执行，稍后手动处理"`
+- `multiSelect`: false
+- 用户可通过 Other 输入自定义指令
 
-**重要：** workflow 本身不生成设计、不执行评审、不修改状态。它只告诉用户下一步该做什么。
+**用户确认后（选择继续）：**
+使用 **Agent tool** 自动调用 `nextAction.agents` 中的第一个 Agent（使用 `background: true`），将 skill 名称和参数作为上下文传入：
+
+- 构造 Agent 的 prompt，包含：
+  - 当前任务的任务 ID 和路径
+  - 需要执行的 skill 名称（`nextAction.skill`）和模式参数（`nextAction.args`）
+  - 需要的产物路径（`nextAction.requiredArtifacts`）
+  - 预期输出产物路径（`nextAction.expectedArtifacts`）
+- 使用 `agents` 字段中的第一个 agent 名
+- 使用 `model: "sonnet"`（编排任务需要中等推理能力）
+
+示例 dispatch 结构：
+```
+Skill: 执行 {nextAction.skill}
+任务: {nextAction.taskId}
+阶段: {nextAction.stage || 'N/A'}
+需要的产物: {nextAction.requiredArtifacts}
+预期输出: {nextAction.expectedArtifacts}
+```
+
+**如果用户选择暂停：**
+保持当前状态，等待用户稍后再次运行 `/scc-dev-sphere:workflow`。
 
 #### `human_confirm`
 
@@ -198,6 +220,6 @@ multiSelect: false
 
 ## 约束
 
-- Workflow 不直接执行 agent/skill 动作 —— 只提供建议
 - Workflow 不修改状态文件 —— 这是 skill 和 hook 的职责
 - Workflow 始终从当前持久化状态重新计算 nextAction（不跨调用缓存）
+- Workflow 通过 AskUserQuestion 获取用户确认后，自动派发 Agent 执行；如果用户选择暂停，则不做任何操作
