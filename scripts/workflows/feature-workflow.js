@@ -3,6 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const { readMatrix, hasBlocking } = require('../devsphere-review-matrix');
+const { readCurrentTask, readState, writeState, getTaskPath } = require('./devsphere-state');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -101,114 +102,11 @@ function resolveNextAction(taskPath, state) {
 }
 
 function resolveDesigning(taskPath, state, stages, mode, humanGates) {
-  const stageOrder = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
-  const matrix = readMatrix(taskPath);
-
-  // Check each stage in order
-  for (const stageName of stageOrder) {
-    const stage = stages[stageName];
-    if (!stage) continue;
-
-    const isReady = isStageReady(stage.status, stageName, mode, humanGates);
-
-    if (!isReady) {
-      // Check if stage needs review (has artifact but not reviewed)
-      if (stage.status === 'drafted' && matrix) {
-        const artifactTarget = stageToArtifact(stageName);
-        if (matrix.artifacts[artifactTarget] &&
-            matrix.artifacts[artifactTarget].status !== 'pending') {
-          // Has been reviewed — check for blocking
-          if (hasBlocking(matrix, artifactTarget)) {
-            return makeHumanConfirm(state, stageName, artifactTarget,
-              `Stage ${stageName} has unclosed blocking issues. Return to design agent for revision.`,
-              [stage.artifact], [],
-              { type: 'blocking_resolution', prompt: `Stage ${stageName} has unclosed blocking issues. Resolve blocking issues before continuing.` });
-          }
-          // No blocking but not ai_review_passed — needs review
-          return makeAction('run_skill', state, stageName, artifactTarget,
-            getDesignSkill(stageName), { mode: 'revise' }, [getDesignAgent(stageName)],
-            `Stage ${stageName} requires re-review. Revise design and re-review.`,
-            [stage.artifact], [stage.artifact]);
-        }
-      }
-
-      // ai_review_passed but not yet human_approved — requires human confirmation
-      if (stage.status === 'ai_review_passed') {
-        if (mode === 'strict-human-loop' ||
-            (mode === 'collaborative-design' && humanGates.includes(stageName))) {
-          return makeAction('human_confirm', state, stageName, stageToArtifact(stageName),
-            null, {}, [],
-            `Stage ${stageName} passed AI review. Human confirmation required before proceeding.`,
-            [stage.artifact],
-            [],
-            { type: 'stage_approval', prompt: `请确认 ${stageName} 阶段设计是否通过人工评审。回复 OK 确认通过，或提出修改意见。` });
-        }
-        // auto-design with ai_review_passed inside !isReady — defensive: fall through to catch-all
-      }
-
-      // Need to generate/revise design
-      const artifactTarget = stageToArtifact(stageName);
-      const designAgent = getDesignAgent(stageName);
-
-      if (stage.status === 'not_started') {
-        return makeAction('run_skill', state, 'design', null,
-          'feature-design', {}, [designAgent],
-          `Stage ${stageName} is not started. Begin design.`,
-          [], [stage.artifact || `artifacts/${artifactTarget}.md`]);
-      }
-
-      // drafted — needs review
-      const reviewers = getDesignReviewers(stageName);
-      return makeAction('run_skill', state, stageName, artifactTarget,
-        'feature-review', { target: artifactTarget }, reviewers,
-        `Stage ${stageName} is drafted and ready for formal AI review.`,
-        [stage.artifact, 'reviews/review-matrix.json'],
-        reviewers.map(r => `reviews/${artifactTarget}/${r}-review.md`).concat(['reviews/review-matrix.json']));
-    }
-
-    // Stage is ready — check if next stage needs review scheduling
-    if (stage.status === 'ai_review_passed' && mode !== 'auto-design') {
-      if ((mode === 'strict-human-loop') ||
-          (mode === 'collaborative-design' && humanGates.includes(stageName))) {
-        return makeAction('human_confirm', state, stageName, stageToArtifact(stageName),
-          null, {}, [],
-          `Stage ${stageName} passed AI review. Human confirmation required before proceeding.`,
-          [stage.artifact],
-          [],
-          { type: 'stage_approval', prompt: `请确认 ${stageName} 阶段设计是否通过人工评审。回复 OK 确认通过，或提出修改意见。` });
-      }
-    }
-  }
-
-  // All 4 stages ready — check integrated design
-  const integratedPath = path.join(taskPath, 'artifacts', 'integrated-design.md');
-  if (!fs.existsSync(integratedPath)) {
-    return makeAction('run_skill', state, 'integration', 'integrated-design',
-      'feature-design', {}, ['sa', 'se', 'mde', 'tse'],
-      'All design phases complete. Generate integrated design.',
-      stageOrder.map(s => stages[s]?.artifact).filter(Boolean),
-      ['artifacts/integrated-design.md']);
-  }
-
-  // Check integrated review
-  if (matrix && matrix.artifacts['integrated-design'] &&
-      matrix.artifacts['integrated-design'].status !== 'passed') {
-    if (hasBlocking(matrix, 'integrated-design')) {
-      return makeHumanConfirm(state, 'integration', 'integrated-design',
-        'Integrated design has unclosed blocking issues. Return to design agent for revision.',
-        ['artifacts/integrated-design.md'], [],
-        { type: 'blocking_resolution', prompt: 'Integrated design has unclosed blocking issues. Resolve blocking issues before continuing.' });
-    }
-    return makeAction('run_skill', state, 'integration', 'integrated-design',
-      'feature-review', { target: 'integrated-design' }, ['sa', 'se', 'mde', 'tse'],
-      'Integrated design needs consistency review.',
-      ['artifacts/integrated-design.md', 'reviews/review-matrix.json'],
-      ['reviews/review-matrix.json']);
-  }
-
-  // All done — ready for design_ready
-  return makeAction('show_status', state, null, null, null, {}, [],
-    'All design phases complete with reviews passed. Task can advance to design_ready.',
+  // All design sub-stage routing delegated to feature-design skill.
+  // resolver only decides the top-level entry point.
+  return makeAction('run_skill', state, 'design', null,
+    'feature-design', {}, [],
+    'Task is in designing phase. Delegate to feature-design for sub-stage routing.',
     [], []);
 }
 
@@ -283,6 +181,64 @@ function makeAction(kind, state, stage, target, skill, args, agents, reason, req
 function makeHumanConfirm(state, stage, target, reason, required, expected, pause) {
   return makeAction('human_confirm', state, stage, target, null, {}, [],
     reason, required || [], expected || [], pause || null);
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  switch (command) {
+    case 'sync-stage-status': {
+      const workspaceRoot = args[1];
+      const current = readCurrentTask(workspaceRoot);
+      if (!current || !current.activeTaskId) {
+        process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
+        process.exit(0);
+      }
+      const taskPath = getTaskPath(workspaceRoot);
+      const state = readState(taskPath);
+      if (!state || !state.stages) {
+        process.stdout.write(JSON.stringify({ synced: false, reason: 'No stages in state' }));
+        process.exit(0);
+      }
+
+      const updated = [];
+      for (const [stageName, stageData] of Object.entries(state.stages)) {
+        if (!stageData.artifact) continue;
+        const artifactPath = path.join(taskPath, stageData.artifact);
+
+        // 确定性事实：artifact 存在 + not_started → drafted
+        if (fs.existsSync(artifactPath) && stageData.status === 'not_started') {
+          stageData.status = 'drafted';
+          updated.push({ stage: stageName, from: 'not_started', to: 'drafted' });
+        }
+      }
+
+      // 评审状态同步
+      const matrix = readMatrix(taskPath);
+      if (matrix && matrix.artifacts) {
+        for (const [stageName, stageData] of Object.entries(state.stages)) {
+          if (stageData.status !== 'drafted') continue;
+          const artifactTarget = stageToArtifact(stageName);
+          const artifactMatrix = matrix.artifacts[artifactTarget];
+          if (artifactMatrix && artifactMatrix.issues && artifactMatrix.issues.blocking === 0 && artifactMatrix.status !== 'pending') {
+            stageData.status = 'ai_review_passed';
+            updated.push({ stage: stageName, from: 'drafted', to: 'ai_review_passed' });
+          }
+        }
+      }
+
+      writeState(taskPath, state);
+      process.stdout.write(JSON.stringify({ synced: true, updated }));
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+if (require.main === module) {
+  main();
 }
 
 module.exports = { resolveNextAction };
