@@ -12,7 +12,7 @@ description: 方案设计阶段。SE Agent 产出 solution-design.md，定义架
 - **入口:** `/scc-dev-sphere:feature-design-solution [--mode revise]`
 - **入参:** 业务设计（`artifacts/business-design.md`）、架构规范查询
 - **输出:** `artifacts/solution-design.md`、evidence 快照
-- **完成标准:** `solution-design.md` 已写入且模板章节完整，阶段状态更新为 `drafted`
+- **完成标准:** `solution-design.md` 已写入且模板章节完整
 
 ## 执行
 

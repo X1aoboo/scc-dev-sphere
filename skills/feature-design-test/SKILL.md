@@ -12,7 +12,7 @@ description: 测试设计阶段。TSE Agent 产出 test-design.md，包含测试
 - **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
 - **入参:** 方案设计、实现设计、测试规范查询
 - **输出:** `artifacts/test-design.md`、evidence 快照
-- **完成标准:** `test-design.md` 已写入，阶段状态更新为 `drafted`
+- **完成标准:** `test-design.md` 已写入
 
 ## 执行
 
