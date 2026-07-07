@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-const path = require('path');
-const fs = require('fs');
 const { readCurrentTask, readState, getTaskPath } = require('./devsphere-state');
 
 // MVP: only feature resolver exists
@@ -93,33 +91,11 @@ function routeWorkflow(workspaceRoot) {
   return resolver.resolveNextAction(taskPath, state);
 }
 
-// --- Workspace root auto-detection ---
-
-function findWorkspaceRoot(startPath) {
-  let current = path.resolve(startPath);
-  const root = path.parse(current).root;
-
-  while (current !== root) {
-    const candidate = path.join(current, '.devsphere', 'current-task.json');
-    if (fs.existsSync(candidate)) {
-      return current;
-    }
-    current = path.dirname(current);
-  }
-  // Fallback: check root level too
-  const rootCandidate = path.join(root, '.devsphere', 'current-task.json');
-  if (fs.existsSync(rootCandidate)) {
-    return root;
-  }
-  return null;
-}
-
 // --- CLI ---
 
 function main() {
   const args = process.argv.slice(2);
-  const hint = args[0] || process.cwd();
-  const workspaceRoot = findWorkspaceRoot(hint) || hint;
+  const workspaceRoot = args[0] || process.cwd();
 
   try {
     const nextAction = routeWorkflow(workspaceRoot);
