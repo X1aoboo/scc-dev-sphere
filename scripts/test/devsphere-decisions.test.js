@@ -1,0 +1,77 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const { makeTask } = require('./helpers');
+const {
+  initDecisions, readDecisions, addDecision, resolveDecision,
+  listGatedPending, countGatedPending, SLUG_PREFIX,
+} = require('../devsphere-decisions');
+
+test('initDecisions 创建空 decisions 文件', () => {
+  const { taskPath, taskId } = makeTask();
+  const data = initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  assert.strictEqual(data.stage, 'businessDesign');
+  assert.deepStrictEqual(data.decisions, []);
+  assert.ok(fs.existsSync(path.join(taskPath, 'decisions', 'business-design-decisions.json')));
+});
+
+test('addDecision 为 gated 项分配 BD-DEC-001 并落盘', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  const d = addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope',
+    summary: '是否需要注册登录？',
+    options: [{ label: '需要', description: 'x' }, { label: '不需要', description: 'y' }],
+    askMode: 'single_select', recommendation: '需要',
+  });
+  assert.strictEqual(d.id, 'BD-DEC-001');
+  assert.strictEqual(d.status, 'pending');
+  const persisted = readDecisions(taskPath, 'business-design');
+  assert.strictEqual(persisted.decisions.length, 1);
+});
+
+test('addDecision 自增 ID 与 autonomous 类型', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'a' });
+  addDecision(taskPath, 'business-design', { type: 'autonomous', category: 'tradeoff', summary: 'b' });
+  const persisted = readDecisions(taskPath, 'business-design');
+  assert.strictEqual(persisted.decisions[0].id, 'BD-DEC-001');
+  assert.strictEqual(persisted.decisions[1].id, 'BD-DEC-002');
+});
+
+test('addDecision 拒绝非法 type', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  assert.throws(() => addDecision(taskPath, 'business-design', { type: 'bogus', category: 'feature_scope', summary: 'x' }));
+});
+
+test('resolveDecision 置 decided 并记 resolution', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'q' });
+  const r = resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: '需要', note: 'ok', decidedAt: '2026-07-09T00:00:00Z' });
+  assert.strictEqual(r.status, 'decided');
+  assert.strictEqual(r.resolution.chosen, '需要');
+});
+
+test('countGatedPending 只数 gated+pending', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'g1' });
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'assumption', summary: 'g2' });
+  addDecision(taskPath, 'business-design', { type: 'autonomous', category: 'tradeoff', summary: 'a1' });
+  assert.strictEqual(countGatedPending(taskPath, 'business-design'), 2);
+  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'x', decidedAt: 't' });
+  assert.strictEqual(countGatedPending(taskPath, 'business-design'), 1);
+  assert.strictEqual(listGatedPending(taskPath, 'business-design').length, 1);
+});
+
+test('SLUG_PREFIX 映射四个设计阶段', () => {
+  assert.strictEqual(SLUG_PREFIX['business-design'], 'BD');
+  assert.strictEqual(SLUG_PREFIX['solution-design'], 'SD');
+  assert.strictEqual(SLUG_PREFIX['implementation-design'], 'ID');
+  assert.strictEqual(SLUG_PREFIX['test-design'], 'TD');
+});
