@@ -130,6 +130,21 @@ SA/SE/MDE/TSE = teammate 执行者
 
 「SA 正在干活」是 live teammate 的运行时事实（lead 持有 teammate 句柄），不写入持久化状态——resolver 本就无状态、每次从磁盘重算。
 
+### 4.4 确定性兜底机制（harness 级强制）
+
+§2 不变量5「未解决 gated 决策不允许推进」由 hook 在 harness 层兜底，不依赖 teammate 自觉：
+
+**PreToolUse 守卫（必备）**：matcher `Write|Edit`，调用 `devsphere-guard.js check-decisions-resolved`。逻辑：
+1. 读被写文件路径；非设计阶段主产物（business-design.md / solution-design.md / implementation-design.md / test-design.md）→ 放行（decisions 文件、evidence 等不受限）。
+2. 是主产物 → 读对应阶段 decisions 文件，统计 `type=gated && status=pending`。
+3. 存在 pending → **deny**，返回「先解决 N 个待决决策，再定稿」；pending=0 → 放行。
+
+happy path 中此守卫永不触发（SA 先 scoping→决议→再定稿）；仅在 SA 违约时拦下，deny 消息回给 SA 促其先 resolve。选 PreToolUse 而非 PostToolUse，是为了在 SA 写下主产物之前就直接拒绝——harness 级强制，不靠 prompt。
+
+**sync-artifact 防错（必备，纵深防御）**：现有 `PostToolUse → sync-artifact` 改造为 decisions 感知——主产物被写但该阶段 gated pending > 0 时不置 `drafted`。与 PreToolUse 守卫互为双保险。注意：这是阻止一次错误的 `drafted` 迁移，**不是**把 decision 状态同步进 state.json（不违反 §4「不加枚举」）。
+
+**SubagentStop 重算（可选增强）**：teammate 跑完一轮停当时触发 `sync-stage-status`，给 lead 一个确定性状态快照。lead 本会被 agent-team 消息唤醒并重跑 resolver，故此为稳健性加固，非必需；重启场景不依赖它。
+
 ---
 
 ## 5. 数据结构：单一 decisions 文件（双用途）
@@ -221,7 +236,7 @@ SA/SE/MDE/TSE = teammate 执行者
 ### 参考 / 模板 / Hook / 文档
 - `references/interaction-guidelines.md` — 新增 `decision_loop` 模式（lead 如何机械地把 gated 项转成 AskUserQuestion）。
 - `templates/decisions/` — 新结构化决策模板（替换现有决策模板）。
-- `hooks/hooks.json` — PostToolUse 写 decisions 文件 → 同步 resolved 状态（对齐 review-matrix 同步模式）。
+- `hooks/hooks.json` — 见 §4.4：① 新增 PreToolUse 守卫 `check-decisions-resolved`（必备）；② 现有 `sync-artifact` 改造为 decisions 感知（必备）；③ 可选 SubagentStop 重算。**不需要**把 decision 状态同步进 state.json 的 hook——resolver 直接读 decisions 文件（§4）。
 - `CLAUDE.md` — 更新状态机、设计阶段表、workflow 路由描述。
 - 插件文档化依赖 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。
 
@@ -232,4 +247,3 @@ SA/SE/MDE/TSE = teammate 执行者
 - agent-teams teammate 的具体派发 prompt 模板。
 - `decision_loop` AskUserQuestion 构造的精确字段映射。
 - guard 校验失败时的具体回流路径与重试上限。
-- 是否需要 `SubagentStart`/`SubagentStop` hook 做 teammate 生命周期门禁。
