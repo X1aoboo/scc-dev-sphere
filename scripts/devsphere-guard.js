@@ -2,7 +2,9 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state');
+const { resolveMainArtifact, countGatedPending, readDecisions } = require('./devsphere-decisions');
 
 const ALLOWED_IMPLEMENT_STATUSES = ['implementation_planned', 'implementing'];
 
@@ -35,7 +37,6 @@ function checkImplementEntry(workspaceRoot) {
 
   // Check implementation plan exists
   const planPath = path.join(taskPath, 'implementation', 'implementation-plan.md');
-  const fs = require('fs');
   if (state.status === 'implementation_planned' && !fs.existsSync(planPath)) {
     return {
       allowed: false,
@@ -69,6 +70,37 @@ function checkApproveEntry(workspaceRoot) {
   }
 
   return { allowed: true, reason: 'OK' };
+}
+
+// PreToolUse 决策：主产物写入前，确保该阶段 gated 决策已全部 resolved。
+function decideWrite(filePath) {
+  const target = resolveMainArtifact(filePath);
+  if (!target.isMainArtifact) return { allow: true };
+  const { taskPath, slug } = target;
+  const decisions = readDecisions(taskPath, slug);
+  if (!decisions) {
+    return { allow: false, reason: `scoping 未完成：${slug} 的 decisions 文件不存在，先完成 scope（出土决策）再定稿` };
+  }
+  const pending = countGatedPending(taskPath, slug);
+  if (pending > 0) {
+    return { allow: false, reason: `还有 ${pending} 个 gated 决策待用户确认，先 resolve 再定稿 ${slug}.md` };
+  }
+  return { allow: true };
+}
+
+// PreToolUse stdin 处理：输出 hookSpecificOutput.permissionDecision
+function checkDecisionsResolvedFromStdin(stdinJson) {
+  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  if (!filePath) return null; // 无文件路径，不表态
+  const d = decideWrite(filePath);
+  if (d.allow) return null; // 静默放行（exit 0 无输出）
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: d.reason,
+    },
+  };
 }
 
 function checkStateAdvance(taskPath, targetStatus) {
@@ -127,6 +159,21 @@ function main() {
         result = checkStateAdvance(taskPath, args[2]);
         break;
       }
+      case 'check-decisions-resolved': {
+        let stdinJson = null;
+        try {
+          stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8'));
+        } catch (e) {
+          process.exit(0); // 解析失败则不表态
+        }
+        const decision = checkDecisionsResolvedFromStdin(stdinJson);
+        if (decision) {
+          process.stdout.write(JSON.stringify(decision));
+          process.exit(0);
+        }
+        process.exit(0); // 静默放行
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -143,4 +190,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask };
+module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin };
