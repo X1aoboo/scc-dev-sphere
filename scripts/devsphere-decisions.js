@@ -108,6 +108,29 @@ function countGatedPending(taskPath, slug) {
   return listGatedPending(taskPath, slug).length;
 }
 
+const MAIN_ARTIFACT_FILES = {
+  'business-design.md': 'business-design',
+  'solution-design.md': 'solution-design',
+  'implementation-design.md': 'implementation-design',
+  'test-design.md': 'test-design',
+};
+
+// 给定 Write/Edit 的绝对 file_path，判断是否为某设计阶段主产物；
+// 若是，返回 {isMainArtifact:true, taskPath, slug}。taskPath = 主产物所在 artifacts 目录的父目录。
+function resolveMainArtifact(filePath) {
+  if (typeof filePath !== 'string') return { isMainArtifact: false };
+  const norm = filePath.replace(/\\/g, '/');
+  const parts = norm.split('/');
+  const fileName = parts[parts.length - 1];
+  const slug = MAIN_ARTIFACT_FILES[fileName];
+  if (!slug) return { isMainArtifact: false };
+  // parts: [..., '<taskPath>', 'artifacts', '<file>']
+  if (parts[parts.length - 2] !== 'artifacts') return { isMainArtifact: false };
+  const taskPath = parts.slice(0, -2).join('/');
+  if (!taskPath) return { isMainArtifact: false };
+  return { isMainArtifact: true, taskPath, slug };
+}
+
 // --- CLI ---
 
 function main() {
@@ -158,4 +181,5 @@ module.exports = {
   DECISIONS_DIR, SLUG_PREFIX, VALID_TYPES, VALID_CATEGORIES, VALID_ASK_MODES,
   decisionsPath, readDecisions, writeDecisions, initDecisions,
   addDecision, resolveDecision, listGatedPending, countGatedPending,
+  resolveMainArtifact, MAIN_ARTIFACT_FILES,
 };
