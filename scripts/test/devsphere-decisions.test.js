@@ -35,7 +35,7 @@ test('addDecision 为 gated 项分配 BD-DEC-001 并落盘', () => {
 test('addDecision 自增 ID 与 autonomous 类型', () => {
   const { taskPath, taskId } = makeTask();
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'a' });
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'a', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' });
   addDecision(taskPath, 'business-design', { type: 'autonomous', category: 'tradeoff', summary: 'b' });
   const persisted = readDecisions(taskPath, 'business-design');
   assert.strictEqual(persisted.decisions[0].id, 'BD-DEC-001');
@@ -51,7 +51,7 @@ test('addDecision 拒绝非法 type', () => {
 test('resolveDecision 置 decided 并记 resolution', () => {
   const { taskPath, taskId } = makeTask();
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'q' });
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' });
   const r = resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: '需要', note: 'ok', decidedAt: '2026-07-09T00:00:00Z' });
   assert.strictEqual(r.status, 'decided');
   assert.strictEqual(r.resolution.chosen, '需要');
@@ -60,8 +60,8 @@ test('resolveDecision 置 decided 并记 resolution', () => {
 test('countGatedPending 只数 gated+pending', () => {
   const { taskPath, taskId } = makeTask();
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'g1' });
-  addDecision(taskPath, 'business-design', { type: 'gated', category: 'assumption', summary: 'g2' });
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'g1', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' });
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'assumption', summary: 'g2', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' });
   addDecision(taskPath, 'business-design', { type: 'autonomous', category: 'tradeoff', summary: 'a1' });
   assert.strictEqual(countGatedPending(taskPath, 'business-design'), 2);
   resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'x', decidedAt: 't' });

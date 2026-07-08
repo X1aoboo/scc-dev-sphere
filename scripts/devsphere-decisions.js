@@ -52,7 +52,10 @@ function addDecision(taskPath, slug, input) {
     throw new Error(`Invalid category: ${input.category}`);
   }
   if (input.type === 'gated') {
-    if (input.askMode != null && !VALID_ASK_MODES.includes(input.askMode)) {
+    if (!Array.isArray(input.options) || input.options.length < 2 || input.options.length > 4) {
+      throw new Error('gated decision requires 2-4 options');
+    }
+    if (!VALID_ASK_MODES.includes(input.askMode)) {
       throw new Error(`Invalid askMode: ${input.askMode}`);
     }
   }
