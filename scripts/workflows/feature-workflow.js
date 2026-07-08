@@ -26,9 +26,11 @@ function resolveNextAction(taskPath, state) {
   }
 
   // --- assessed ---
+  // feature-design is a sub-orchestrator that runs in the main session (agents=[]).
+  // It must NOT be dispatched as an Agent task — it routes to design sub-skills itself.
   if (status === 'assessed') {
     return makeAction('run_skill', state, 'design', null,
-      'feature-design', {}, ['sa'],
+      'feature-design', {}, [],
       'Assessment complete. Begin design phase.',
       [], ['artifacts/business-design.md']);
   }
