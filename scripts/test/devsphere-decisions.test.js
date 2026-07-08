@@ -86,3 +86,64 @@ test('SLUG_PREFIX 映射四个设计阶段', () => {
   assert.strictEqual(SLUG_PREFIX['implementation-design'], 'ID');
   assert.strictEqual(SLUG_PREFIX['test-design'], 'TD');
 });
+
+// === Fix 4: I2 initDecisions 参数校验 ===
+
+test('I2: initDecisions 缺参数 → 抛错', () => {
+  const { taskPath, taskId } = makeTask();
+  // 缺 taskId
+  assert.throws(
+    () => initDecisions(taskPath, 'business-design', undefined, 'businessDesign'),
+    /initDecisions requires/
+  );
+  // 缺 slug
+  assert.throws(
+    () => initDecisions(taskPath, undefined, taskId, 'businessDesign'),
+    /initDecisions requires/
+  );
+  // 缺 stageName
+  assert.throws(
+    () => initDecisions(taskPath, 'business-design', taskId, undefined),
+    /initDecisions requires/
+  );
+  // 缺 taskPath
+  assert.throws(
+    () => initDecisions(undefined, 'business-design', taskId, 'businessDesign'),
+    /initDecisions requires/
+  );
+});
+
+// === Fix 5: I3 addDecision summary 校验 ===
+
+test('I3: addDecision 缺 summary（undefined）→ 抛错', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  assert.throws(
+    () => addDecision(taskPath, 'business-design', {
+      type: 'autonomous', category: 'tradeoff', summary: undefined,
+    }),
+    /summary is required/
+  );
+});
+
+test('I3: addDecision summary 为空字符串 → 抛错', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  assert.throws(
+    () => addDecision(taskPath, 'business-design', {
+      type: 'autonomous', category: 'tradeoff', summary: '',
+    }),
+    /summary is required/
+  );
+});
+
+test('I3: addDecision summary 仅空白 → 抛错', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  assert.throws(
+    () => addDecision(taskPath, 'business-design', {
+      type: 'autonomous', category: 'tradeoff', summary: '   ',
+    }),
+    /summary is required/
+  );
+});

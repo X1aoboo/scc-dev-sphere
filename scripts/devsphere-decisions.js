@@ -28,6 +28,9 @@ function writeDecisions(taskPath, slug, data) {
 }
 
 function initDecisions(taskPath, slug, taskId, stageName) {
+  if (!taskPath || !slug || !taskId || !stageName) {
+    throw new Error('initDecisions requires taskPath, slug, taskId, stageName');
+  }
   const data = { stage: stageName, taskId, decisions: [] };
   writeDecisions(taskPath, slug, data);
   return data;
@@ -50,6 +53,9 @@ function addDecision(taskPath, slug, input) {
   }
   if (!input.category || !VALID_CATEGORIES.includes(input.category)) {
     throw new Error(`Invalid category: ${input.category}`);
+  }
+  if (typeof input.summary !== 'string' || !input.summary.trim()) {
+    throw new Error('summary is required');
   }
   if (input.type === 'gated') {
     if (!Array.isArray(input.options) || input.options.length < 2 || input.options.length > 4) {

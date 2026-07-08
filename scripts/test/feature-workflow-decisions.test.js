@@ -11,6 +11,7 @@ test('主产物不存在 + 无 decisions → scope', () => {
   const { taskPath } = makeTask();
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'scope');
+  assert.strictEqual(r.slug, 'business-design');
 });
 
 test('decisions 存在 + gated pending>0 → ask', () => {
@@ -23,6 +24,7 @@ test('decisions 存在 + gated pending>0 → ask', () => {
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'ask');
   assert.strictEqual(r.gatedPending, 1);
+  assert.strictEqual(r.slug, 'business-design');
 });
 
 test('decisions 存在 + gated pending=0 → draft', () => {
@@ -36,6 +38,7 @@ test('decisions 存在 + gated pending=0 → draft', () => {
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'draft');
   assert.strictEqual(r.gatedPending, 0);
+  assert.strictEqual(r.slug, 'business-design');
 });
 
 test('主产物已存在 → ready-for-review', () => {
@@ -44,6 +47,7 @@ test('主产物已存在 → ready-for-review', () => {
   fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'done');
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'ready-for-review');
+  assert.strictEqual(r.slug, 'business-design');
 });
 
 const { execFileSync } = require('child_process');
@@ -65,7 +69,7 @@ test('sync-stage-status 在 gated pending>0 时不置 drafted', () => {
   });
   // 模拟守卫被绕过：强行写主产物
   fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'x');
-  const res = runSync(workspaceRoot);
+  runSync(workspaceRoot);
   const { readState } = require('../devsphere-state');
   const state = readState(taskPath);
   assert.strictEqual(state.stages.businessDesign.status, 'not_started'); // 不升 drafted

@@ -72,12 +72,29 @@ function checkApproveEntry(workspaceRoot) {
   return { allowed: true, reason: 'OK' };
 }
 
-// PreToolUse 决策：主产物写入前，确保该阶段 gated 决策已全部 resolved。
+// PreToolUse 决策：仅对「真实 devsphere 任务 + 强制人工交互模式」的设计阶段主产物，
+// 强制 gated 决策已全部 resolved。auto-design 与非 devsphere 路径一律放行，避免破坏既有流程。
 function decideWrite(filePath) {
   const target = resolveMainArtifact(filePath);
   if (!target.isMainArtifact) return { allow: true };
   const { taskPath, slug } = target;
-  const decisions = readDecisions(taskPath, slug);
+
+  // I1: 必须是真实 devsphere 任务（state.json 可读）。读不到 → 不是我们的任务 → 放行。
+  let state;
+  try { state = readState(taskPath); } catch (e) { return { allow: true }; }
+  if (!state) return { allow: true };
+
+  // C1 模式门控：auto-design 不强制决策循环，放行（保护既有 AI 自主流程）。
+  const mode = state.workflowMode || 'auto-design';
+  if (mode === 'auto-design') return { allow: true };
+
+  // 强制模式（strict-human-loop / collaborative-design）：应用决策门。
+  let decisions;
+  try { decisions = readDecisions(taskPath, slug); }
+  catch (e) {
+    // I5: decisions 文件损坏 → fail-closed（拒绝），因为本就要强制。
+    return { allow: false, reason: `decisions 文件损坏，请检查 ${slug}-decisions.json 后再定稿` };
+  }
   if (!decisions) {
     return { allow: false, reason: `scoping 未完成：${slug} 的 decisions 文件不存在，先完成 scope（出土决策）再定稿` };
   }
