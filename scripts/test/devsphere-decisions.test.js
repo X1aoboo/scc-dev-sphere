@@ -48,6 +48,17 @@ test('addDecision 拒绝非法 type', () => {
   assert.throws(() => addDecision(taskPath, 'business-design', { type: 'bogus', category: 'feature_scope', summary: 'x' }));
 });
 
+test('addDecision 对 gated 强校验：缺 options / 非法 askMode / 选项不足 均拒绝', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  // 缺 options
+  assert.throws(() => addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'x' }));
+  // 非法 askMode
+  assert.throws(() => addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'x', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'bogus' }));
+  // 选项不足（仅 1 个）
+  assert.throws(() => addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'x', options: [{ label: 'a', description: 'x' }], askMode: 'single_select' }));
+});
+
 test('resolveDecision 置 decided 并记 resolution', () => {
   const { taskPath, taskId } = makeTask();
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
