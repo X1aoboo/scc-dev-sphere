@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { readMatrix, hasBlocking } = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
+const { readDecisions, countGatedPending } = require('../devsphere-decisions');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -110,6 +111,24 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
     'feature-design', {}, [],
     'Task is in designing phase. Delegate to feature-design for sub-stage routing.',
     [], []);
+}
+
+// 设计阶段决策循环动作（spec §4.2）。确定性：仅依据磁盘事实。
+function resolveDesignStageAction(taskPath, stageName) {
+  const slug = stageToArtifact(stageName);
+  const artifactPath = path.join(taskPath, 'artifacts', `${slug}.md`);
+  if (fs.existsSync(artifactPath)) {
+    return { action: 'ready-for-review', slug, gatedPending: 0, reason: `${stageName} 主产物已存在，交评审流程` };
+  }
+  const decisions = readDecisions(taskPath, slug);
+  if (!decisions) {
+    return { action: 'scope', slug, gatedPending: 0, reason: `${stageName} 未 scope：派 SA 查知识 + 出土 gated 决策` };
+  }
+  const pending = countGatedPending(taskPath, slug);
+  if (pending > 0) {
+    return { action: 'ask', slug, gatedPending: pending, reason: `${stageName} 有 ${pending} 个 gated 决策待用户确认` };
+  }
+  return { action: 'draft', slug, gatedPending: 0, reason: `${stageName} gated 决策已全部 resolved，可定稿` };
 }
 
 // --- Helpers ---
@@ -234,6 +253,12 @@ function main() {
       process.stdout.write(JSON.stringify({ synced: true, updated }));
       break;
     }
+    case 'design-stage-action': {
+      const taskPath = args[1];
+      const stageName = args[2];
+      process.stdout.write(JSON.stringify(resolveDesignStageAction(taskPath, stageName)));
+      break;
+    }
     case 'set-task-status': {
       const workspaceRoot = args[1];
       const newStatus = args[2];
@@ -269,4 +294,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveNextAction };
+module.exports = { resolveNextAction, resolveDesignStageAction };

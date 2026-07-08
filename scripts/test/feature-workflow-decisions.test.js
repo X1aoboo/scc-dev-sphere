@@ -1,0 +1,47 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+const { makeTask } = require('./helpers');
+const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
+const { resolveDesignStageAction } = require('../workflows/feature-workflow');
+
+test('主产物不存在 + 无 decisions → scope', () => {
+  const { taskPath } = makeTask();
+  const r = resolveDesignStageAction(taskPath, 'businessDesign');
+  assert.strictEqual(r.action, 'scope');
+});
+
+test('decisions 存在 + gated pending>0 → ask', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  const r = resolveDesignStageAction(taskPath, 'businessDesign');
+  assert.strictEqual(r.action, 'ask');
+  assert.strictEqual(r.gatedPending, 1);
+});
+
+test('decisions 存在 + gated pending=0 → draft', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
+  const r = resolveDesignStageAction(taskPath, 'businessDesign');
+  assert.strictEqual(r.action, 'draft');
+  assert.strictEqual(r.gatedPending, 0);
+});
+
+test('主产物已存在 → ready-for-review', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'done');
+  const r = resolveDesignStageAction(taskPath, 'businessDesign');
+  assert.strictEqual(r.action, 'ready-for-review');
+});
