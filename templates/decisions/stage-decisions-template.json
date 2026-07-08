@@ -1,0 +1,5 @@
+{
+  "stage": "{{STAGE_NAME}}",
+  "taskId": "{{TASK_ID}}",
+  "decisions": []
+}
