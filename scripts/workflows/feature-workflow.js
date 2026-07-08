@@ -228,8 +228,14 @@ function main() {
         if (!stageData.artifact) continue;
         const artifactPath = path.join(taskPath, stageData.artifact);
 
-        // 确定性事实：artifact 存在 + not_started → drafted
+        // 确定性事实：artifact 存在 + not_started + gated 决策已 resolved → drafted
         if (fs.existsSync(artifactPath) && stageData.status === 'not_started') {
+          const slug = stageToArtifact(stageName);
+          // 仅对四个设计阶段做决策门校验（integrated 等无 decisions）
+          if (readDecisions(taskPath, slug) && countGatedPending(taskPath, slug) > 0) {
+            // gated 未 resolved，禁止升 drafted（防错）
+            continue;
+          }
           stageData.status = 'drafted';
           updated.push({ stage: stageName, from: 'not_started', to: 'drafted' });
         }

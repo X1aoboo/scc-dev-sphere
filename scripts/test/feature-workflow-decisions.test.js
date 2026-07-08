@@ -45,3 +45,43 @@ test('主产物已存在 → ready-for-review', () => {
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'ready-for-review');
 });
+
+const { execFileSync } = require('child_process');
+
+function runSync(workspaceRoot) {
+  const out = execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'sync-stage-status', workspaceRoot,
+  ], { encoding: 'utf-8' });
+  return JSON.parse(out);
+}
+
+test('sync-stage-status 在 gated pending>0 时不置 drafted', () => {
+  const { workspaceRoot, taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  // 模拟守卫被绕过：强行写主产物
+  fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'x');
+  const res = runSync(workspaceRoot);
+  const { readState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  assert.strictEqual(state.stages.businessDesign.status, 'not_started'); // 不升 drafted
+});
+
+test('sync-stage-status 在 gated pending=0 时正常置 drafted', () => {
+  const { workspaceRoot, taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
+  fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'x');
+  runSync(workspaceRoot);
+  const { readState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  assert.strictEqual(state.stages.businessDesign.status, 'drafted');
+});
