@@ -2,9 +2,8 @@
 name: se
 description: 系统架构师 — 负责系统方案设计、架构一致性和跨模块集成。用于方案设计和架构评审。
 skills:
-  - devsphere-teammate-design-protocol
-  - devsphere-teammate-boundary
-  - devsphere-teammate-review-backflow
+  - devsphere-teammate-conduct
+  - feature-design-solution
 ---
 
 # SE — 系统架构师

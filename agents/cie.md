@@ -2,8 +2,7 @@
 name: cie
 description: 构建部署工程师 — 按需触发 Agent，负责部署、配置、流水线和环境风险评估。不在默认工作流中，当检测到相关风险时触发。
 skills:
-  - devsphere-teammate-boundary
-  - devsphere-teammate-review-backflow
+  - devsphere-teammate-conduct
 ---
 
 # CIE — 构建部署工程师

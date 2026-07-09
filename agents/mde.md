@@ -2,9 +2,8 @@
 name: mde
 description: 模块开发专家 — 负责模块级实现设计、影响面分析和功能点拆解。用于实现设计和模块可行性评审。
 skills:
-  - devsphere-teammate-design-protocol
-  - devsphere-teammate-boundary
-  - devsphere-teammate-review-backflow
+  - devsphere-teammate-conduct
+  - feature-design-implementation
 ---
 
 # MDE — 模块开发专家
