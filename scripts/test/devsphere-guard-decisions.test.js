@@ -30,7 +30,7 @@ test('主产物且 gated pending>0 → 拒绝', () => {
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
   assert.strictEqual(r.allow, false);
@@ -42,7 +42,7 @@ test('主产物且 gated pending=0 → 放行', () => {
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
@@ -62,7 +62,7 @@ test('C1: auto-design 模式即使有 gated pending 也放行（mode-gate 豁免
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
   assert.strictEqual(r.allow, true);
@@ -93,7 +93,7 @@ test('stdin: strict 任务主产物有 gated pending → deny 对象', () => {
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const stdin = { tool_input: { file_path: mainArtifactPath(taskPath, 'business-design') } };
   const result = checkDecisionsResolvedFromStdin(stdin);
@@ -120,7 +120,7 @@ test('stdin: strict 任务主产物 gated pending=0（已 resolved）→ null（
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
   const stdin = { tool_input: { file_path: mainArtifactPath(taskPath, 'business-design') } };
@@ -132,7 +132,7 @@ test('stdin: auto-design 任务即使 gated pending → null（mode-gate 豁免�
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const stdin = { tool_input: { file_path: mainArtifactPath(taskPath, 'business-design') } };
   assert.strictEqual(checkDecisionsResolvedFromStdin(stdin), null);
@@ -154,7 +154,7 @@ test('collaborative: businessDesign 在 humanGateStages 中 + gated pending → 
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
   assert.strictEqual(r.allow, false);
@@ -169,7 +169,7 @@ test('collaborative: businessDesign 不在 humanGateStages（仅 testDesign 门�
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
   assert.strictEqual(r.allow, true);
@@ -180,8 +180,123 @@ test('auto-design + gated pending → 放行（stage-aware：humanGated=false）
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: 'test', askMode: 'single_select',
   });
   const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
+  assert.strictEqual(r.allow, true);
+});
+
+// === C1: checkDecisionsFormat tests ===
+
+const { checkDecisionsFormat } = require('../devsphere-guard');
+
+function decisionsFilePath(taskPath, slug) {
+  return path.join(taskPath, 'decisions', `${slug}-decisions.json`);
+}
+
+test('format: 非 decisions 目录 → 放行', () => {
+  const { taskPath } = makeTask();
+  const r = checkDecisionsFormat(path.join(taskPath, 'artifacts', 'business-design.md'));
+  assert.strictEqual(r.allow, true);
+});
+
+test('format: decisions 目录下 .md 文件 → 拒绝', () => {
+  const { taskPath } = makeTask();
+  const mdFile = path.join(taskPath, 'decisions', 'D-001-test.md');
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  fs.writeFileSync(mdFile, '# test');
+  const r = checkDecisionsFormat(mdFile);
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /JSON/);
+});
+
+test('format: decisions 目录下 .txt 文件 → 拒绝', () => {
+  const { taskPath } = makeTask();
+  const txtFile = path.join(taskPath, 'decisions', 'notes.txt');
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  fs.writeFileSync(txtFile, 'notes');
+  const r = checkDecisionsFormat(txtFile);
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /JSON/);
+});
+
+test('format: decisions JSON 损坏 → 拒绝', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, '{ not valid json');
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /JSON/);
+});
+
+test('format: decisions JSON 但 options 为纯字符串 → 拒绝', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-001',
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: ['strA', 'strB'], rationale: 'ok' }],
+  }));
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /{label, description}/);
+});
+
+test('format: decisions JSON options 缺 description → 拒绝', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-001',
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: [{ label: 'a' }, { label: 'b', description: 'y' }], rationale: 'ok' }],
+  }));
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, false);
+});
+
+test('format: decisions JSON gated 缺 rationale → 拒绝', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-001',
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }] }],
+  }));
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /rationale/);
+});
+
+test('format: 合法 decisions JSON（options {label,description} + rationale）→ 放行', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-001',
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], rationale: '从查询发现...不确定点...若不决策', askMode: 'single_select' }],
+  }));
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, true);
+});
+
+test('format: decisions JSON 空 decisions 数组 → 放行', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({ stage: 'businessDesign', taskId: 'FEAT-001', decisions: [] }));
+  const r = checkDecisionsFormat(jf);
+  assert.strictEqual(r.allow, true);
+});
+
+test('format: decisions JSON autonomous 不需要 rationale/options → 放行', () => {
+  const { taskPath } = makeTask();
+  fs.mkdirSync(path.join(taskPath, 'decisions'), { recursive: true });
+  const jf = decisionsFilePath(taskPath, 'business-design');
+  fs.writeFileSync(jf, JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-001',
+    decisions: [{ id: 'BD-DEC-001', type: 'autonomous', status: 'pending', category: 'tradeoff', summary: '自决', options: [], rationale: '' }],
+  }));
+  const r = checkDecisionsFormat(jf);
   assert.strictEqual(r.allow, true);
 });

@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state');
-const { resolveMainArtifact, countGatedPending, readDecisions } = require('./devsphere-decisions');
+const { resolveMainArtifact, countGatedPending, readDecisions, decisionsPath, SLUG_PREFIX } = require('./devsphere-decisions');
 
 const ALLOWED_IMPLEMENT_STATUSES = ['implementation_planned', 'implementing'];
 
@@ -130,6 +130,62 @@ function checkDecisionsResolvedFromStdin(stdinJson) {
   };
 }
 
+// 校验 decisions/ 目录下的文件格式：只允许 <slug>-decisions.json，且
+// gated decision 的 options 必须是 {label, description} 对象、rationale 必填。
+function checkDecisionsFormat(filePath) {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  // 仅匹配 decisions/ 目录
+  if (!/\/decisions\//.test(norm)) return { allow: true };
+
+  const fileName = norm.split('/').pop();
+  // 拒绝非 JSON 文件
+  if (!fileName.endsWith('.json')) {
+    return { allow: false, reason: `decisions 目录只允许 JSON 文件，发现非 JSON 文件: ${fileName}` };
+  }
+
+  // 读取并校验 JSON 内容
+  let data;
+  try { data = JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
+  catch (e) {
+    return { allow: false, reason: `decisions JSON 解析失败: ${e.message}` };
+  }
+
+  if (!data || !Array.isArray(data.decisions)) return { allow: true };
+
+  for (const d of data.decisions) {
+    if (d.type !== 'gated') continue;
+    if (!Array.isArray(d.options)) continue;
+
+    // 每个 option 必须是 {label, description} 对象
+    for (const opt of d.options) {
+      if (typeof opt !== 'object' || opt === null
+          || typeof opt.label !== 'string' || !opt.label.trim()
+          || typeof opt.description !== 'string' || !opt.description.trim()) {
+        return { allow: false, reason: `decisions 文件中 "${d.id || '?'}" 的 options 元素必须是 {label, description} 对象，且字符串非空` };
+      }
+    }
+    // gated 必须有 rationale
+    if (typeof d.rationale !== 'string' || !d.rationale.trim()) {
+      return { allow: false, reason: `decisions 文件中 gated 决策 "${d.id || '?'}" 缺少 rationale（必填）` };
+    }
+  }
+  return { allow: true };
+}
+
+function checkDecisionsFormatFromStdin(stdinJson) {
+  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  if (!filePath) return null;
+  const d = checkDecisionsFormat(filePath);
+  if (d.allow) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: d.reason,
+    },
+  };
+}
+
 function checkStateAdvance(taskPath, targetStatus) {
   const state = readState(taskPath);
   if (!state) {
@@ -201,6 +257,21 @@ function main() {
         process.exit(0); // 静默放行
         break;
       }
+      case 'check-decisions-format': {
+        let stdinJson = null;
+        try {
+          stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8'));
+        } catch (e) {
+          process.exit(0);
+        }
+        const decision = checkDecisionsFormatFromStdin(stdinJson);
+        if (decision) {
+          process.stdout.write(JSON.stringify(decision));
+          process.exit(0);
+        }
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -217,4 +288,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage };
+module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin };
