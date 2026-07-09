@@ -82,30 +82,13 @@ Valid transitions are defined in `devsphere-guard.js` `VALID_TRANSITIONS`. Scrip
 
 ### 设计阶段决策循环（strict-human-loop / collaborative-design 门禁阶段）
 
-设计阶段不再由 skill prose 路由，而由确定性脚本 `scripts/workflows/feature-workflow.js resolve-design-loop <taskPath>` 驱动整个生命周期，返回精确动作：
+设计阶段由 `feature-design` skill（主会话薄编排器）驱动：按阶段顺序派发 owner agent（`devsphere-dispatch.js build` 生成确定性派发 prompt）、代问 gated decision、派评审、人工批准。不再有 `resolve-design-loop` 微观状态机。
 
-| 动作 | 含义 |
-|---|---|
-| `dispatch_agent` (scope) | 派阶段 owner 查知识 + 出土 gated decisions（`humanGated` 标志传入） |
-| `ask_decisions` | 主会话逐项 AskUserQuestion（`decision_loop` 模式），回写 resolution |
-| `dispatch_agent` (draft) | 派 owner 基于已 resolved decisions 定稿主产物；`requiresReReview` 时随后须 re-review |
-| `dispatch_reviewers` | 派评审者（含 CIE，当 `state.ciCdRisk===true`）跑 feature-review |
-| `human_confirm` | 主会话请用户批准该阶段 |
-| `all_design_stages_ready` | 设计阶段完成，进 integrated-design |
+teammate 行为准则（`devsphere-teammate-conduct` skill，frontmatter `skills:` 预加载给全部 agent）：需用户决策时按 humanGated 分支——true 记 `type=gated` + 停 + lead 代问；false（auto-design/非门禁）记 `type=autonomous`+assumption 自决。vague 需求按维度拆解出土 decision。
 
-三模式兼容：`humanGated = strict 全阶段 / collaborative 仅 humanGateStages / auto-design 否`。`ask` 仅在 `humanGated && gated pending>0` 触发。
+守卫（唯一确定性兜底）：`check-decisions-resolved`（humanGated 阶段 gated pending>0 拒写主产物）、`check-decisions-format`（decisions 写入内容 schema 校验）、`check-decisions-bash`（禁 Bash 写 decisions/|artifacts/，CLI 豁免）、`check-teammate-decisions`（TeammateIdle 磁盘兜底）。
 
-PreToolUse 双守卫：
-- `check-decisions-resolved`：stage-aware 强制，gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。
-- `check-decisions-format`：强制 decisions/ 目录只含合法 JSON，拒绝 .md/.txt 等非 JSON 文件，拒绝 options 纯字符串、拒绝 gated 缺 rationale。
-
-TeammateIdle 质量门（`devsphere-guard.js check-teammate-decisions`）：teammate 报告完成（idle）前，校验活跃任务下所有 decisions/*.json schema 合法；非法则 exit 2 回喂 stderr，强制 teammate 继续（SA 写不出非法文件就报不了完成）。
-
-teammate 契约预加载：SA/SE/MDE/TSE 经 agent frontmatter `skills:` 预加载 `devsphere-teammate-design-protocol`/`-boundary`/`-review-backflow` skill（完整契约在派发时注入上下文；markdown 链接不会被自动读取）。Bash 守卫（`check-decisions-bash`）：禁止 Bash 直接写 `decisions/`/`artifacts/`，CLI（`devsphere-decisions.js`）豁免——强制 decisions 走脚本、artifacts 走 Write 工具（触发 sync-artifact）。
-
-teammate 保活协议：scope 轮捕获 agentId，draft 轮经 `SendMessage to=<agentId>` 恢复同一实例（保留轮1 分析上下文）；禁止重新 Agent 派发、禁止轮询/派检查 agent。见 `skills/feature-design/SKILL.md`。
-
-决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议经 frontmatter `skills:` 预加载（见上「teammate 契约预加载」段），单源、避免散弹式修改。
+决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。
 
 ### Task workspace layout
 

@@ -57,6 +57,8 @@
 
 ## 3. 架构：agent-teams 拓扑与编排循环
 
+> **归档说明（2026-07-10）：** 本节的 resolver 微观驱动（scope/ask/draft 状态机）已被简化废弃。现行模型见 `docs/superpowers/specs/2026-07-10-design-loop-simplification.md`——agent + design skill + conduct skill + 派发脚本 + 守卫。§3.2/§3.3/§4.2 的 resolve-design-loop 动作表不再适用。
+
 ### 3.1 拓扑（以业务设计为例）
 
 ```
