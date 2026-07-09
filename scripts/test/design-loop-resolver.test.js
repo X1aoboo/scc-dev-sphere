@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { isHumanGated, toQuestionData, DESIGN_STAGE_ORDER, resolveDesignLoop } = require('../workflows/feature-workflow');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
@@ -186,5 +187,17 @@ test('ai_review_passed + strict → human_confirm', () => {
   markStage(taskPath, 'businessDesign', 'ai_review_passed');
   const r = resolveDesignLoop(taskPath);
   assert.strictEqual(r.kind, 'human_confirm');
+  assert.strictEqual(r.stage, 'businessDesign');
+});
+
+test('CLI resolve-design-loop 输出 scope 动作 JSON', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  const out = execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'resolve-design-loop', taskPath,
+  ], { encoding: 'utf-8' });
+  const r = JSON.parse(out);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'scope');
   assert.strictEqual(r.stage, 'businessDesign');
 });

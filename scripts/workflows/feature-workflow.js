@@ -345,6 +345,11 @@ function main() {
       process.stdout.write(JSON.stringify(resolveDesignStageAction(taskPath, stageName)));
       break;
     }
+    case 'resolve-design-loop': {
+      const taskPath = args[1];
+      process.stdout.write(JSON.stringify(resolveDesignLoop(taskPath)));
+      break;
+    }
     case 'set-task-status': {
       const workspaceRoot = args[1];
       const newStatus = args[2];
