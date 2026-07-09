@@ -1,6 +1,8 @@
 'use strict';
+const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert');
+const { execFileSync } = require('child_process');
 const { makeTask } = require('./helpers');
 const { initMatrix, addIssue, setArtifactStatus } = require('../devsphere-review-matrix');
 const { initDecisions, addDecision } = require('../devsphere-decisions');
@@ -148,4 +150,14 @@ test('ai_review_passed + 非门禁 → skip 到下一阶段', () => {
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'produce_draft');
   assert.strictEqual(action.stage, 'solutionDesign'); // 跳到下一未完成阶段
+});
+
+test('CLI: workspaceRoot → stdout JSON', () => {
+  const { workspaceRoot } = makeTask({ workflowMode: 'strict-human-loop' });
+  const out = execFileSync('node',
+    [path.join(__dirname, '..', 'feature-design-router.js'), workspaceRoot],
+    { encoding: 'utf-8' });
+  const action = JSON.parse(out);
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.stage, 'businessDesign');
 });

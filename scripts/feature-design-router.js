@@ -156,9 +156,32 @@ function resolveDesignAction(taskPath, state) {
   return { kind: 'design_phase_complete', reason: '四个设计阶段全部完成,进入 integrated-design' };
 }
 
+const { readCurrentTask, getTaskPath, readState } = require('./devsphere-state');
+
+function routeDesign(workspaceRoot) {
+  const current = readCurrentTask(workspaceRoot);
+  if (!current || !current.activeTaskId) {
+    return { kind: 'show_status', reason: 'No active task.' };
+  }
+  const taskPath = getTaskPath(workspaceRoot);
+  const state = readState(taskPath);
+  if (!state) return { kind: 'blocked', reason: 'State file not found.' };
+  return resolveDesignAction(taskPath, state);
+}
+
+function main() {
+  const workspaceRoot = process.argv[2] || process.cwd();
+  try {
+    process.stdout.write(JSON.stringify(routeDesign(workspaceRoot), null, 2));
+  } catch (e) {
+    process.stderr.write(`Error: ${e.message}\n`);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) main();
+
 module.exports = {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
-  getDesignAgent, getDesignSkill, resolveDesignAction, MAX_REVISE,
+  getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign, MAX_REVISE,
 };
-
-// CLI 入口在 Task 4 补。
