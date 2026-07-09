@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { makeTask } = require('./helpers');
-const { initMatrix } = require('../devsphere-review-matrix');
+const { initMatrix, addIssue, setArtifactStatus } = require('../devsphere-review-matrix');
 const { initDecisions, addDecision } = require('../devsphere-decisions');
 const {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
@@ -73,4 +73,79 @@ test('not_started + 有 gated pending → ask_gated', () => {
   assert.strictEqual(action.name, 'sa-businessDesign');
   assert.strictEqual(action.decisions.length, 1);
   assert.strictEqual(action.decisions[0].id, 'BD-DEC-001');
+});
+
+test('drafted + 评审未跑(pending) → dispatch_reviews', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'dispatch_reviews');
+  assert.strictEqual(action.stage, 'businessDesign');
+  assert.ok(action.artifactPath.endsWith('artifacts/business-design.md'));
+  assert.strictEqual(action.reviewers.length, 1); // business-design 基础评审者只有 se
+  assert.strictEqual(action.reviewers[0].role, 'se');
+  assert.strictEqual(action.reviewers[0].name, 'se-review-businessDesign');
+  assert.ok(action.reviewers[0].dispatchCmd.includes('build review se businessDesign '));
+});
+
+test('drafted + ciCdRisk=true → 评审者含 cie', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  state.ciCdRisk = true;
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.ok(action.reviewers.some(r => r.role === 'cie'));
+});
+
+test('drafted + blocking>0 → produce_draft revise', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.payload.mode, 'revise');
+  assert.strictEqual(action.payload.blockingItems.length, 1);
+});
+
+test('drafted + round 达上限 → design_blocked', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 3 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'design_blocked');
+});
+
+test('ai_review_passed + 门禁 → human_approve', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  const { readState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'ai_review_passed';
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'human_approve');
+  assert.strictEqual(action.stage, 'businessDesign');
+});
+
+test('ai_review_passed + 非门禁 → skip 到下一阶段', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  const { readState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'ai_review_passed';
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.stage, 'solutionDesign'); // 跳到下一未完成阶段
 });

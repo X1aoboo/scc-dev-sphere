@@ -54,6 +54,37 @@ function designDispatchCmd(role, stage, taskPath, skill, humanGated, mode) {
   return `node "${DISPATCH_SCRIPT}" build design ${role} ${stage} ${taskPath} ${skill} ${humanGated} ${mode}`;
 }
 
+function maxBlockingRound(matrix, slug) {
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) return 0;
+  const list = matrix.artifacts[slug].issuesList || [];
+  return list.reduce(
+    (m, i) => (i.type === 'blocking' && i.status === 'open' ? Math.max(m, i.round || 1) : m), 0);
+}
+
+function openBlockingIssues(matrix, slug) {
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) return [];
+  return (matrix.artifacts[slug].issuesList || [])
+    .filter(i => i.type === 'blocking' && i.status === 'open');
+}
+
+function reviewerName(role, stage) {
+  return `${role}-review-${stage}`;
+}
+
+function reviewDispatchCmd(role, stage, taskPath, artifactPath) {
+  return `node "${DISPATCH_SCRIPT}" build review ${role} ${stage} ${taskPath} scc-dev-sphere:feature-review ${artifactPath}`;
+}
+
+function buildReviewers(stage, slug, state, taskPath) {
+  const artifactPath = path.join(taskPath, 'artifacts', `${slug}.md`);
+  const roles = getBaseReviewers(slug).slice();
+  if (state.ciCdRisk === true && !roles.includes('cie')) roles.push('cie');
+  return roles.map(role => ({
+    role, name: reviewerName(role, stage),
+    dispatchCmd: reviewDispatchCmd(role, stage, taskPath, artifactPath),
+  }));
+}
+
 // resolveDesignAction 其余分支在后续 task 增量补全。
 function resolveDesignAction(taskPath, state) {
   const mode = state.workflowMode || 'auto-design';
@@ -84,7 +115,43 @@ function resolveDesignAction(taskPath, state) {
         dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
       };
     }
-    return { kind: 'not_implemented', stage, status: stageData.status };
+
+    if (stageData.status === 'drafted') {
+      const matrix = readMatrix(taskPath);
+      const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
+      const blocking = entry ? entry.issues.blocking : 0;
+      const matrixStatus = entry ? entry.status : 'pending';
+
+      if (maxBlockingRound(matrix, slug) >= MAX_REVISE) {
+        return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${MAX_REVISE} 轮上限` };
+      }
+      if (blocking > 0) {
+        return {
+          kind: 'produce_draft', stage, slug, humanGated: gated,
+          reason: `${stage} 评审 blocking=${blocking},回流 owner revise`,
+          role, skill, mode, name,
+          payload: { mode: 'revise', blockingItems: openBlockingIssues(matrix, slug) },
+          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+        };
+      }
+      if (matrixStatus === 'pending') {
+        return {
+          kind: 'dispatch_reviews', stage, slug, humanGated: gated,
+          reason: `${stage} 派发交叉评审`,
+          artifactPath: path.join(taskPath, 'artifacts', `${slug}.md`),
+          reviewers: buildReviewers(stage, slug, state, taskPath),
+        };
+      }
+      // matrixStatus === 'reviewed',blocking=0:sync 正常已升 ai_review_passed;兜底
+      if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
+      continue; // 非门禁视为完成
+    }
+
+    if (stageData.status === 'ai_review_passed') {
+      if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
+      continue; // 非门禁视为完成,下一阶段
+    }
+    // 'human_approved' → isStageReady 已 continue
   }
   return { kind: 'design_phase_complete', reason: '四个设计阶段全部完成,进入 integrated-design' };
 }
