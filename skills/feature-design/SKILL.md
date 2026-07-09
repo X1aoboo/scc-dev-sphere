@@ -40,11 +40,11 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js resolve-des
 
 | kind | 动作 |
 |---|---|
-| `dispatch_agent` (mode=`scope`) | 用 Agent tool 派发 `action.agent` 为 teammate，prompt 指明：跑 `action.skill` 的 **scope 模式**、stage=`action.stage`、**humanGated=`action.humanGated`**、只写 decisions 不碰主产物。完成后到步骤3。 |
-| `dispatch_agent` (mode=`draft`) | 派发 `action.agent` 跑 **draft 模式**：读 decisions 的 resolution、按 skill 写主产物。**若 `action.requiresReReview===true`：draft 完成后不要直接回步骤1**——先执行一次 `dispatch_reviewers`（派 `action` 对应阶段的评审者跑 `feature-review`），待 review-matrix 更新后再回步骤1。否则到步骤3。 |
+| `dispatch_agent` (mode=`scope`) | 用 Agent tool 派发 `action.agent` 为 teammate，prompt 指明：跑 `action.skill` 的 **scope 模式**、stage=`action.stage`、**humanGated**=`action.humanGated`、只写 decisions 不碰主产物。完成后到步骤3。 |
+| `dispatch_agent` (mode=`draft`) | 派发 `action.agent` 跑 **draft 模式**：读 decisions 的 resolution、按 skill 写主产物。**若 `action.requiresReReview===true`：draft 完成后不要直接回步骤1**——先执行一次 `dispatch_reviewers`：用 `action.reviewers` 派发评审者跑 `feature-review`，待 review-matrix 更新后再回步骤1。否则到步骤3。 |
 | `ask_decisions` | 对 `action.decisions[]` **逐项**按 `decision_loop` 模式（见 `references/interaction-guidelines.md`）调 AskUserQuestion，回写 `resolution`（`devsphere-decisions.js resolve`）。全部 resolved 后到步骤3。 |
 | `dispatch_reviewers` | 用 Agent tool **并行**派发 `action.reviewers` 跑 `feature-review`。完成后到步骤3。 |
-| `human_confirm` | 用 AskUserQuestion（confirm_gate）请用户批准该阶段。批准后到步骤3。 |
+| `human_confirm` | 用 AskUserQuestion（confirm_gate）请用户批准该阶段。**批准后先运行** `set-stage-status <taskPath> <action.stage> human_approved`（写入 human_approved），再到步骤3。 |
 | `all_design_stages_ready` | 设计阶段全部完成，**返回 workflow**（进入 integrated-design / `design_ready`）。 |
 | `show_status` | 展示 `action.reason`，停止并提示用户。 |
 

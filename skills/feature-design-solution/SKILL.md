@@ -12,7 +12,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 - **入口:** `/scc-dev-sphere:feature-design-solution [--mode revise]`
 - **模式:** 本 skill 是领域参考。agent 在 **scope 模式**做上游分析子集（查知识 / 拆功能点 / 出土 decisions），在 **draft 模式**产出完整主产物；模式由编排器（`resolve-design-loop`）派发决定，见 agent 的 teammate 协议。
 - **入参:** `artifacts/business-design.md`、架构规范查询、`templates/artifacts/solution-design.md`
-- **输出:** `artifacts/solution-design.md`、evidence、`decisions/solution-design-decisions.md`、交接契约
+- **输出:** `artifacts/solution-design.md`、evidence、`decisions/solution-design-decisions.json`、交接契约
 - **完成标准:** 见文末
 
 ## 前置条件
@@ -25,7 +25,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 ## 输入与写入范围
 
 **读取：** business-design、business decisions、方案模板、`state.json`、架构规范（`knowledge-query`）。
-**允许写入：** `artifacts/solution-design.md`、`decisions/solution-design-decisions.md`、`evidence/` 与 registry。
+**允许写入：** `artifacts/solution-design.md`、`decisions/solution-design-decisions.json`、`evidence/` 与 registry。
 **禁止写入：** business/implementation/test 产物、`state.json`、`reviews/`、`approvals/`。
 
 ## 执行步骤

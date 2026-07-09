@@ -122,7 +122,7 @@ function resolveDesignStageAction(taskPath, stageName) {
   }
   const decisions = readDecisions(taskPath, slug);
   if (!decisions) {
-    return { action: 'scope', slug, gatedPending: 0, reason: `${stageName} 未 scope：派 SA 查知识 + 出土 gated 决策` };
+    return { action: 'scope', slug, gatedPending: 0, reason: `${stageName} 未 scope：派阶段 owner 查知识 + 出土 gated 决策` };
   }
   const pending = countGatedPending(taskPath, slug);
   if (pending > 0) {
@@ -248,7 +248,9 @@ function resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates) {
   const stageStatus = (state.stages[stage] || {}).status;
 
   if (hasBlocking(matrix, slug)) {
-    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), requiresReReview: true, reason: `${stage} 有 blocking 评审项，修订后需重新评审` };
+    const reviewers = (getDesignReviewers(stage) || []).slice();
+    if (state.ciCdRisk === true && !reviewers.includes('cie')) reviewers.push('cie');
+    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reviewers, requiresReReview: true, reason: `${stage} 有 blocking 评审项，修订后需重新评审（reviewers: ${reviewers.join(',')}）` };
   }
   if (stageStatus === 'drafted') {
     const reviewers = (getDesignReviewers(stage) || []).slice();
@@ -343,6 +345,15 @@ function main() {
       const taskPath = args[1];
       const stageName = args[2];
       process.stdout.write(JSON.stringify(resolveDesignStageAction(taskPath, stageName)));
+      break;
+    }
+    case 'set-stage-status': {
+      const taskPath = args[1];
+      const stageName = args[2];
+      const newStatus = args[3];
+      const { updateStageStatus } = require('../devsphere-state');
+      updateStageStatus(taskPath, stageName, newStatus);
+      process.stdout.write(JSON.stringify({ synced: true, stage: stageName, status: newStatus }));
       break;
     }
     case 'resolve-design-loop': {

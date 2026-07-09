@@ -31,7 +31,7 @@
    ask    → {kind:'ask_decisions', stage, decisions:[...]}  # 仅当 humanGated=true 且 gated pending>0；否则视同 draft（防 agent 在 auto-design 误产 gated）
    draft  → {kind:'dispatch_agent', mode:'draft',  agent, stage, skill}
    review → {kind:'dispatch_reviewers', stage, reviewers:[...], skill:'feature-review'}  # 含 CIE（若 CI/CD 风险）
-   revise → {kind:'dispatch_agent', mode:'draft', agent, stage, skill, blockingIssues:[...]}
+   revise → {kind:'dispatch_agent', mode:'draft', agent, stage, skill, reviewers, requiresReReview:true}
    ready-for-review → 标记阶段完成，推进下一阶段；全完成 → integrated-design（既有逻辑）
 ```
 

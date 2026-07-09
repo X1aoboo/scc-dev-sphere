@@ -113,3 +113,14 @@ test('set-task-status 不传 ciCdRisk 时不改该字段', () => {
   const st = readState(taskPath);
   assert.strictEqual(st.ciCdRisk, undefined);
 });
+
+test('set-stage-status 写入阶段状态', () => {
+  const { taskPath } = makeTask();
+  execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-stage-status', taskPath, 'businessDesign', 'human_approved',
+  ], { encoding: 'utf-8' });
+  const { readState } = require('../devsphere-state');
+  const st = readState(taskPath);
+  assert.strictEqual(st.stages.businessDesign.status, 'human_approved');
+});

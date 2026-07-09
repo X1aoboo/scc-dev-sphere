@@ -12,7 +12,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 - **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
 - **模式:** 本 skill 是领域参考。agent 在 **scope 模式**做上游分析子集（查知识 / 拆功能点 / 出土 decisions），在 **draft 模式**产出完整主产物；模式由编排器（`resolve-design-loop`）派发决定，见 agent 的 teammate 协议。
 - **入参:** `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`、测试规范查询、`templates/artifacts/test-design.md`
-- **输出:** `artifacts/test-design.md`、evidence、`decisions/test-design-decisions.md`、交接契约
+- **输出:** `artifacts/test-design.md`、evidence、`decisions/test-design-decisions.json`、交接契约
 - **完成标准:** 见文末
 
 ## 前置条件
@@ -25,7 +25,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 ## 输入与写入范围
 
 **读取：** 三类设计产物、各自 decisions、测试模板、`state.json`、历史缺陷/测试规范（`knowledge-query`）。
-**允许写入：** `artifacts/test-design.md`、`decisions/test-design-decisions.md`、`evidence/` 与 registry。
+**允许写入：** `artifacts/test-design.md`、`decisions/test-design-decisions.json`、`evidence/` 与 registry。
 **禁止写入：** 其他阶段产物、`state.json`、`reviews/`、`approvals/`。
 
 ## 执行步骤
