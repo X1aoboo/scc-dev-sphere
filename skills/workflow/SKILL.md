@@ -129,7 +129,7 @@ resolver 会：
 
 在 main 会话中直接执行 `nextAction.skill`。完成后根据输出继续派发。
 
-特别地，如果 `nextAction.skill === 'feature-design'`：在主会话执行 `feature-design` skill，它内部调 `resolve-design-loop` **自驱整个设计循环**（派发 agent-teams teammate / 代用户 AskUserQuestion / 派评审），直到返回 `all_design_stages_ready`（设计完成）或 `human_confirm`（暂停等用户）。**workflow 不直接派发设计 agent**。feature-design 执行一轮后，运行阶段状态同步，再回步骤4 重算 nextAction。依赖 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。
+特别地，如果 `nextAction.skill === 'feature-design'`：在主会话执行 `feature-design` skill，它内部调 `resolve-design-loop` **自驱整个设计循环**（派发 agent-teams teammate / 代用户 AskUserQuestion / 派评审），直到返回 `all_design_stages_ready`（设计完成）或 `human_confirm`（暂停等用户）。**workflow 不直接派发设计 agent**。feature-design 执行一轮后，运行阶段状态同步，再回步骤4 重算 nextAction。依赖 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。agentId 在 feature-design 自身上下文内跨 resolver 迭代持有（scope 轮捕获、draft 轮 SendMessage 恢复同一 teammate），workflow 不介入 teammate 生命周期管理。
 
 特别地，如果 `nextAction.skill === 'feature-assess'`：在主会话执行（agents 为空）。feature-assess 的步骤4/5 需 AskUserQuestion 确认工作流模式/阶段门禁——这只能在主会话完成，故**不得**作为后台 teammate 派发。完成后由下方「Agent 完成后」的 set-task-status 写入用户确认的模式。
 

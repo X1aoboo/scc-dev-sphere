@@ -8,13 +8,12 @@ SA/SE/MDE/TSE 阶段 owner agent 的设计阶段 teammate 交互协议。
 - 据派发 prompt 的 `humanGated` 标志落 `decisions/<slug>-decisions.json`：
   - `humanGated=true`：每个需用户拍板的点写成 `type=gated` decision。
   - `humanGated=false`：写成 `type=autonomous`（自决，不进闸口）。
-- **写完 decisions 即停当轮。绝不写主产物、绝不擅自编答案。** 发消息给 lead：「gated 决策就绪，N 项待决」。
+- 写完 decisions 即停当轮。绝不写主产物、绝不擅自编答案。**完成后必须发一条明确完成消息给 lead**（格式：「✅ <stage> scope 完成：N 项 gated 决策已写入 `<slug>-decisions.json`，待 lead 代问」）——此消息是 lead 推进的唯一触发，无此消息 lead 不推进。
 
 ## draft 模式（基于决议定稿）
 
 - 读 `decisions/<slug>-decisions.json` 的 `resolution`（lead 已逐项问过用户）。
-- 按 design skill 产出完整主产物，所有 gated 项必须按 `resolution` 落实。
-- 写完主产物即停当轮。
+- 按 design skill 产出完整主产物，所有 gated 项必须按 resolution 落实。写完即停当轮，**发完成消息给 lead**（格式：「✅ <stage> draft 完成：主产物 `<slug>.md` 已写入」）。
 
 ## 硬契约
 
