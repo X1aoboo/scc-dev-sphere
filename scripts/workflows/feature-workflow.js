@@ -238,8 +238,27 @@ function resolveDesignStage(taskPath, state, stage, mode, humanGates) {
   if (stageAction.action === 'draft') {
     return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: stageAction.reason };
   }
-  // ready-for-review → post-artifact（Task 3 实现；暂回退）
-  return { kind: 'show_status', stage, slug, reason: `${stage} 主产物已存在，待 post-artifact 路由` };
+  // ready-for-review → post-artifact
+  return resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates);
+}
+
+// post-artifact 路由（spec §2/§5）：blocking→revise；drafted→review（含 CIE）；ai_review_passed+人工模式→human_confirm。
+function resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates) {
+  const matrix = readMatrix(taskPath);
+  const stageStatus = (state.stages[stage] || {}).status;
+
+  if (hasBlocking(matrix, slug)) {
+    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: `${stage} 有 blocking 评审项，修订后重评审` };
+  }
+  if (stageStatus === 'drafted') {
+    const reviewers = (getDesignReviewers(stage) || []).slice();
+    if (state.ciCdRisk === true && !reviewers.includes('cie')) reviewers.push('cie');
+    return { kind: 'dispatch_reviewers', stage, slug, reviewers, skill: 'feature-review', reason: `${stage} 已 drafted，派评审（reviewers: ${reviewers.join(',')}）` };
+  }
+  if (stageStatus === 'ai_review_passed' && isHumanGated(mode, stage, humanGates)) {
+    return { kind: 'human_confirm', stage, slug, reason: `${stage} 评审通过，待人工批准` };
+  }
+  return { kind: 'show_status', stage, slug, reason: `${stage} 状态 ${stageStatus}，无明确下一步` };
 }
 
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {

@@ -7,6 +7,7 @@ const { isHumanGated, toQuestionData, DESIGN_STAGE_ORDER, resolveDesignLoop } = 
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
 const { readState, writeState } = require('../devsphere-state');
+const { initMatrix, addIssue } = require('../devsphere-review-matrix');
 
 function writeArtifact(taskPath, slug) {
   fs.writeFileSync(path.join(taskPath, 'artifacts', `${slug}.md`), 'draft');
@@ -138,4 +139,52 @@ test('全部阶段 ai_review_passed（auto-design）→ all_design_stages_ready'
   }
   const r = resolveDesignLoop(taskPath);
   assert.strictEqual(r.kind, 'all_design_stages_ready');
+});
+
+test('artifact 存在 + drafted + 无 blocking + 无 ciCdRisk → dispatch_reviewers（基础评审者）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  writeArtifact(taskPath, 'business-design');   // 触发 drafted 由 sync-stage-status；这里直接置 drafted
+  markStage(taskPath, 'businessDesign', 'drafted');
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_reviewers');
+  assert.strictEqual(r.stage, 'businessDesign');
+  assert.deepStrictEqual(r.reviewers, ['se']);   // businessDesign 评审者
+  assert.strictEqual(r.skill, 'feature-review');
+});
+
+test('artifact 存在 + blocking → revise（dispatch_agent draft）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  writeArtifact(taskPath, 'business-design');
+  markStage(taskPath, 'businessDesign', 'drafted');
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se' });
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'draft');
+  assert.strictEqual(r.stage, 'businessDesign');
+});
+
+test('ciCdRisk=true → 评审者含 cie', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  writeArtifact(taskPath, 'business-design');
+  markStage(taskPath, 'businessDesign', 'drafted');
+  const st = require('../devsphere-state').readState(taskPath);
+  st.ciCdRisk = true;
+  writeState(taskPath, st);
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_reviewers');
+  assert.ok(r.reviewers.includes('cie'));
+});
+
+test('ai_review_passed + strict → human_confirm', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  writeArtifact(taskPath, 'business-design');
+  markStage(taskPath, 'businessDesign', 'ai_review_passed');
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'human_confirm');
+  assert.strictEqual(r.stage, 'businessDesign');
 });
