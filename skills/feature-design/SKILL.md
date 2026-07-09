@@ -1,91 +1,64 @@
 ---
 name: feature-design
-description: 设计阶段子编排器。读取 state.json，确定下一步应推进的设计子阶段并返回结构化路由结果。不调用 Agent，不写状态。
+description: 设计阶段循环执行器。在主会话运行，调 resolve-design-loop 确定性路由，按动作类型派发 teammate / 代问用户 / 派评审，直到设计阶段完成。依赖 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1。
 ---
 
-# Feature Design — 设计子编排
+# Feature Design — 设计循环执行器
 
-本 skill 是设计阶段的子编排器。在 main 会话中运行（agents=[]），根据 state.json 判断当前该推进哪个设计子阶段，输出结构化路由结果供 workflow 派发 Agent。
+你在主会话运行（agents=[]），驱动设计阶段决策循环。**路由完全由确定性脚本决定**，你只负责「执行脚本返回的动作」。
 
 ## 集成契约
 
-- **入口:** `/scc-dev-sphere:feature-design`
-- **入参:** state.json
-- **输出:** 结构化路由结果 `{ stage, skill, agent, reason }`
-- **完成标准:** 返回路由结果
+- **入口:** 被 workflow skill 在任务处于 `designing` 状态时调用。
+- **依赖:** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`（用 agent-teams 派发 teammate）。未启用则降级提示用户启用。
+- **入参:** 当前活跃任务（`.devsphere/current-task.json`）。
+- **输出:** 设计阶段全部就绪（`all_design_stages_ready`）→ 返回 workflow 进入 integrated-design；或 `human_confirm` 暂停等用户。
+- **完成标准:** `resolve-design-loop` 返回 `all_design_stages_ready`。
 
-## 执行步骤
+## 执行循环
 
-### 步骤1：读取状态
+重复步骤 1–3，直到动作不需再循环：
 
-读取 `state.json`，获取 `workflowMode`、`humanGateStages` 和 `stages`。
+### 步骤1：运行确定性路由
 
-### 步骤2：阶段顺序
+先解析当前任务的绝对 taskPath（记为 `$TP`）——读 `.devsphere/current-task.json` 的 `taskPath` 字段并拼上 `${CLAUDE_PROJECT_DIR}`，或：
 
-按顺序检查：businessDesign → solutionDesign → implementationDesign → testDesign
-
-### 步骤3：阶段→Skill 映射
-
-| 阶段 | Skill | Agent |
-|------|-------|-------|
-| businessDesign | feature-design-business | sa |
-| solutionDesign | feature-design-solution | se |
-| implementationDesign | feature-design-implementation | mde |
-| testDesign | feature-design-test | tse |
-
-### 步骤4：Mode 门禁判断
-
-阶段已就绪的条件（按 mode）：
-- `auto-design`：阶段 status == `ai_review_passed` 或 `human_approved`
-- `collaborative-design`：列入 `humanGateStages` 的阶段需 `human_approved`，其余 `ai_review_passed`
-- `strict-human-loop`：阶段 status == `human_approved`
-
-### 步骤5：遍历阶段
-
-对每个阶段按顺序：
-1. 如阶段不存在 → 跳过
-2. 如阶段未就绪：
-   - `status=not_started` → 返回路由结果，通知 workflow 派发对应 Agent 开始该阶段设计
-   - `status=drafted` → 检查 review matrix 是否有未关闭 blocking
-     - 有 blocking → 返回路由结果，skill=对应阶段 design skill（修订模式），agent=对应设计 Agent
-     - 无 blocking 但未通过评审 → 返回路由结果，skill=feature-review，agent=对应评审者列表
-   - `status=ai_review_passed` 但 mode 要求 human_approved → 返回 `human_confirm`
-3. 如阶段已就绪 → 继续下一阶段
-
-### 步骤6：全部阶段完成
-
-如果全部 4 个阶段都满足 mode 要求的就绪状态：
-1. 检查 `artifacts/integrated-design.md` 是否存在
-   - 不存在 → 返回路由结果，skill=feature-design（集成模式），agent=[sa, se, mde, tse]
-2. 检查集成设计评审
-   - 未评审或有 blocking → 返回路由结果，skill=feature-review，target=integrated-design
-3. 全部通过 → 返回完成状态
-
-### 步骤7：输出格式
-
-```json
-{
-  "stage": "businessDesign",
-  "skill": "feature-design-business",
-  "agent": "sa",
-  "reason": "businessDesign is not_started"
-}
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-state.js get-task-path ${CLAUDE_PROJECT_DIR}
+# 输出 {"taskPath":"<abs path>"}，取 taskPath 作为 $TP
 ```
 
-多 Agent 场景（集成设计、评审）：
+然后运行路由：
 
-```json
-{
-  "stage": "solutionDesign",
-  "skill": "feature-review",
-  "agents": ["sa", "mde", "tse"],
-  "reason": "solutionDesign is drafted and ready for formal review"
-}
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js resolve-design-loop "$TP"
 ```
+
+解析 stdout JSON 为 `action`。
+
+### 步骤2：按 `action.kind` 派发
+
+| kind | 动作 |
+|---|---|
+| `dispatch_agent` (mode=`scope`) | 用 Agent tool 派发 `action.agent` 为 teammate，prompt 指明：跑 `action.skill` 的 **scope 模式**、stage=`action.stage`、**humanGated=`action.humanGated`**、只写 decisions 不碰主产物。完成后到步骤3。 |
+| `dispatch_agent` (mode=`draft`) | 派发 `action.agent` 跑 **draft 模式**：读 decisions 的 resolution、按 skill 写主产物。**若 `action.requiresReReview===true`：draft 完成后不要直接回步骤1**——先执行一次 `dispatch_reviewers`（派 `action` 对应阶段的评审者跑 `feature-review`），待 review-matrix 更新后再回步骤1。否则到步骤3。 |
+| `ask_decisions` | 对 `action.decisions[]` **逐项**按 `decision_loop` 模式（见 `references/interaction-guidelines.md`）调 AskUserQuestion，回写 `resolution`（`devsphere-decisions.js resolve`）。全部 resolved 后到步骤3。 |
+| `dispatch_reviewers` | 用 Agent tool **并行**派发 `action.reviewers` 跑 `feature-review`。完成后到步骤3。 |
+| `human_confirm` | 用 AskUserQuestion（confirm_gate）请用户批准该阶段。批准后到步骤3。 |
+| `all_design_stages_ready` | 设计阶段全部完成，**返回 workflow**（进入 integrated-design / `design_ready`）。 |
+| `show_status` | 展示 `action.reason`，停止并提示用户。 |
+
+### 步骤3：阶段状态同步后回步骤1
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
+```
+
+然后回步骤1（resolver 将基于更新后的磁盘事实重算）。
 
 ## 约束
 
-- 不调用 Agent tool
-- 不修改 state.json 或任何状态文件
-- 不覆盖已 `human_approved` 的阶段（除非 `--mode revise`）
-- 修订模式规则不变：记录原因、影响范围，重置受影响阶段
+- **不自行决定路由**——一切以 `resolve-design-loop` 返回为准。
+- **不在主会话写设计产物**——产物由 teammate 写；主会话只写 `resolution`（代问用户后）。
+- **revise（`requiresReReview`）后必须先 re-review 再回 resolver**——否则 blocking 仍 open 会死循环。
+- teammate 持久上下文跨 scope/draft 两轮（agent-teams）；不原地阻塞等用户。

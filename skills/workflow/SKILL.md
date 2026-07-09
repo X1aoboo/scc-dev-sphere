@@ -129,7 +129,7 @@ resolver 会：
 
 在 main 会话中直接执行 `nextAction.skill`。完成后根据输出继续派发。
 
-特别地，如果 `nextAction.skill === 'feature-design'`，执行其子编排逻辑得到结构化路由结果（`{ stage, skill, agent/agents, reason }`），然后按下方 Agent 派发逻辑处理该路由结果。
+特别地，如果 `nextAction.skill === 'feature-design'`：在主会话执行 `feature-design` skill，它内部调 `resolve-design-loop` **自驱整个设计循环**（派发 agent-teams teammate / 代用户 AskUserQuestion / 派评审），直到返回 `all_design_stages_ready`（设计完成）或 `human_confirm`（暂停等用户）。**workflow 不直接派发设计 agent**。feature-design 执行一轮后，运行阶段状态同步，再回步骤4 重算 nextAction。依赖 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。
 
 #### 单 Agent 场景（agents 含 1 个元素）
 
@@ -156,11 +156,12 @@ resolver 会：
 1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `initialized → assessed` 迁移：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages>
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages> <ciCdRisk>
    ```
 
    - `<workflowMode>` 为 feature-assess 中用户确认的模式：`auto-design` / `collaborative-design` / `strict-human-loop`
    - `<humanGateStages>` 为逗号分隔的阶段名（仅 `collaborative-design` 时需要，其余模式可省略第4个参数），如 `businessDesign,testDesign`
+   - `<ciCdRisk>` 为 `'true'`/`'false'`（来自 feature-assess 的 CI/CD 风险评估；仅当评估命中部署/配置/CI/CD/环境风险时为 `'true'`）。`<humanGateStages>` 为空时传空串。
 
 2. **阶段状态同步：**
 
