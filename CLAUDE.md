@@ -80,6 +80,21 @@ blocked ↪ designing | implementing (resolve and re-enter)
 
 Valid transitions are defined in `devsphere-guard.js` `VALID_TRANSITIONS`. Scripts enforce these — never skip states in skill prompts.
 
+### 设计阶段决策循环（strict-human-loop / collaborative-design 门禁阶段）
+
+设计阶段不再由 skill prose 路由，而由确定性脚本 `scripts/workflows/feature-workflow.js resolve-design-loop <taskPath>` 驱动整个生命周期，返回精确动作：
+
+| 动作 | 含义 |
+|---|---|
+| `dispatch_agent` (scope) | 派阶段 owner 查知识 + 出土 gated decisions（`humanGated` 标志传入） |
+| `ask_decisions` | 主会话逐项 AskUserQuestion（`decision_loop` 模式），回写 resolution |
+| `dispatch_agent` (draft) | 派 owner 基于已 resolved decisions 定稿主产物；`requiresReReview` 时随后须 re-review |
+| `dispatch_reviewers` | 派评审者（含 CIE，当 `state.ciCdRisk===true`）跑 feature-review |
+| `human_confirm` | 主会话请用户批准该阶段 |
+| `all_design_stages_ready` | 设计阶段完成，进 integrated-design |
+
+三模式兼容：`humanGated = strict 全阶段 / collaborative 仅 humanGateStages / auto-design 否`。`ask` 仅在 `humanGated && gated pending>0` 触发。PreToolUse 守卫（`hooks/hooks.json` → `devsphere-guard.js check-decisions-resolved`）stage-aware 强制：gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `agents/*.md`。
+
 ### Task workspace layout
 
 Tasks live at `.devsphere/tasks/feature/<task-id>/` with:
