@@ -1,46 +1,67 @@
 ---
 name: feature-design
-description: 设计阶段薄编排器。在主会话运行:按阶段顺序派发 owner agent(脚本生成派发 prompt)、代问 gated decision、派评审、人工批准。依赖 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1。
+description: 设计阶段薄执行器。在主会话(team lead)运行:事件驱动地咨询 feature-design-router 拿下一步动作,用原生 teammate 原语执行。不持 agentId、不造控制流。依赖 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1。
 ---
 
-# Feature Design — 设计阶段薄编排器
+# Feature Design — 设计阶段薄执行器
 
-你在主会话运行(agents=[])。按阶段顺序驱动设计,核心动作由确定性脚本支撑,你不自由发挥派发词。
+你在主会话(team lead)运行(agents=[])。**你不自行判断阶段流转或动作选择** —— 一律由确定性 router 决定。你只负责:咨询 router → 用原生 teammate 原语执行返回的动作。
 
-## 阶段顺序
+## 入口(固定行,无分支)
 
-businessDesign → solutionDesign → implementationDesign → testDesign →(全完成)integrated-design。
+进入设计阶段第一步,写状态:
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} designing
+```
 
-## 循环(对每个未完成阶段)
+## 咨询循环(事件驱动)
 
-1. **选阶段**:找第一个未 `human_approved` 的设计阶段 `<stage>`,记其 owner agent `<role>`(sa/se/mde/tse)、design skill `<skill>`(完整名)、slug。
-2. **算 humanGated**:`humanGated = (workflowMode==='strict-human-loop') || (workflowMode==='collaborative-design' && humanGateStages.includes(<stage>))`。
-3. **派发 owner**(轮1):
-   ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-dispatch.js build design <role> <stage> <taskPath> <skill> <humanGated> <workflowMode>
-   ```
-   把 stdout **原样**作为 Agent tool 的 prompt 派发 `<role>` teammate(后台)。**从 Agent 返回捕获 agentId**,记 per-stage。等 agent 自动推送的完成消息。
-4. **分支**:
-   - humanGated=true:agent 报「N 项 gated decision 待代问」→ 读 `<taskPath>/decisions/<slug>-decisions.json` 的 gated pending → 逐项 AskUserQuestion(见 references/interaction-guidelines.md decision_loop)→ `node devsphere-decisions.js resolve <taskPath> <slug> <id> '<resolution json>'` 回写 → 全 resolved 后 `SendMessage`(to=agentId,message=决议+续稿指令,**summary** 必填)唤醒 → 等 draft 完成消息。
-   - humanGated=false:agent 不停(记 autonomous 直接续稿)→ 等 draft 完成消息。
-5. **sync**:`node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}`。
-6. **评审循环**:对 `<stage>` 的评审者矩阵(+ ciCdRisk=true 含 CIE)——每人:
-   ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-dispatch.js build review <reviewer-role> <stage> <taskPath> scc-dev-sphere:feature-review <taskPath>/artifacts/<slug>.md
-   ```
-   并行派发(各 background,capture agentId)。等评审完成。
-   - blocking>0:把 blocking 回流 owner → 用 `build design ...` 重新派发 ownerId(revise)→ owner 对需用户决策的 blocking 补 gated decision(humanGated 时)→ 回 step4 代问 → 续稿 → 重新评审。循环至 blocking=0。
-   - blocking=0:`sync-stage-status`(→ ai_review_passed)。
-7. **人工批准**:humanGated 阶段 AskUserQuestion(confirm_gate)请用户批准 → `node ... feature-workflow.js set-stage-status <taskPath> <stage> human_approved`。非 humanGated 阶段跳过。
-8. 回 step1(下一阶段)。
+**何时咨询**:入口后;以及每次 teammate 回报(idle 通知 / 消息:draft 成、N 项 gated 待代问、评审完成、blocking=N)后。**等待 teammate 期间不咨询**(依赖 agent-teams 的消息自动送达 + idle 自动通知)。
 
-## 完成判断
+每次咨询:
+1. `node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}`
+2. `node ${CLAUDE_SKILL_DIR}/../../scripts/feature-design-router.js ${CLAUDE_PROJECT_DIR}` → stdout 是一个 designAction JSON。
+3. 按 `action.kind` 执行(见下)。执行后要么等 teammate 回报(自然再咨询),要么立即回到步骤 1 重咨询。
 
-全 4 阶段 human_approved → 进入 integrated-design(既有逻辑)。
+## 按 kind 执行
+
+### `produce_draft`
+- `payload.mode === 'initial'`:
+  1. `node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js init <taskPath> <slug> <taskId> <stage>`(初始化该阶段 decisions 文件;<taskPath>/<slug>/<taskId>/<stage> 从 action 与 current-task 取)。
+  2. 执行 `action.dispatchCmd`,把 **stdout 原样**作为 Agent prompt,**后台 spawn** 一个名为 `action.name`(形如 `sa-businessDesign`)的 teammate。
+- `payload.mode === 'continue'` 或 `'revise'`:
+  - **按名字 message** 名为 `action.name` 的 teammate(agent-teams 原语:存在则唤醒续线程;不存在则按 initial 的 dispatchCmd 重新 spawn)。message 内容:continue 时附 `payload.resolutions`;revise 时附 `payload.blockingItems`。**message 为字符串时必带 summary**。
+- 执行后**等 teammate 回报**,不重咨询。
+
+### `ask_gated`
+- 对 `action.decisions` **逐项** AskUserQuestion(遵循 `references/interaction-guidelines.md` 的 decision_loop,按各 decision 的 `askMode` 选 single_select/multi_select/confirm_gate,`options`/`recommendation` 直接取自 decision)。
+- 每项用户决策后回写:
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js resolve <taskPath> <slug> <decision.id> '<resolution json>'
+  ```
+  `<resolution json>` 形如 `{"chosen":"<选项 label>","note":"<可选>"}'`。
+- 全部 resolve 后**立即重咨询**(步骤 1)。
+
+### `dispatch_reviews`
+- 对 `action.reviewers` **并行**后台 spawn:每个执行其 `dispatchCmd`,stdout 原样作为 Agent prompt,teammate 名为其 `name`(形如 `se-review-businessDesign`)。
+- 评审是 one-shot,不持 agentId。执行后**等所有评审回报**,不重咨询。
+
+### `human_approve`
+- AskUserQuestion(confirm_gate 模式)请用户批准 `action.stage` 的设计。
+- **批准**:`node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-stage-status <taskPath> <stage> human_approved` → 重咨询。
+- **驳回**:把用户反馈作为 blocking issue 注入 matrix(经 `devsphere-review-matrix.js add <taskPath> <slug> '{"type":"blocking","reviewerAgent":"human","round":N}'`)→ 重咨询(router 将转 revise)。
+
+### `design_phase_complete`
+- 跑 integrated-design(既有逻辑:组装四阶段产物 → 交叉评审 → 通过)。
+- 完成后:`node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} design_ready`。
+- 结束(下次 `/workflow` 会路由到 feature-approve)。
+
+### `design_blocked`
+- 展示 `action.reason`,停止。等人工介入。
 
 ## 约束
 
-- **不自行写派发词**——一律 `devsphere-dispatch.js build` 生成。
-- **不直接写设计产物**——产物由 teammate 写;你只写 resolution(代问后经 CLI)。
-- **SendMessage 的 message 为字符串时必带 summary**。
-- 同一 stage 续稿用 SendMessage 恢复 agentId,不重新 Agent 派发(保活)。
+- **不自行写派发词** —— 派发 prompt 一律执行 `action.dispatchCmd` 的 stdout。
+- **不直接写设计产物 / decisions** —— 产物由 teammate 写;decisions 只经 CLI;status 只经 feature-workflow.js 写命令。
+- **不持 agentId / 不维护 teammate 注册表** —— 寻址用 action 里的确定性名字,存在性/wake 归 harness。
+- **不判断阶段流转** —— 选哪个阶段、做什么动作,全由 router 决定;你只执行。
