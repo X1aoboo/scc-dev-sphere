@@ -10,6 +10,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 ## 集成契约
 
 - **入口:** `/scc-dev-sphere:feature-design-solution [--mode revise]`
+- **模式:** 本 skill 是领域参考。agent 在 **scope 模式**做上游分析子集（查知识 / 拆功能点 / 出土 decisions），在 **draft 模式**产出完整主产物；模式由编排器（`resolve-design-loop`）派发决定，见 agent 的 teammate 协议。
 - **入参:** `artifacts/business-design.md`、架构规范查询、`templates/artifacts/solution-design.md`
 - **输出:** `artifacts/solution-design.md`、evidence、`decisions/solution-design-decisions.md`、交接契约
 - **完成标准:** 见文末
@@ -28,6 +29,8 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 **禁止写入：** business/implementation/test 产物、`state.json`、`reviews/`、`approvals/`。
 
 ## 执行步骤
+
+> 以下步骤描述完整设计。scope 模式只执行到「出土 decisions」即停（不写主产物）；draft 模式基于已 resolved 的 decisions 执行完整步骤产出主产物。
 
 1. 解析 business-design 的目标、业务规则、状态模型、验收标准、assumption。
 2. 识别架构目标、约束、非目标；建立需求到架构的追溯（REQ/BR → ARCH/API/MOD）。

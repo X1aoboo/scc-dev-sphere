@@ -10,6 +10,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 ## 集成契约
 
 - **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
+- **模式:** 本 skill 是领域参考。agent 在 **scope 模式**做上游分析子集（查知识 / 拆功能点 / 出土 decisions），在 **draft 模式**产出完整主产物；模式由编排器（`resolve-design-loop`）派发决定，见 agent 的 teammate 协议。
 - **入参:** `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`、测试规范查询、`templates/artifacts/test-design.md`
 - **输出:** `artifacts/test-design.md`、evidence、`decisions/test-design-decisions.md`、交接契约
 - **完成标准:** 见文末
@@ -28,6 +29,8 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 **禁止写入：** 其他阶段产物、`state.json`、`reviews/`、`approvals/`。
 
 ## 执行步骤
+
+> 以下步骤描述完整设计。scope 模式只执行到「出土 decisions」即停（不写主产物）；draft 模式基于已 resolved 的 decisions 执行完整步骤产出主产物。
 
 1. 解析 business（业务规则/验收标准）、solution（接口契约/质量属性/风险）、implementation（状态机/错误路径/测试钩子/风险）。
 2. 建立**风险驱动追溯**：业务规则、架构风险、实现风险 → TEST，明确每类测试在防什么风险。
