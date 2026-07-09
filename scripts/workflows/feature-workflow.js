@@ -202,6 +202,46 @@ function toQuestionData(decision) {
   };
 }
 
+// 设计循环总入口（spec §2）。确定性：读 state + 磁盘事实，返回精确 nextAction。
+function resolveDesignLoop(taskPath) {
+  const state = readState(taskPath);
+  if (!state || !state.stages) return { kind: 'show_status', reason: 'No stages in state' };
+  const mode = state.workflowMode || 'auto-design';
+  const humanGates = state.humanGateStages || [];
+
+  const currentStage = DESIGN_STAGE_ORDER.find(
+    s => !isStageReady((state.stages[s] || {}).status, s, mode, humanGates)
+  );
+  if (!currentStage) {
+    return { kind: 'all_design_stages_ready', reason: '全部设计阶段就绪，进入 integrated-design' };
+  }
+  return resolveDesignStage(taskPath, state, currentStage, mode, humanGates);
+}
+
+// 单阶段路由：pre-artifact（scope/ask/draft）+ ready-for-review（post-artifact，Task 3 接管）。
+function resolveDesignStage(taskPath, state, stage, mode, humanGates) {
+  const slug = stageToArtifact(stage);
+  const humanGated = isHumanGated(mode, stage, humanGates);
+  const stageAction = resolveDesignStageAction(taskPath, stage);
+
+  if (stageAction.action === 'scope') {
+    return { kind: 'dispatch_agent', mode: 'scope', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), humanGated, reason: stageAction.reason };
+  }
+  if (stageAction.action === 'ask') {
+    // 双重门控：仅 humanGated 才 ask；否则当 draft（防 auto-design 误产 gated）
+    if (!humanGated) {
+      return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: `${stage}：非人工门禁，跳过 ask 直接定稿` };
+    }
+    const decisions = listGatedPending(taskPath, slug).map(toQuestionData);
+    return { kind: 'ask_decisions', stage, slug, decisions, reason: stageAction.reason };
+  }
+  if (stageAction.action === 'draft') {
+    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: stageAction.reason };
+  }
+  // ready-for-review → post-artifact（Task 3 实现；暂回退）
+  return { kind: 'show_status', stage, slug, reason: `${stage} 主产物已存在，待 post-artifact 路由` };
+}
+
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
   return {
     kind,
@@ -321,4 +361,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveNextAction, resolveDesignStageAction, isHumanGated, toQuestionData, DESIGN_STAGE_ORDER };
+module.exports = { resolveNextAction, resolveDesignStageAction, resolveDesignLoop, isHumanGated, toQuestionData, DESIGN_STAGE_ORDER };

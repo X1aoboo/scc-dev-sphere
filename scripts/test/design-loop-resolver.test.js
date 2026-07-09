@@ -1,7 +1,27 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { isHumanGated, toQuestionData, DESIGN_STAGE_ORDER } = require('../workflows/feature-workflow');
+const fs = require('fs');
+const path = require('path');
+const { isHumanGated, toQuestionData, DESIGN_STAGE_ORDER, resolveDesignLoop } = require('../workflows/feature-workflow');
+const { makeTask } = require('./helpers');
+const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
+const { readState, writeState } = require('../devsphere-state');
+
+function writeArtifact(taskPath, slug) {
+  fs.writeFileSync(path.join(taskPath, 'artifacts', `${slug}.md`), 'draft');
+}
+function markStage(taskPath, stage, status) {
+  const st = readState(taskPath);
+  st.stages[stage].status = status;
+  writeState(taskPath, st);
+}
+function addGated(taskPath, slug) {
+  addDecision(taskPath, slug, {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+}
 
 test('DESIGN_STAGE_ORDER 固定四阶段顺序', () => {
   assert.deepStrictEqual(DESIGN_STAGE_ORDER, ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign']);
@@ -42,4 +62,80 @@ test('toQuestionData 对缺失字段给默认值', () => {
   assert.deepStrictEqual(q.options, []);
   assert.strictEqual(q.recommendation, '');
   assert.strictEqual(q.askMode, 'single_select');
+});
+
+test('strict 模式 + 无 decisions → scope（dispatch_agent, humanGated=true）', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'scope');
+  assert.strictEqual(r.stage, 'businessDesign');
+  assert.strictEqual(r.agent, 'sa');
+  assert.strictEqual(r.skill, 'feature-design-business');
+  assert.strictEqual(r.humanGated, true);
+});
+
+test('strict 模式 + gated pending → ask_decisions 含映射数据', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addGated(taskPath, 'business-design');
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'ask_decisions');
+  assert.strictEqual(r.stage, 'businessDesign');
+  assert.strictEqual(r.decisions.length, 1);
+  assert.strictEqual(r.decisions[0].id, 'BD-DEC-001');
+  assert.strictEqual(r.decisions[0].options.length, 2);
+});
+
+test('strict 模式 + gated 全 resolved → draft', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addGated(taskPath, 'business-design');
+  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'draft');
+});
+
+test('auto-design + gated pending → draft（双重门控跳过 ask）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'auto-design' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addGated(taskPath, 'business-design');
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'draft');
+});
+
+test('collaborative：门禁阶段 pending → ask；非门禁阶段 pending → draft', () => {
+  // 门禁阶段 businessDesign
+  const t1 = makeTask({ workflowMode: 'collaborative-design' });
+  const s1 = readState(t1.taskPath);
+  s1.humanGateStages = ['businessDesign'];
+  writeState(t1.taskPath, s1);
+  initDecisions(t1.taskPath, 'business-design', t1.taskId, 'businessDesign');
+  addGated(t1.taskPath, 'business-design');
+  assert.strictEqual(resolveDesignLoop(t1.taskPath).kind, 'ask_decisions');
+
+  // 非门禁阶段 solutionDesign：humanGateStages 只含 testDesign，故 business/solution 均非门禁。
+  // 把 businessDesign 推到 ai_review_passed（非门禁 → 就绪），使 solutionDesign 成为当前阶段。
+  const t2 = makeTask({ workflowMode: 'collaborative-design' });
+  const s2 = readState(t2.taskPath);
+  s2.humanGateStages = ['testDesign'];
+  writeState(t2.taskPath, s2);
+  markStage(t2.taskPath, 'businessDesign', 'ai_review_passed');
+  initDecisions(t2.taskPath, 'solution-design', t2.taskId, 'solutionDesign');
+  addGated(t2.taskPath, 'solution-design');
+  const r = resolveDesignLoop(t2.taskPath);
+  assert.strictEqual(r.kind, 'dispatch_agent');
+  assert.strictEqual(r.mode, 'draft');
+  assert.strictEqual(r.stage, 'solutionDesign');
+});
+
+test('全部阶段 ai_review_passed（auto-design）→ all_design_stages_ready', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  for (const stg of ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign']) {
+    markStage(taskPath, stg, 'ai_review_passed');
+  }
+  const r = resolveDesignLoop(taskPath);
+  assert.strictEqual(r.kind, 'all_design_stages_ready');
 });
