@@ -448,3 +448,79 @@ test('teammate-idle: 非法文件名 .json 之外的 .md 被忽略（只扫 .jso
   const r = checkTeammateDecisions(workspaceRoot);
   assert.strictEqual(r.ok, true);
 });
+
+// === Plan E2: checkDecisionsBashFromStdin (Bash bypass guard) ===
+
+const { checkDecisionsBashFromStdin } = require('../devsphere-guard');
+
+function bashStdin(command) {
+  return { tool_name: 'Bash', tool_input: { command } };
+}
+
+test('bash: cat 写 decisions/ → deny', () => {
+  const r = checkDecisionsBashFromStdin(bashStdin('cat > .devsphere/tasks/feature/F1/decisions/business-design-decisions.json <<EOF\n{}\nEOF'));
+  assert.ok(r);
+  assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('bash: echo 重定向写 decisions/ → deny', () => {
+  const r = checkDecisionsBashFromStdin(bashStdin('echo "{}" > x/decisions/y.json'));
+  assert.ok(r);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /decisions|artifacts/);
+});
+
+test('bash: printf 写 artifacts/ → deny', () => {
+  const r = checkDecisionsBashFromStdin(bashStdin('printf "# title" > .devsphere/tasks/feature/F1/artifacts/business-design.md'));
+  assert.ok(r);
+  assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('bash: node -e fs.writeFileSync 写 decisions/ → deny', () => {
+  const r = checkDecisionsBashFromStdin(bashStdin('node -e "require(\'fs\').writeFileSync(\'a/decisions/b.json\',\'{}\')"'));
+  assert.ok(r);
+  assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('bash: tee 写 decisions/ → deny', () => {
+  const r = checkDecisionsBashFromStdin(bashStdin('echo {} | tee decisions/x.json'));
+  assert.ok(r);
+  assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('bash: CLI add 放行（含 devsphere-decisions.js，无 decisions/ 路径）', () => {
+  const cmd = 'node scripts/devsphere-decisions.js add .devsphere/tasks/feature/F1 business-design \'{"type":"gated"}\'';
+  const r = checkDecisionsBashFromStdin(bashStdin(cmd));
+  assert.strictEqual(r, null);
+});
+
+test('bash: CLI init 放行', () => {
+  const cmd = 'node scripts/devsphere-decisions.js init .devsphere/tasks/feature/F1 business-design FEAT-1 businessDesign';
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin(cmd)), null);
+});
+
+test('bash: CLI resolve 放行', () => {
+  const cmd = 'node scripts/devsphere-decisions.js resolve .devsphere/tasks/feature/F1 business-design BD-DEC-001 \'{"chosen":"a"}\'';
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin(cmd)), null);
+});
+
+test('bash: 无关命令放行（git status / ls / npm test）', () => {
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin('git status')), null);
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin('npm test')), null);
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin('ls -la')), null);
+});
+
+test('bash: 脚本名 devsphere-decisions.js（无斜杠）不被 decisions/ 误伤', () => {
+  // 命令含脚本名但无 "decisions/" 路径段 → 放行
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin('node devsphere-decisions.js count-gated-pending tp business-design')), null);
+});
+
+test('bash: 无 tool_input 或 command → 放行（null）', () => {
+  assert.strictEqual(checkDecisionsBashFromStdin({}), null);
+  assert.strictEqual(checkDecisionsBashFromStdin({ tool_input: {} }), null);
+  assert.strictEqual(checkDecisionsBashFromStdin({ tool_input: { command: 123 } }), null);
+});
+
+test('bash: decisions/ 出现在 CLI 的 JSON 参数里但命令含 devsphere-decisions.js → 放行（CLI 豁免）', () => {
+  const cmd = 'node scripts/devsphere-decisions.js add tp business-design \'{"summary":"see decisions/foo"}\'';
+  assert.strictEqual(checkDecisionsBashFromStdin(bashStdin(cmd)), null);
+});

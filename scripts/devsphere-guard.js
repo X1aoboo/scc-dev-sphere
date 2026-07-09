@@ -226,6 +226,29 @@ function checkTeammateDecisions(workspaceRoot) {
   return { ok: true };
 }
 
+// PreToolUse Bash 守卫：禁止用 Bash 直接写 design-critical 文件（decisions/、artifacts/）。
+// CLI（devsphere-decisions.js）走 Node fs，命令行不含 decisions/ 路径，且含脚本名 → 豁免。
+function checkDecisionsBashFromStdin(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti) return null;
+  const command = ti.command;
+  if (typeof command !== 'string') return null;
+
+  // 含 decisions/ 或 artifacts/ 路径段，且不是 devsphere-decisions.js CLI 调用 → deny
+  const targetsDesignFiles = /(decisions|artifacts)\//.test(command);
+  const isCli = command.includes('devsphere-decisions.js');
+  if (targetsDesignFiles && !isCli) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: 'design 文件（decisions/、artifacts/）禁止用 Bash 直接写：decisions 用 `devsphere-decisions.js` CLI（init/add/resolve），artifacts 用 Write 工具。',
+      },
+    };
+  }
+  return null;
+}
+
 function checkStateAdvance(taskPath, targetStatus) {
   const state = readState(taskPath);
   if (!state) {
@@ -321,6 +344,21 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-decisions-bash': {
+        let stdinJson = null;
+        try {
+          stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8'));
+        } catch (e) {
+          process.exit(0);
+        }
+        const decision = checkDecisionsBashFromStdin(stdinJson);
+        if (decision) {
+          process.stdout.write(JSON.stringify(decision));
+          process.exit(0);
+        }
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -337,4 +375,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions };
+module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions, checkDecisionsBashFromStdin };
