@@ -68,3 +68,11 @@ test('CLI smoke: build design gated 输出 prompt', () => {
   assert.match(out, /type=gated/);
   assert.match(out, /business-design\.md/);
 });
+
+test('CLI smoke: build review 输出含 artifactPath、无 gated 块', () => {
+  const { execSync } = require('child_process');
+  const out = execSync('node scripts/devsphere-dispatch.js build review se businessDesign /t scc-dev-sphere:feature-review /t/artifacts/business-design.md', { encoding: 'utf-8' });
+  assert.match(out, /\/t\/artifacts\/business-design\.md/);
+  assert.match(out, /评审 businessDesign/);
+  assert.doesNotMatch(out, /type=gated|type=autonomous/);
+});

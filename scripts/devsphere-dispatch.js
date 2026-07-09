@@ -45,10 +45,19 @@ function renderDispatch(input) {
 function main() {
   const [, , cmd, ...args] = process.argv;
   if (cmd !== 'build') { process.stderr.write(`Unknown command: ${cmd}\n`); process.exit(1); }
-  const [kind, role, stage, taskPath, skill, humanGated, mode, artifactPath] = args;
+  const [kind, role, stage, taskPath, skill, ...rest] = args;
   if (!kind || !role || !stage || !taskPath || !skill) {
-    process.stderr.write('Usage: build <kind> <role> <stage> <taskPath> <skill> [humanGated] [mode] [artifactPath]\n');
+    process.stderr.write('Usage: build <kind> <role> <stage> <taskPath> <skill> [humanGated mode | artifactPath]\n');
     process.exit(1);
+  }
+  // kind-sensitive positional parsing:
+  //   review: <skill> <artifactPath>           → rest[0] = artifactPath
+  //   design: <skill> <humanGated> <mode>      → rest[0..1] = humanGated, mode
+  let humanGated, mode, artifactPath;
+  if (kind === 'review') {
+    artifactPath = rest[0];
+  } else {
+    [humanGated, mode] = rest;
   }
   try {
     process.stdout.write(renderDispatch({ kind, role, stage, taskPath, skill, humanGated, mode, artifactPath }));
