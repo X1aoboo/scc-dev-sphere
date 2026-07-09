@@ -10,7 +10,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 ## 集成契约
 
 - **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
-- **模式:** 本 skill 是领域参考。agent 在 **scope 模式**做上游分析子集（查知识 / 拆功能点 / 出土 decisions），在 **draft 模式**产出完整主产物；模式由编排器（`resolve-design-loop`）派发决定，见 agent 的 teammate 协议。
+- **模式:** 本 skill 是纯领域方法论。team-lead 派发你执行时,按 skill 全流程做设计;需用户决策时按你的 teammate 行为准则(devsphere-teammate-conduct)处理。不关心外部编排流程。
 - **入参:** `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`、测试规范查询、`templates/artifacts/test-design.md`
 - **输出:** `artifacts/test-design.md`、evidence、`decisions/test-design-decisions.json`、交接契约
 - **完成标准:** 见文末
@@ -42,6 +42,17 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 8. 标记**不可测项**（原因、影响、缓解、owner）与风险接受候选（不得自动变 accepted_risk）。
 9. 定义**转测准入标准**（可检查 checklist）。
 10. 触发质量门禁。
+
+## vague 需求拆解框架
+
+面对一句话/信息不足的需求,不要自填假设。按维度逐项判断,每个需求未提及的维度出土一条 decision:
+- 用户角色与权限
+- 核心实体与生命周期
+- 功能范围(In/Out Scope)
+- 关键业务规则
+- 非功能需求(性能/安全/兼容)
+- 与下游(solution/test)的交接边界
+vague 需求 = 大量空白维度 = 必须明确(humanGated 时问用户;非 humanGated 时显式自决并记 assumption)。
 
 ## 专业方法与图示
 
