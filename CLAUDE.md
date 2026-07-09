@@ -99,6 +99,10 @@ PreToolUse 双守卫：
 - `check-decisions-resolved`：stage-aware 强制，gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。
 - `check-decisions-format`：强制 decisions/ 目录只含合法 JSON，拒绝 .md/.txt 等非 JSON 文件，拒绝 options 纯字符串、拒绝 gated 缺 rationale。
 
+TeammateIdle 质量门（`devsphere-guard.js check-teammate-decisions`）：teammate 报告完成（idle）前，校验活跃任务下所有 decisions/*.json schema 合法；非法则 exit 2 回喂 stderr，强制 teammate 继续（SA 写不出非法文件就报不了完成）。
+
+teammate 保活协议：scope 轮捕获 agentId，draft 轮经 `SendMessage to=<agentId>` 恢复同一实例（保留轮1 分析上下文）；禁止重新 Agent 派发、禁止轮询/派检查 agent。见 `skills/feature-design/SKILL.md`。
+
 决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `references/teammate-design-protocol.md`、`references/teammate-boundary.md`、`references/teammate-review-backflow.md`（各 agent 文件通过引用行加载，避免散弹式修改）。
 
 ### Task workspace layout
