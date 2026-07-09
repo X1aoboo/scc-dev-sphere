@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { readMatrix, hasBlocking } = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
-const { readDecisions, countGatedPending } = require('../devsphere-decisions');
+const { readDecisions, countGatedPending, listGatedPending } = require('../devsphere-decisions');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -181,6 +181,27 @@ function getDesignReviewers(stageName) {
   return map[stageName] || [];
 }
 
+const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
+
+// 当前阶段是否要求人工决策门（spec §4）。strict 全阶段；collaborative 仅门禁阶段；auto-design 否。
+function isHumanGated(mode, stageName, humanGates) {
+  if (mode === 'strict-human-loop') return true;
+  if (mode === 'collaborative-design' && Array.isArray(humanGates) && humanGates.includes(stageName)) return true;
+  return false;
+}
+
+// 把一条 gated decision 映射成主会话构造 AskUserQuestion 所需的最小数据（spec §6 字段映射的源）。
+function toQuestionData(decision) {
+  if (!decision) return null;
+  return {
+    id: decision.id,
+    summary: decision.summary,
+    options: Array.isArray(decision.options) ? decision.options : [],
+    recommendation: decision.recommendation || '',
+    askMode: decision.askMode || 'single_select',
+  };
+}
+
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
   return {
     kind,
@@ -300,4 +321,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveNextAction, resolveDesignStageAction };
+module.exports = { resolveNextAction, resolveDesignStageAction, isHumanGated, toQuestionData, DESIGN_STAGE_ORDER };
