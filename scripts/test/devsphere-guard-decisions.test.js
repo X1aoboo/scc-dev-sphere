@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision, readDecisions } = require('../devsphere-decisions');
-const { decideWrite, checkDecisionsResolvedFromStdin, slugToStage } = require('../devsphere-guard');
+const { decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormatFromStdin } = require('../devsphere-guard');
 const { readState, writeState } = require('../devsphere-state');
 
 function mainArtifactPath(taskPath, slug) {
@@ -261,7 +261,7 @@ test('format: decisions JSON gated 缺 rationale → 拒绝', () => {
   const jf = decisionsFilePath(taskPath, 'business-design');
   fs.writeFileSync(jf, JSON.stringify({
     stage: 'businessDesign', taskId: 'FEAT-001',
-    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }] }],
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', status: 'pending', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' }],
   }));
   const r = checkDecisionsFormat(jf);
   assert.strictEqual(r.allow, false);
@@ -299,4 +299,92 @@ test('format: decisions JSON autonomous 不需要 rationale/options → 放行',
   }));
   const r = checkDecisionsFormat(jf);
   assert.strictEqual(r.allow, true);
+});
+
+// === Plan D2-2: checkDecisionsFormatFromStdin validates INCOMING content ===
+
+test('stdin-format: Write 合法 content → null（放行）', () => {
+  const content = JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-1',
+    decisions: [{ id: 'BD-DEC-001', type: 'gated', category: 'feature_scope', status: 'pending', summary: 'q', rationale: 'ctx', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select' }],
+  });
+  const stdin = { tool_input: { file_path: '/x/decisions/business-design-decisions.json', content } };
+  assert.strictEqual(checkDecisionsFormatFromStdin(stdin), null);
+});
+
+test('stdin-format: Write 自创 schema（无 type）→ deny', () => {
+  const content = JSON.stringify({
+    stage: 'businessDesign', taskId: 'FEAT-1', mode: 'scope',
+    decisions: [{ id: 'DEC-BD-001', topic: 't', question: 'q', options: [] }],
+  });
+  const stdin = { tool_input: { file_path: '/x/decisions/business-design-decisions.json', content } };
+  const r = checkDecisionsFormatFromStdin(stdin);
+  assert.ok(r);
+  assert.strictEqual(r.hookSpecificOutput.permissionDecision, 'deny');
+});
+
+test('stdin-format: Write 未知顶层字段 openQuestions → deny', () => {
+  const content = JSON.stringify({ stage: 's', taskId: 't', decisions: [], openQuestions: [] });
+  const stdin = { tool_input: { file_path: '/x/decisions/business-design-decisions.json', content } };
+  const r = checkDecisionsFormatFromStdin(stdin);
+  assert.ok(r);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /openQuestions/);
+});
+
+test('stdin-format: Write 空 content → deny（解析失败）', () => {
+  const stdin = { tool_input: { file_path: '/x/decisions/business-design-decisions.json', content: '' } };
+  const r = checkDecisionsFormatFromStdin(stdin);
+  assert.ok(r);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /解析失败/);
+});
+
+test('stdin-format: Write 到非 decisions 路径 → null（放行）', () => {
+  const stdin = { tool_input: { file_path: '/x/artifacts/business-design.md', content: 'whatever' } };
+  assert.strictEqual(checkDecisionsFormatFromStdin(stdin), null);
+});
+
+test('stdin-format: Write 到 decisions/ 但非 .json → deny', () => {
+  const stdin = { tool_input: { file_path: '/x/decisions/D-001.md', content: '# md' } };
+  const r = checkDecisionsFormatFromStdin(stdin);
+  assert.ok(r);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /JSON/);
+});
+
+test('stdin-format: 无 tool_input → null', () => {
+  assert.strictEqual(checkDecisionsFormatFromStdin({}), null);
+});
+
+test('stdin-format: tool_input 无 file_path → null', () => {
+  assert.strictEqual(checkDecisionsFormatFromStdin({ tool_input: { content: '{}' } }), null);
+});
+
+test('stdin-format: Edit 用 new_string 重建校验 → deny（重建后非法）', () => {
+  const { taskPath } = makeTask();
+  const dir = path.join(taskPath, 'decisions');
+  fs.mkdirSync(dir, { recursive: true });
+  const fp = path.join(dir, 'business-design-decisions.json');
+  // 磁盘上是合法文件（无空格紧凑 JSON，与 JSON.stringify 默认一致）
+  fs.writeFileSync(fp, JSON.stringify({ stage: 'businessDesign', taskId: 'FEAT-1', decisions: [] }));
+  // Edit 把 decisions 数组替换成非法（无 type）；old_string 必须精确匹配磁盘字节
+  const stdin = {
+    tool_input: {
+      file_path: fp,
+      old_string: '"decisions":[]',
+      new_string: '"decisions":[{"id":"X","topic":"t"}]',
+    },
+  };
+  const r = checkDecisionsFormatFromStdin(stdin);
+  assert.ok(r);
+  assert.match(r.hookSpecificOutput.permissionDecisionReason, /type/);
+});
+
+test('stdin-format: 校验 incoming content 而非磁盘（磁盘空但 content 合法 → 放行）', () => {
+  const { taskPath } = makeTask();
+  const dir = path.join(taskPath, 'decisions');
+  fs.mkdirSync(dir, { recursive: true });
+  const fp = path.join(dir, 'business-design-decisions.json');
+  fs.writeFileSync(fp, ''); // 磁盘空文件
+  const content = JSON.stringify({ stage: 'businessDesign', taskId: 'FEAT-1', decisions: [] });
+  const stdin = { tool_input: { file_path: fp, content } };
+  assert.strictEqual(checkDecisionsFormatFromStdin(stdin), null); // 放行：校验 incoming content
 });

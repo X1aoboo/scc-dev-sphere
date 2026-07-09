@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state');
-const { resolveMainArtifact, countGatedPending, readDecisions, decisionsPath, SLUG_PREFIX } = require('./devsphere-decisions');
+const { resolveMainArtifact, countGatedPending, readDecisions, decisionsPath, SLUG_PREFIX, validateDecisionsFile } = require('./devsphere-decisions');
 
 const ALLOWED_IMPLEMENT_STATUSES = ['implementation_planned', 'implementing'];
 
@@ -130,58 +130,75 @@ function checkDecisionsResolvedFromStdin(stdinJson) {
   };
 }
 
-// 校验 decisions/ 目录下的文件格式：只允许 <slug>-decisions.json，且
-// gated decision 的 options 必须是 {label, description} 对象、rationale 必填。
-function checkDecisionsFormat(filePath) {
-  const norm = (filePath || '').replace(/\\/g, '/');
-  // 仅匹配 decisions/ 目录
-  if (!/\/decisions\//.test(norm)) return { allow: true };
-
-  const fileName = norm.split('/').pop();
-  // 拒绝非 JSON 文件
-  if (!fileName.endsWith('.json')) {
-    return { allow: false, reason: `decisions 目录只允许 JSON 文件，发现非 JSON 文件: ${fileName}` };
-  }
-
-  // 读取并校验 JSON 内容
+// 校验一段 decisions JSON 文本内容。返回 {allow, reason}。
+function validateDecisionsContent(content) {
   let data;
-  try { data = JSON.parse(fs.readFileSync(filePath, 'utf-8')); }
+  try { data = JSON.parse(content); }
   catch (e) {
     return { allow: false, reason: `decisions JSON 解析失败: ${e.message}` };
   }
-
-  if (!data || !Array.isArray(data.decisions)) return { allow: true };
-
-  for (const d of data.decisions) {
-    if (d.type !== 'gated') continue;
-    if (!Array.isArray(d.options)) continue;
-
-    // 每个 option 必须是 {label, description} 对象
-    for (const opt of d.options) {
-      if (typeof opt !== 'object' || opt === null
-          || typeof opt.label !== 'string' || !opt.label.trim()
-          || typeof opt.description !== 'string' || !opt.description.trim()) {
-        return { allow: false, reason: `decisions 文件中 "${d.id || '?'}" 的 options 元素必须是 {label, description} 对象，且字符串非空` };
-      }
-    }
-    // gated 必须有 rationale
-    if (typeof d.rationale !== 'string' || !d.rationale.trim()) {
-      return { allow: false, reason: `decisions 文件中 gated 决策 "${d.id || '?'}" 缺少 rationale（必填）` };
-    }
+  try { validateDecisionsFile(data); }
+  catch (e) {
+    return { allow: false, reason: e.message };
   }
   return { allow: true };
 }
 
+// 校验 decisions/ 目录下某磁盘文件（用于 TeammateIdle 路径）。
+function checkDecisionsFormat(filePath) {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  if (!/\/decisions\//.test(norm)) return { allow: true };
+  const fileName = norm.split('/').pop();
+  if (!fileName.endsWith('.json')) {
+    return { allow: false, reason: `decisions 目录只允许 JSON 文件，发现非 JSON 文件: ${fileName}` };
+  }
+  let content;
+  try { content = fs.readFileSync(filePath, 'utf-8'); }
+  catch (e) { return { allow: true }; } // 读不到（如新建中）→ 放行
+  return validateDecisionsContent(content);
+}
+
+// PreToolUse：校验【正在写入的内容】，不是磁盘内容（RC2 修复）。
 function checkDecisionsFormatFromStdin(stdinJson) {
-  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti) return null;
+  const filePath = ti.file_path;
   if (!filePath) return null;
-  const d = checkDecisionsFormat(filePath);
-  if (d.allow) return null;
+
+  const norm = filePath.replace(/\\/g, '/');
+  if (!/\/decisions\//.test(norm)) return null; // 非 decisions 路径，放行
+  const fileName = norm.split('/').pop();
+  if (!fileName.endsWith('.json')) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: `decisions 目录只允许 JSON 文件，发现非 JSON 文件: ${fileName}`,
+      },
+    };
+  }
+
+  // 取「将要写入的内容」
+  let content;
+  if (typeof ti.content === 'string') {
+    content = ti.content; // Write
+  } else if (typeof ti.new_string === 'string') {
+    // Edit：读磁盘原文，应用 old_string→new_string 重建
+    let disk;
+    try { disk = fs.readFileSync(filePath, 'utf-8'); }
+    catch (e) { return null; } // 读不到磁盘无法重建，放行（Edit 本身会失败）
+    content = disk.split(ti.old_string).join(ti.new_string);
+  } else {
+    return null; // 无内容可校验
+  }
+
+  const r = validateDecisionsContent(content);
+  if (r.allow) return null;
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: d.reason,
+      permissionDecisionReason: r.reason,
     },
   };
 }
