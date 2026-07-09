@@ -95,9 +95,11 @@ Valid transitions are defined in `devsphere-guard.js` `VALID_TRANSITIONS`. Scrip
 
 三模式兼容：`humanGated = strict 全阶段 / collaborative 仅 humanGateStages / auto-design 否`。`ask` 仅在 `humanGated && gated pending>0` 触发。
 
-PreToolUse 守卫（`hooks/hooks.json` → `devsphere-guard.js check-decisions-resolved`）stage-aware 强制：gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。
+PreToolUse 双守卫：
+- `check-decisions-resolved`：stage-aware 强制，gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。
+- `check-decisions-format`：强制 decisions/ 目录只含合法 JSON，拒绝 .md/.txt 等非 JSON 文件，拒绝 options 纯字符串、拒绝 gated 缺 rationale。
 
-决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `agents/*.md`。
+决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `references/teammate-design-protocol.md`、`references/teammate-boundary.md`、`references/teammate-review-backflow.md`（各 agent 文件通过引用行加载，避免散弹式修改）。
 
 ### Task workspace layout
 
