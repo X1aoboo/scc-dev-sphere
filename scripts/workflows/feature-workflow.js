@@ -21,7 +21,7 @@ function resolveNextAction(taskPath, state) {
   // --- initialized ---
   if (status === 'initialized') {
     return makeAction('run_skill', state, null, null,
-      'feature-assess', {}, ['sa'],
+      'feature-assess', {}, [],
       'Task initialized. Proceed with complexity and risk assessment.',
       [], []);
   }
