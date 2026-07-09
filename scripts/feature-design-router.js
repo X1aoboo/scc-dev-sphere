@@ -2,7 +2,7 @@
 'use strict';
 
 const path = require('path');
-const { listGatedPending } = require('./devsphere-decisions');
+const { listGatedPending, readDecisions } = require('./devsphere-decisions');
 const { readMatrix, getBaseReviewers } = require('./devsphere-review-matrix');
 
 const DISPATCH_SCRIPT = path.join(__dirname, 'devsphere-dispatch.js');
@@ -107,6 +107,27 @@ function resolveDesignAction(taskPath, state) {
         return {
           kind: 'ask_gated', stage, slug, humanGated: gated, reason: `${stage} 有 ${pending.length} 项 gated decision 待代问`,
           name, decisions: pending,
+        };
+      }
+      // 检测"gated 已 resolve、续稿"场景:decisions 文件有已决定的 gated 项
+      const decisionsFile = readDecisions(taskPath, slug);
+      const resolvedGated = decisionsFile && Array.isArray(decisionsFile.decisions)
+        ? decisionsFile.decisions.filter(d => d.type === 'gated' && d.status === 'decided')
+        : [];
+      if (resolvedGated.length > 0) {
+        return {
+          kind: 'produce_draft', stage, slug, humanGated: gated,
+          reason: `${stage} gated 已 resolve,唤醒 owner 续稿`,
+          role, skill, mode, name,
+          payload: {
+            mode: 'continue',
+            resolutions: resolvedGated.map(d => ({
+              id: d.id, summary: d.summary,
+              chosen: d.resolution && d.resolution.chosen,
+              note: d.resolution && d.resolution.note,
+            })),
+          },
+          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
         };
       }
       return {

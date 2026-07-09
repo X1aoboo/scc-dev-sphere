@@ -39,7 +39,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
   ```bash
   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js resolve <taskPath> <slug> <decision.id> '<resolution json>'
   ```
-  `<resolution json>` 形如 `{"chosen":"<选项 label>","note":"<可选>"}'`。
+  `<resolution json>` 形如 `{"chosen":"<选项 label>","note":"<可选>"}`。
 - 全部 resolve 后**立即重咨询**(步骤 1)。
 
 ### `dispatch_reviews`
@@ -58,6 +58,9 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
 
 ### `design_blocked`
 - 展示 `action.reason`,停止。等人工介入。
+
+### 未识别的 kind(如 `show_status` / `blocked`)
+- 展示 `action.reason`,停止,报告异常(通常意味着无 active task 或 state 文件缺失)。
 
 ## 约束
 

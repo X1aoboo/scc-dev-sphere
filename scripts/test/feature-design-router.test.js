@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const { execFileSync } = require('child_process');
 const { makeTask } = require('./helpers');
 const { initMatrix, addIssue, setArtifactStatus } = require('../devsphere-review-matrix');
-const { initDecisions, addDecision } = require('../devsphere-decisions');
+const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
 const {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
   getDesignAgent, getDesignSkill, resolveDesignAction,
@@ -160,4 +160,21 @@ test('CLI: workspaceRoot → stdout JSON', () => {
   const action = JSON.parse(out);
   assert.strictEqual(action.kind, 'produce_draft');
   assert.strictEqual(action.stage, 'businessDesign');
+});
+
+test('not_started + gated 已 resolve → produce_draft continue', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }],
+    askMode: 'single_select', rationale: 'r',
+  });
+  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
+  const { readState } = require('../devsphere-state');
+  const action = resolveDesignAction(taskPath, readState(taskPath));
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.payload.mode, 'continue');
+  assert.strictEqual(action.payload.resolutions.length, 1);
+  assert.strictEqual(action.payload.resolutions[0].chosen, 'a');
 });
