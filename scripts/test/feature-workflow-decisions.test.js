@@ -5,51 +5,24 @@ const fs = require('fs');
 const path = require('path');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
-const { resolveDesignStageAction } = require('../workflows/feature-workflow');
+const { isHumanGated, DESIGN_STAGE_ORDER } = require('../workflows/feature-workflow');
 
-test('主产物不存在 + 无 decisions → scope', () => {
-  const { taskPath } = makeTask();
-  const r = resolveDesignStageAction(taskPath, 'businessDesign');
-  assert.strictEqual(r.action, 'scope');
-  assert.strictEqual(r.slug, 'business-design');
+test('DESIGN_STAGE_ORDER 固定四阶段顺序', () => {
+  assert.deepStrictEqual(DESIGN_STAGE_ORDER, ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign']);
 });
 
-test('decisions 存在 + gated pending>0 → ask', () => {
-  const { taskPath, taskId } = makeTask();
-  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', {
-    type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
-    rationale: 'test rationale',
-  });
-  const r = resolveDesignStageAction(taskPath, 'businessDesign');
-  assert.strictEqual(r.action, 'ask');
-  assert.strictEqual(r.gatedPending, 1);
-  assert.strictEqual(r.slug, 'business-design');
+test('isHumanGated: strict 全阶段 true', () => {
+  assert.strictEqual(isHumanGated('strict-human-loop', 'businessDesign', []), true);
+  assert.strictEqual(isHumanGated('strict-human-loop', 'testDesign', []), true);
 });
 
-test('decisions 存在 + gated pending=0 → draft', () => {
-  const { taskPath, taskId } = makeTask();
-  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', {
-    type: 'gated', category: 'feature_scope', summary: 'q',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
-    rationale: 'test rationale',
-  });
-  resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
-  const r = resolveDesignStageAction(taskPath, 'businessDesign');
-  assert.strictEqual(r.action, 'draft');
-  assert.strictEqual(r.gatedPending, 0);
-  assert.strictEqual(r.slug, 'business-design');
+test('isHumanGated: collaborative 仅门禁阶段 true', () => {
+  assert.strictEqual(isHumanGated('collaborative-design', 'businessDesign', ['businessDesign', 'testDesign']), true);
+  assert.strictEqual(isHumanGated('collaborative-design', 'solutionDesign', ['businessDesign', 'testDesign']), false);
 });
 
-test('主产物已存在 → ready-for-review', () => {
-  const { taskPath, taskId } = makeTask();
-  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'done');
-  const r = resolveDesignStageAction(taskPath, 'businessDesign');
-  assert.strictEqual(r.action, 'ready-for-review');
-  assert.strictEqual(r.slug, 'business-design');
+test('isHumanGated: auto-design 全 false', () => {
+  assert.strictEqual(isHumanGated('auto-design', 'businessDesign', []), false);
 });
 
 const { execFileSync } = require('child_process');

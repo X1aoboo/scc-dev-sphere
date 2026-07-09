@@ -2,9 +2,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const { readMatrix, hasBlocking } = require('../devsphere-review-matrix');
+const { readMatrix } = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
-const { readDecisions, countGatedPending, listGatedPending } = require('../devsphere-decisions');
+const { readDecisions, countGatedPending } = require('../devsphere-decisions');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -113,24 +113,6 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
     [], []);
 }
 
-// 设计阶段决策循环动作（spec §4.2）。确定性：仅依据磁盘事实。
-function resolveDesignStageAction(taskPath, stageName) {
-  const slug = stageToArtifact(stageName);
-  const artifactPath = path.join(taskPath, 'artifacts', `${slug}.md`);
-  if (fs.existsSync(artifactPath)) {
-    return { action: 'ready-for-review', slug, gatedPending: 0, reason: `${stageName} 主产物已存在，交评审流程` };
-  }
-  const decisions = readDecisions(taskPath, slug);
-  if (!decisions) {
-    return { action: 'scope', slug, gatedPending: 0, reason: `${stageName} 未 scope：派阶段 owner 查知识 + 出土 gated 决策` };
-  }
-  const pending = countGatedPending(taskPath, slug);
-  if (pending > 0) {
-    return { action: 'ask', slug, gatedPending: pending, reason: `${stageName} 有 ${pending} 个 gated 决策待用户确认` };
-  }
-  return { action: 'draft', slug, gatedPending: 0, reason: `${stageName} gated 决策已全部 resolved，可定稿` };
-}
-
 // --- Helpers ---
 
 function isStageReady(stageStatus, stageName, mode, humanGates) {
@@ -190,79 +172,6 @@ function isHumanGated(mode, stageName, humanGates) {
   return false;
 }
 
-// 把一条 gated decision 映射成主会话构造 AskUserQuestion 所需的最小数据（spec §6 字段映射的源）。
-function toQuestionData(decision) {
-  if (!decision) return null;
-  return {
-    id: decision.id,
-    summary: decision.summary,
-    options: Array.isArray(decision.options) ? decision.options : [],
-    recommendation: decision.recommendation || '',
-    askMode: decision.askMode || 'single_select',
-  };
-}
-
-// 设计循环总入口（spec §2）。确定性：读 state + 磁盘事实，返回精确 nextAction。
-function resolveDesignLoop(taskPath) {
-  const state = readState(taskPath);
-  if (!state || !state.stages) return { kind: 'show_status', reason: 'No stages in state' };
-  const mode = state.workflowMode || 'auto-design';
-  const humanGates = state.humanGateStages || [];
-
-  const currentStage = DESIGN_STAGE_ORDER.find(
-    s => !isStageReady((state.stages[s] || {}).status, s, mode, humanGates)
-  );
-  if (!currentStage) {
-    return { kind: 'all_design_stages_ready', reason: '全部设计阶段就绪，进入 integrated-design' };
-  }
-  return resolveDesignStage(taskPath, state, currentStage, mode, humanGates);
-}
-
-// 单阶段路由：pre-artifact（scope/ask/draft）+ ready-for-review（post-artifact，Task 3 接管）。
-function resolveDesignStage(taskPath, state, stage, mode, humanGates) {
-  const slug = stageToArtifact(stage);
-  const humanGated = isHumanGated(mode, stage, humanGates);
-  const stageAction = resolveDesignStageAction(taskPath, stage);
-
-  if (stageAction.action === 'scope') {
-    return { kind: 'dispatch_agent', mode: 'scope', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), humanGated, reason: stageAction.reason };
-  }
-  if (stageAction.action === 'ask') {
-    // 双重门控：仅 humanGated 才 ask；否则当 draft（防 auto-design 误产 gated）
-    if (!humanGated) {
-      return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: `${stage}：非人工门禁，跳过 ask 直接定稿` };
-    }
-    const decisions = listGatedPending(taskPath, slug).map(toQuestionData);
-    return { kind: 'ask_decisions', stage, slug, decisions, reason: stageAction.reason };
-  }
-  if (stageAction.action === 'draft') {
-    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: stageAction.reason };
-  }
-  // ready-for-review → post-artifact
-  return resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates);
-}
-
-// post-artifact 路由（spec §2/§5）：blocking→revise；drafted→review（含 CIE）；ai_review_passed+人工模式→human_confirm。
-function resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates) {
-  const matrix = readMatrix(taskPath);
-  const stageStatus = (state.stages[stage] || {}).status;
-
-  if (hasBlocking(matrix, slug)) {
-    const reviewers = (getDesignReviewers(stage) || []).slice();
-    if (state.ciCdRisk === true && !reviewers.includes('cie')) reviewers.push('cie');
-    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reviewers, requiresReReview: true, reason: `${stage} 有 blocking 评审项，修订后需重新评审（reviewers: ${reviewers.join(',')}）` };
-  }
-  if (stageStatus === 'drafted') {
-    const reviewers = (getDesignReviewers(stage) || []).slice();
-    if (state.ciCdRisk === true && !reviewers.includes('cie')) reviewers.push('cie');
-    return { kind: 'dispatch_reviewers', stage, slug, reviewers, skill: 'feature-review', reason: `${stage} 已 drafted，派评审（reviewers: ${reviewers.join(',')}）` };
-  }
-  if (stageStatus === 'ai_review_passed' && isHumanGated(mode, stage, humanGates)) {
-    return { kind: 'human_confirm', stage, slug, reason: `${stage} 评审通过，待人工批准` };
-  }
-  return { kind: 'show_status', stage, slug, reason: `${stage} 状态 ${stageStatus}，无明确下一步` };
-}
-
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
   return {
     kind,
@@ -279,11 +188,6 @@ function makeAction(kind, state, stage, target, skill, args, agents, reason, req
     expectedArtifacts: expected || [],
     pause: pause || null,
   };
-}
-
-function makeHumanConfirm(state, stage, target, reason, required, expected, pause) {
-  return makeAction('human_confirm', state, stage, target, null, {}, [],
-    reason, required || [], expected || [], pause || null);
 }
 
 function main() {
@@ -341,12 +245,6 @@ function main() {
       process.stdout.write(JSON.stringify({ synced: true, updated }));
       break;
     }
-    case 'design-stage-action': {
-      const taskPath = args[1];
-      const stageName = args[2];
-      process.stdout.write(JSON.stringify(resolveDesignStageAction(taskPath, stageName)));
-      break;
-    }
     case 'set-stage-status': {
       const taskPath = args[1];
       const stageName = args[2];
@@ -359,11 +257,6 @@ function main() {
       const { updateStageStatus } = require('../devsphere-state');
       updateStageStatus(taskPath, stageName, newStatus);
       process.stdout.write(JSON.stringify({ synced: true, stage: stageName, status: newStatus }));
-      break;
-    }
-    case 'resolve-design-loop': {
-      const taskPath = args[1];
-      process.stdout.write(JSON.stringify(resolveDesignLoop(taskPath)));
       break;
     }
     case 'set-task-status': {
@@ -403,4 +296,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveNextAction, resolveDesignStageAction, resolveDesignLoop, isHumanGated, toQuestionData, DESIGN_STAGE_ORDER };
+module.exports = { resolveNextAction, isHumanGated, DESIGN_STAGE_ORDER };
