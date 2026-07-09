@@ -61,8 +61,18 @@ function addDecision(taskPath, slug, input) {
     if (!Array.isArray(input.options) || input.options.length < 2 || input.options.length > 4) {
       throw new Error('gated decision requires 2-4 options');
     }
+    for (const opt of input.options) {
+      if (typeof opt !== 'object' || opt === null
+          || typeof opt.label !== 'string' || !opt.label.trim()
+          || typeof opt.description !== 'string' || !opt.description.trim()) {
+        throw new Error('gated decision options must be {label, description} objects with non-empty strings');
+      }
+    }
     if (!VALID_ASK_MODES.includes(input.askMode)) {
       throw new Error(`Invalid askMode: ${input.askMode}`);
+    }
+    if (typeof input.rationale !== 'string' || !input.rationale.trim()) {
+      throw new Error('rationale is required for gated decisions');
     }
   }
   const data = readDecisions(taskPath, slug);
