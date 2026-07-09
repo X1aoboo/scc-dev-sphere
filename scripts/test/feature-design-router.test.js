@@ -3,6 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { makeTask } = require('./helpers');
 const { initMatrix } = require('../devsphere-review-matrix');
+const { initDecisions, addDecision } = require('../devsphere-decisions');
 const {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
   getDesignAgent, getDesignSkill, resolveDesignAction,
@@ -40,4 +41,36 @@ test('resolveDesignAction: 四阶段全完成 → design_phase_complete', () => 
   for (const stage of DESIGN_STAGE_ORDER) state.stages[stage].status = 'ai_review_passed';
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'design_phase_complete');
+});
+
+test('not_started + 无 gated → produce_draft initial', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  const { readState } = require('../devsphere-state');
+  const action = resolveDesignAction(taskPath, readState(taskPath));
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.stage, 'businessDesign');
+  assert.strictEqual(action.role, 'sa');
+  assert.strictEqual(action.skill, 'feature-design-business');
+  assert.strictEqual(action.name, 'sa-businessDesign');
+  assert.strictEqual(action.humanGated, true);
+  assert.strictEqual(action.payload.mode, 'initial');
+  assert.ok(action.dispatchCmd.includes('build design sa businessDesign '), 'dispatchCmd 含 design 派发参数');
+  assert.ok(action.dispatchCmd.includes('feature-design-business'), 'dispatchCmd 含 skill');
+});
+
+test('not_started + 有 gated pending → ask_gated', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: '范围待定',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }],
+    askMode: 'single_select', rationale: 'r',
+  });
+  const { readState } = require('../devsphere-state');
+  const action = resolveDesignAction(taskPath, readState(taskPath));
+  assert.strictEqual(action.kind, 'ask_gated');
+  assert.strictEqual(action.stage, 'businessDesign');
+  assert.strictEqual(action.name, 'sa-businessDesign');
+  assert.strictEqual(action.decisions.length, 1);
+  assert.strictEqual(action.decisions[0].id, 'BD-DEC-001');
 });

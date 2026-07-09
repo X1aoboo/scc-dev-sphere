@@ -46,6 +46,14 @@ function getDesignSkill(stageName) {
   }[stageName];
 }
 
+function teammateName(role, stage) {
+  return `${role}-${stage}`;
+}
+
+function designDispatchCmd(role, stage, taskPath, skill, humanGated, mode) {
+  return `node "${DISPATCH_SCRIPT}" build design ${role} ${stage} ${taskPath} ${skill} ${humanGated} ${mode}`;
+}
+
 // resolveDesignAction 其余分支在后续 task 增量补全。
 function resolveDesignAction(taskPath, state) {
   const mode = state.workflowMode || 'auto-design';
@@ -55,8 +63,28 @@ function resolveDesignAction(taskPath, state) {
   for (const stage of DESIGN_STAGE_ORDER) {
     const stageData = stages[stage] || { status: 'not_started' };
     if (isStageReady(stageData.status, stage, mode, humanGates)) continue;
-    // 其余分支后续 task 实现;本 task 先只处理"全完成"。
-    return { kind: 'not_implemented', stage };
+
+    const slug = stageToArtifact(stage);
+    const gated = isHumanGated(mode, stage, humanGates);
+    const role = getDesignAgent(stage);
+    const skill = getDesignSkill(stage);
+    const name = teammateName(role, stage);
+
+    if (stageData.status === 'not_started') {
+      const pending = listGatedPending(taskPath, slug);
+      if (pending.length > 0) {
+        return {
+          kind: 'ask_gated', stage, slug, humanGated: gated, reason: `${stage} 有 ${pending.length} 项 gated decision 待代问`,
+          name, decisions: pending,
+        };
+      }
+      return {
+        kind: 'produce_draft', stage, slug, humanGated: gated, reason: `${stage} 派发 owner 产 draft`,
+        role, skill, mode, name, payload: { mode: 'initial' },
+        dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+      };
+    }
+    return { kind: 'not_implemented', stage, status: stageData.status };
   }
   return { kind: 'design_phase_complete', reason: '四个设计阶段全部完成,进入 integrated-design' };
 }
