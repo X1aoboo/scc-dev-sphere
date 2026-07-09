@@ -101,6 +101,8 @@ PreToolUse 双守卫：
 
 TeammateIdle 质量门（`devsphere-guard.js check-teammate-decisions`）：teammate 报告完成（idle）前，校验活跃任务下所有 decisions/*.json schema 合法；非法则 exit 2 回喂 stderr，强制 teammate 继续（SA 写不出非法文件就报不了完成）。
 
+teammate 契约预加载：SA/SE/MDE/TSE 经 agent frontmatter `skills:` 预加载 `devsphere-teammate-design-protocol`/`-boundary`/`-review-backflow` skill（完整契约在派发时注入上下文；markdown 链接不会被自动读取）。Bash 守卫（`check-decisions-bash`）：禁止 Bash 直接写 `decisions/`/`artifacts/`，CLI（`devsphere-decisions.js`）豁免——强制 decisions 走脚本、artifacts 走 Write 工具（触发 sync-artifact）。
+
 teammate 保活协议：scope 轮捕获 agentId，draft 轮经 `SendMessage to=<agentId>` 恢复同一实例（保留轮1 分析上下文）；禁止重新 Agent 派发、禁止轮询/派检查 agent。见 `skills/feature-design/SKILL.md`。
 
 决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `references/teammate-design-protocol.md`、`references/teammate-boundary.md`、`references/teammate-review-backflow.md`（各 agent 文件通过引用行加载，避免散弹式修改）。
