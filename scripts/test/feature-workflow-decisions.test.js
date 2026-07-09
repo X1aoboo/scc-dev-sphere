@@ -20,6 +20,7 @@ test('decisions 存在 + gated pending>0 → ask', () => {
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
     options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    rationale: 'test rationale',
   });
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
   assert.strictEqual(r.action, 'ask');
@@ -33,6 +34,7 @@ test('decisions 存在 + gated pending=0 → draft', () => {
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
     options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    rationale: 'test rationale',
   });
   resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
   const r = resolveDesignStageAction(taskPath, 'businessDesign');
@@ -66,6 +68,7 @@ test('sync-stage-status 在 gated pending>0 时不置 drafted', () => {
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
     options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    rationale: 'test rationale',
   });
   // 模拟守卫被绕过：强行写主产物
   fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'x');
@@ -81,6 +84,7 @@ test('sync-stage-status 在 gated pending=0 时正常置 drafted', () => {
   addDecision(taskPath, 'business-design', {
     type: 'gated', category: 'feature_scope', summary: 'q',
     options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    rationale: 'test rationale',
   });
   resolveDecision(taskPath, 'business-design', 'BD-DEC-001', { chosen: 'a', decidedAt: 't' });
   fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'x');

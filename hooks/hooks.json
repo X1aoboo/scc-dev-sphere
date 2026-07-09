@@ -29,6 +29,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-decisions-resolved"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-decisions-format"
+          }
+        ]
       }
     ],
     "PostToolUse": [

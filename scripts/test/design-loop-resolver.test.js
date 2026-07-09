@@ -22,6 +22,7 @@ function addGated(taskPath, slug) {
   addDecision(taskPath, slug, {
     type: 'gated', category: 'feature_scope', summary: 'q',
     options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+    rationale: 'test rationale',
   });
 }
 
