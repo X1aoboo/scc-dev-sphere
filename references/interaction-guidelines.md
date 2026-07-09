@@ -117,3 +117,42 @@ multiSelect: true
 ```
 
 > **注意：** review 建议项通常需要逐项决定处理方式（apply / no_change / convert_to_blocking）。如果建议项 ≤4 个，可在第一轮多选后，对每项再发起 single_select 追问处理方式；如果 >4 个，先多选筛选出需要处理的项，再逐项或分批追问。
+
+---
+
+## 模式 4: `decision_loop` — 设计决策逐项问询
+
+**适用场景：** 设计阶段决策循环中，主会话（team-lead）把 SA/SE/MDE/TSE 在 scope 阶段出土的 gated decision 逐项抛给用户确认。问题与选项由设计 agent 作者，主会话只机械转译——不做设计判断。
+
+**数据来源：** `resolve-design-loop` 返回的 `ask_decisions` 动作里的 `decisions[]`，每项形如 `{id, summary, options, recommendation, askMode}`。
+
+**字段映射（decision → AskUserQuestion）：**
+
+| decision 字段 | AskUserQuestion 字段 |
+|---|---|
+| `summary` | `question`（可补上下文前缀，如「[业务设计] ...」） |
+| `options[]` | `options[]`（`label`/`description` 直传） |
+| `recommendation` | 推荐项置首，`label` 后加 `(Recommended)` |
+| `askMode` | `single_select`→`multiSelect:false`；`multi_select`→`true`；`confirm_gate`→构造两选项确认式（`multiSelect:false`） |
+
+**构造规则：**
+- 每条 decision = 一次 AskUserQuestion 调用（`options` 数 2-4 已由 `devsphere-decisions.js` 强校验保证）。
+- `header` ≤12 字，可用阶段名（如「业务决策」）。
+- 用户回答（含 Other 自定义）写回该 decision 的 `resolution`：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js resolve <taskPath> <slug> <decisionId> '{"chosen":"<用户选择>","note":"<可选备注>","decidedAt":"<ISO 时间>"}'
+  ```
+- 全部 decision `status=decided` 后，回到 `resolve-design-loop`（得 `draft`）。
+
+**示例：** gated decision `{id:'BD-DEC-001', summary:'博客是否需要注册登录？', options:[{label:'需要',description:'...'},{label:'不需要',description:'...'}], recommendation:'需要', askMode:'single_select'}` →
+```
+header: "业务决策"
+question: "[业务设计] 博客是否需要注册登录？"
+options:
+  - label: "需要 (Recommended)"
+    description: "..."
+  - label: "不需要"
+    description: "..."
+multiSelect: false
+```
+用户选「需要」→ `resolve ... BD-DEC-001 '{"chosen":"需要","decidedAt":"2026-07-09T..."}'`
