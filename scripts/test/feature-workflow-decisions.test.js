@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
-const { isHumanGated, DESIGN_STAGE_ORDER } = require('../workflows/feature-workflow');
+const { isHumanGated, DESIGN_STAGE_ORDER } = require('../feature-design-router');
 
 test('DESIGN_STAGE_ORDER 固定四阶段顺序', () => {
   assert.deepStrictEqual(DESIGN_STAGE_ORDER, ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign']);

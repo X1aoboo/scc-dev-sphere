@@ -5,6 +5,7 @@ const fs = require('fs');
 const { readMatrix } = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { readDecisions, countGatedPending } = require('../devsphere-decisions');
+const { stageToArtifact } = require('../feature-design-router');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -111,65 +112,6 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
     'feature-design', {}, [],
     'Task is in designing phase. Delegate to feature-design for sub-stage routing.',
     [], []);
-}
-
-// --- Helpers ---
-
-function isStageReady(stageStatus, stageName, mode, humanGates) {
-  if (mode === 'strict-human-loop') return stageStatus === 'human_approved';
-  if (mode === 'collaborative-design' && humanGates.includes(stageName)) {
-    return stageStatus === 'human_approved';
-  }
-  return stageStatus === 'ai_review_passed' || stageStatus === 'human_approved';
-}
-
-function stageToArtifact(stageName) {
-  const map = {
-    businessDesign: 'business-design',
-    solutionDesign: 'solution-design',
-    implementationDesign: 'implementation-design',
-    testDesign: 'test-design',
-  };
-  return map[stageName] || stageName;
-}
-
-function getDesignSkill(stageName) {
-  const map = {
-    businessDesign: 'feature-design-business',
-    solutionDesign: 'feature-design-solution',
-    implementationDesign: 'feature-design-implementation',
-    testDesign: 'feature-design-test',
-  };
-  return map[stageName];
-}
-
-function getDesignAgent(stageName) {
-  const map = {
-    businessDesign: 'sa',
-    solutionDesign: 'se',
-    implementationDesign: 'mde',
-    testDesign: 'tse',
-  };
-  return map[stageName];
-}
-
-function getDesignReviewers(stageName) {
-  const map = {
-    businessDesign: ['se'],
-    solutionDesign: ['sa', 'mde', 'tse'],
-    implementationDesign: ['se', 'dev', 'tse'],
-    testDesign: ['sa', 'se', 'mde'],
-  };
-  return map[stageName] || [];
-}
-
-const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
-
-// 当前阶段是否要求人工决策门（spec §4）。strict 全阶段；collaborative 仅门禁阶段；auto-design 否。
-function isHumanGated(mode, stageName, humanGates) {
-  if (mode === 'strict-human-loop') return true;
-  if (mode === 'collaborative-design' && Array.isArray(humanGates) && humanGates.includes(stageName)) return true;
-  return false;
 }
 
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
@@ -296,4 +238,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { resolveNextAction, isHumanGated, DESIGN_STAGE_ORDER };
+module.exports = { resolveNextAction };
