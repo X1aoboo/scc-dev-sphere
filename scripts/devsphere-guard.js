@@ -203,6 +203,29 @@ function checkDecisionsFormatFromStdin(stdinJson) {
   };
 }
 
+// TeammateIdle 质量门：活跃任务下所有 decisions/*.json 必须 schema 合法。
+// 返回 {ok:true} 或 {ok:false, file, reason}。CLI 据此 exit 2（回喂 stderr，teammate 继续）。
+function checkTeammateDecisions(workspaceRoot) {
+  const taskPath = getTaskPath(workspaceRoot);
+  if (!taskPath) return { ok: true };
+  const decisionsDir = path.join(taskPath, 'decisions');
+  if (!fs.existsSync(decisionsDir)) return { ok: true };
+  let files;
+  try { files = fs.readdirSync(decisionsDir).filter(f => f.endsWith('.json')); }
+  catch (e) { return { ok: true }; }
+  for (const f of files) {
+    const full = path.join(decisionsDir, f);
+    let content;
+    try { content = fs.readFileSync(full, 'utf-8'); }
+    catch (e) { continue; }
+    const r = validateDecisionsContent(content);
+    if (!r.allow) {
+      return { ok: false, file: f, reason: r.reason };
+    }
+  }
+  return { ok: true };
+}
+
 function checkStateAdvance(taskPath, targetStatus) {
   const state = readState(taskPath);
   if (!state) {
@@ -289,6 +312,15 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-teammate-decisions': {
+        const r = checkTeammateDecisions(workspaceRoot);
+        if (!r.ok) {
+          process.stderr.write(`decisions 校验失败（${r.file}）: ${r.reason}\n`);
+          process.exit(2);
+        }
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -305,4 +337,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin };
+module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions };

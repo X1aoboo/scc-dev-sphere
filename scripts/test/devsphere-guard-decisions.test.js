@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision, readDecisions } = require('../devsphere-decisions');
@@ -387,4 +388,63 @@ test('stdin-format: 校验 incoming content 而非磁盘（磁盘空但 content 
   const content = JSON.stringify({ stage: 'businessDesign', taskId: 'FEAT-1', decisions: [] });
   const stdin = { tool_input: { file_path: fp, content } };
   assert.strictEqual(checkDecisionsFormatFromStdin(stdin), null); // 放行：校验 incoming content
+});
+
+// === Plan D2-3: checkTeammateDecisions (TeammateIdle gate) ===
+
+const { checkTeammateDecisions } = require('../devsphere-guard');
+
+test('teammate-idle: 无活跃任务 → {ok:true}', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ti-'));
+  const r = checkTeammateDecisions(tmpRoot);
+  assert.strictEqual(r.ok, true);
+});
+
+test('teammate-idle: 有任务但无 decisions 目录 → {ok:true}', () => {
+  const { workspaceRoot } = makeTask();
+  const r = checkTeammateDecisions(workspaceRoot);
+  assert.strictEqual(r.ok, true);
+});
+
+test('teammate-idle: decisions 文件全部合法 → {ok:true}', () => {
+  const { workspaceRoot, taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q', rationale: 'ctx',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  const r = checkTeammateDecisions(workspaceRoot);
+  assert.strictEqual(r.ok, true);
+});
+
+test('teammate-idle: decisions 文件非法（空内容）→ {ok:false}', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const dir = path.join(taskPath, 'decisions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'business-design-decisions.json'), '');
+  const r = checkTeammateDecisions(workspaceRoot);
+  assert.strictEqual(r.ok, false);
+  assert.match(r.reason, /解析失败/);
+});
+
+test('teammate-idle: decisions 文件自创 schema（无 type）→ {ok:false}', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const dir = path.join(taskPath, 'decisions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'business-design-decisions.json'), JSON.stringify({
+    stage: 'businessDesign', taskId: 'X', mode: 'scope',
+    decisions: [{ id: 'D1', topic: 't', options: [] }],
+  }));
+  const r = checkTeammateDecisions(workspaceRoot);
+  assert.strictEqual(r.ok, false);
+  assert.match(r.reason, /type|mode/);
+});
+
+test('teammate-idle: 非法文件名 .json 之外的 .md 被忽略（只扫 .json）→ {ok:true}', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const dir = path.join(taskPath, 'decisions');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'D-001.md'), '# bogus');
+  const r = checkTeammateDecisions(workspaceRoot);
+  assert.strictEqual(r.ok, true);
 });
