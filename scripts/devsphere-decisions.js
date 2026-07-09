@@ -15,6 +15,47 @@ const VALID_TYPES = ['gated', 'autonomous'];
 const VALID_CATEGORIES = ['feature_scope', 'assumption', 'open_question', 'business_rule', 'tradeoff'];
 const VALID_ASK_MODES = ['single_select', 'multi_select', 'confirm_gate'];
 
+const VALID_DECISION_STATUS = ['pending', 'decided'];
+const ALLOWED_TOPLEVEL = ['stage', 'taskId', 'decisions'];
+
+// 校验单条 decision（persisted 形态）。不合法 → throw。addDecision 与守卫共用。
+function validateDecisionElement(d) {
+  if (!d || typeof d !== 'object') throw new Error('decision 必须为对象');
+  if (typeof d.id !== 'string' || !d.id.trim()) throw new Error('decision id 必填');
+  if (!VALID_TYPES.includes(d.type)) throw new Error(`decision type 非法: ${d.type}`);
+  if (!d.category || !VALID_CATEGORIES.includes(d.category)) throw new Error(`decision category 非法: ${d.category}`);
+  if (typeof d.summary !== 'string' || !d.summary.trim()) throw new Error('decision summary 必填');
+  if (!VALID_DECISION_STATUS.includes(d.status)) throw new Error(`decision status 非法: ${d.status}`);
+  if (d.type === 'gated') {
+    if (!Array.isArray(d.options) || d.options.length < 2 || d.options.length > 4) {
+      throw new Error('gated decision 需 2-4 options');
+    }
+    for (const opt of d.options) {
+      if (typeof opt !== 'object' || opt === null
+          || typeof opt.label !== 'string' || !opt.label.trim()
+          || typeof opt.description !== 'string' || !opt.description.trim()) {
+        throw new Error('gated decision options 元素必须是 {label, description} 非空对象');
+      }
+    }
+    if (!VALID_ASK_MODES.includes(d.askMode)) throw new Error(`gated decision askMode 非法: ${d.askMode}`);
+    if (typeof d.rationale !== 'string' || !d.rationale.trim()) {
+      throw new Error('gated decision rationale 必填');
+    }
+  }
+}
+
+// 校验整个 decisions 文件结构。不合法 → throw。
+function validateDecisionsFile(data) {
+  if (!data || typeof data !== 'object') throw new Error('decisions 文件须为对象');
+  for (const k of Object.keys(data)) {
+    if (!ALLOWED_TOPLEVEL.includes(k)) throw new Error(`decisions 文件未知顶层字段: ${k}`);
+  }
+  if (typeof data.stage !== 'string' || !data.stage.trim()) throw new Error('decisions 文件 stage 必填');
+  if (typeof data.taskId !== 'string' || !data.taskId.trim()) throw new Error('decisions 文件 taskId 必填');
+  if (!Array.isArray(data.decisions)) throw new Error('decisions 文件 decisions 须为数组');
+  for (const d of data.decisions) validateDecisionElement(d);
+}
+
 function decisionsPath(taskPath, slug) {
   return path.join(taskPath, DECISIONS_DIR, `${slug}-decisions.json`);
 }
@@ -92,6 +133,7 @@ function addDecision(taskPath, slug, input) {
     impact: input.impact || '',
   };
   data.decisions.push(decision);
+  validateDecisionElement(decision); // 双保险：persisted 形态再校验一次
   writeDecisions(taskPath, slug, data);
   return decision;
 }
@@ -195,7 +237,9 @@ if (require.main === module) {
 
 module.exports = {
   DECISIONS_DIR, SLUG_PREFIX, VALID_TYPES, VALID_CATEGORIES, VALID_ASK_MODES,
+  VALID_DECISION_STATUS, ALLOWED_TOPLEVEL,
   decisionsPath, readDecisions, writeDecisions, initDecisions,
   addDecision, resolveDecision, listGatedPending, countGatedPending,
   resolveMainArtifact, MAIN_ARTIFACT_FILES,
+  validateDecisionElement, validateDecisionsFile,
 };

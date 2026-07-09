@@ -239,3 +239,88 @@ test('addDecision gated 合法选项（{label,description}对象 + rationale 存
   });
   assert.strictEqual(d.status, 'pending');
 });
+
+// === Plan D2-1: validateDecisionElement / validateDecisionsFile ===
+
+const { validateDecisionElement, validateDecisionsFile } = require('../devsphere-decisions');
+
+function validGatedDecision() {
+  return {
+    id: 'BD-DEC-001', type: 'gated', category: 'feature_scope', status: 'pending',
+    summary: 'q', rationale: 'ctx',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }],
+    askMode: 'single_select', recommendation: 'a', resolution: null, evidence: [], impact: '',
+  };
+}
+
+test('validateDecisionElement: 合法 gated → 不抛', () => {
+  assert.doesNotThrow(() => validateDecisionElement(validGatedDecision()));
+});
+
+test('validateDecisionElement: 缺 type → 抛', () => {
+  const d = validGatedDecision(); delete d.type;
+  assert.throws(() => validateDecisionElement(d), /type/);
+});
+
+test('validateDecisionElement: 非法 type → 抛', () => {
+  const d = validGatedDecision(); d.type = 'maybe';
+  assert.throws(() => validateDecisionElement(d), /type/);
+});
+
+test('validateDecisionElement: 非法 category → 抛', () => {
+  const d = validGatedDecision(); d.category = 'whatever';
+  assert.throws(() => validateDecisionElement(d), /category/);
+});
+
+test('validateDecisionElement: 缺 summary → 抛', () => {
+  const d = validGatedDecision(); d.summary = '';
+  assert.throws(() => validateDecisionElement(d), /summary/);
+});
+
+test('validateDecisionElement: 非法 status → 抛', () => {
+  const d = validGatedDecision(); d.status = 'wonky';
+  assert.throws(() => validateDecisionElement(d), /status/);
+});
+
+test('validateDecisionElement: autonomous 不要求 options/rationale → 不抛', () => {
+  const d = { id: 'X-1', type: 'autonomous', category: 'tradeoff', status: 'pending', summary: '自决' };
+  assert.doesNotThrow(() => validateDecisionElement(d));
+});
+
+test('validateDecisionElement: gated options 纯字符串 → 抛', () => {
+  const d = validGatedDecision(); d.options = ['a', 'b'];
+  assert.throws(() => validateDecisionElement(d), /label, description/);
+});
+
+test('validateDecisionsFile: 合法 → 不抛', () => {
+  assert.doesNotThrow(() => validateDecisionsFile({
+    stage: 'businessDesign', taskId: 'FEAT-1', decisions: [validGatedDecision()],
+  }));
+});
+
+test('validateDecisionsFile: 未知顶层字段 mode → 抛', () => {
+  assert.throws(() => validateDecisionsFile({
+    stage: 'businessDesign', taskId: 'FEAT-1', decisions: [], mode: 'scope',
+  }), /mode/);
+});
+
+test('validateDecisionsFile: 未知顶层字段 openQuestions → 抛', () => {
+  assert.throws(() => validateDecisionsFile({
+    stage: 'businessDesign', taskId: 'FEAT-1', decisions: [], openQuestions: [],
+  }), /openQuestions/);
+});
+
+test('validateDecisionsFile: 缺 stage → 抛', () => {
+  assert.throws(() => validateDecisionsFile({ taskId: 'FEAT-1', decisions: [] }), /stage/);
+});
+
+test('validateDecisionsFile: decisions 非数组 → 抛', () => {
+  assert.throws(() => validateDecisionsFile({ stage: 's', taskId: 't', decisions: {} }), /decisions/);
+});
+
+test('validateDecisionsFile: 元素缺 type → 抛（堵自创 schema）', () => {
+  assert.throws(() => validateDecisionsFile({
+    stage: 's', taskId: 't',
+    decisions: [{ id: 'X', topic: 't', question: 'q', options: [] }],  // 无 type
+  }), /type/);
+});
