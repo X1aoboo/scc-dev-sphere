@@ -85,7 +85,7 @@ function buildReviewers(stage, slug, state, taskPath) {
   }));
 }
 
-// resolveDesignAction 其余分支在后续 task 增量补全。
+// resolveDesignAction: 按阶段顺序解析设计阶段下一步动作。
 function resolveDesignAction(taskPath, state) {
   const mode = state.workflowMode || 'auto-design';
   const humanGates = state.humanGateStages || [];
@@ -169,6 +169,22 @@ function resolveDesignAction(taskPath, state) {
     }
 
     if (stageData.status === 'ai_review_passed') {
+      // 人工驳回可能注入 blocking → 回流 revise,避免无限 human_approve
+      const matrix = readMatrix(taskPath);
+      const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
+      const blocking = entry ? entry.issues.blocking : 0;
+      if (maxBlockingRound(matrix, slug) >= MAX_REVISE) {
+        return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${MAX_REVISE} 轮上限` };
+      }
+      if (blocking > 0) {
+        return {
+          kind: 'produce_draft', stage, slug, humanGated: gated,
+          reason: `${stage} 人工驳回注入 blocking=${blocking},回流 owner revise`,
+          role, skill, mode, name,
+          payload: { mode: 'revise', blockingItems: openBlockingIssues(matrix, slug) },
+          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+        };
+      }
       if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
       continue; // 非门禁视为完成,下一阶段
     }

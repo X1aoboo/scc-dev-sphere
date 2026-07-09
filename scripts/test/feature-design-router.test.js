@@ -178,3 +178,17 @@ test('not_started + gated 已 resolve → produce_draft continue', () => {
   assert.strictEqual(action.payload.resolutions.length, 1);
   assert.strictEqual(action.payload.resolutions[0].chosen, 'a');
 });
+
+test('ai_review_passed + blocking>0(人工驳回注入) → produce_draft revise', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'human', round: 1 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'ai_review_passed';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.payload.mode, 'revise');
+  assert.strictEqual(action.payload.blockingItems.length, 1);
+});
