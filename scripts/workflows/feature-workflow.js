@@ -248,7 +248,7 @@ function resolvePostArtifact(taskPath, state, stage, slug, mode, humanGates) {
   const stageStatus = (state.stages[stage] || {}).status;
 
   if (hasBlocking(matrix, slug)) {
-    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), reason: `${stage} 有 blocking 评审项，修订后重评审` };
+    return { kind: 'dispatch_agent', mode: 'draft', stage, slug, agent: getDesignAgent(stage), skill: getDesignSkill(stage), requiresReReview: true, reason: `${stage} 有 blocking 评审项，修订后需重新评审` };
   }
   if (stageStatus === 'drafted') {
     const reviewers = (getDesignReviewers(stage) || []).slice();

@@ -72,8 +72,14 @@ function checkApproveEntry(workspaceRoot) {
   return { allowed: true, reason: 'OK' };
 }
 
-// PreToolUse 决策：仅对「真实 devsphere 任务 + 强制人工交互模式」的设计阶段主产物，
-// 强制 gated 决策已全部 resolved。auto-design 与非 devsphere 路径一律放行，避免破坏既有流程。
+// slug → stage 驼峰（与 feature-workflow.js 的 stage 命名对齐）。
+function slugToStage(slug) {
+  return slug.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+// PreToolUse 决策：仅对「真实 devsphere 任务 + 人工门禁阶段」的设计阶段主产物，
+// 强制 gated 决策已全部 resolved。非门禁阶段（auto-design 全部 / collaborative 非门禁阶段）
+// 与非 devsphere 路径一律放行，避免破坏既有流程，与 resolver 的 stage-level 策略对齐。
 function decideWrite(filePath) {
   const target = resolveMainArtifact(filePath);
   if (!target.isMainArtifact) return { allow: true };
@@ -84,11 +90,15 @@ function decideWrite(filePath) {
   try { state = readState(taskPath); } catch (e) { return { allow: true }; }
   if (!state) return { allow: true };
 
-  // C1 模式门控：auto-design 不强制决策循环，放行（保护既有 AI 自主流程）。
+  // C1 stage-aware 门控：仅当 isHumanGated(mode, stage, humanGateStages) 为真才强制决策门。
+  // strict 全阶段；collaborative 仅 humanGateStages 阶段；auto-design 与非门禁阶段一律放行。
   const mode = state.workflowMode || 'auto-design';
-  if (mode === 'auto-design') return { allow: true };
+  const stage = slugToStage(slug);
+  const humanGated = mode === 'strict-human-loop'
+    || (mode === 'collaborative-design' && Array.isArray(state.humanGateStages) && state.humanGateStages.includes(stage));
+  if (!humanGated) return { allow: true };
 
-  // 强制模式（strict-human-loop / collaborative-design）：应用决策门。
+  // 强制阶段（strict 全阶段 / collaborative 门禁阶段）：应用决策门。
   let decisions;
   try { decisions = readDecisions(taskPath, slug); }
   catch (e) {
@@ -207,4 +217,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin };
+module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage };

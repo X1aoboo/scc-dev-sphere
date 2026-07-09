@@ -134,14 +134,12 @@ SA/SE/MDE/TSE = teammate 执行者
 
 §2 不变量5「未解决 gated 决策不允许推进」由 hook 在 harness 层兜底，不依赖 teammate 自觉：
 
-**PreToolUse 守卫（必备）**：matcher `Write|Edit`，调用 `devsphere-guard.js check-decisions-resolved`。逻辑（按短路顺序）：
+**PreToolUse 守卫（必备）**：matcher `Write|Edit`，调用 `devsphere-guard.js check-decisions-resolved`。逻辑：
 1. 读被写文件路径；非设计阶段主产物（business-design.md / solution-design.md / implementation-design.md / test-design.md）→ 放行（decisions 文件、evidence 等不受限）。
-2. **I1 任务路径校验**：是主产物但 `state.json` 不可读（非真实 devsphere 任务）→ 放行，避免误伤非 devsphere 路径。
-3. **C1 模式门控**：读 `state.workflowMode`；`auto-design`（默认）→ 放行，保护既有 AI 自主流程不在 Plan B 前被破坏。仅 `strict-human-loop` / `collaborative-design`（强制模式）继续向下应用决策门。
-4. 读对应阶段 decisions 文件；**I5 损坏 fail-closed**：文件存在但 JSON 解析失败 → **deny**（强制模式下本就要强制，宁拒绝不放过），提示「decisions 文件损坏，请检查 `<slug>-decisions.json`」。
-5. 统计 `type=gated && status=pending`；存在 pending → **deny**，返回「先解决 N 个待决决策，再定稿」；pending=0 → 放行。
+2. 是主产物 → 读对应阶段 decisions 文件，统计 `type=gated && status=pending`。
+3. 存在 pending → **deny**，返回「先解决 N 个待决决策，再定稿」；pending=0 → 放行。
 
-模式门控（C1）是关键安全阀：在 Plan B 完整落地前，守卫只对显式声明强制模式的任务生效，`auto-design` 与非 devsphere 路径静默放行，避免破坏既有流程。happy path 中此守卫永不触发（SA 先 scoping→决议→再定稿）；仅在 SA 违约时拦下，deny 消息回给 SA 促其先 resolve。选 PreToolUse 而非 PostToolUse，是为了在 SA 写下主产物之前就直接拒绝——harness 级强制，不靠 prompt。
+happy path 中此守卫永不触发（SA 先 scoping→决议→再定稿）；仅在 SA 违约时拦下，deny 消息回给 SA 促其先 resolve。选 PreToolUse 而非 PostToolUse，是为了在 SA 写下主产物之前就直接拒绝——harness 级强制，不靠 prompt。门控策略为 stage-aware：仅当 `isHumanGated(mode, stage, humanGateStages)` 为真时强制（strict 全阶段；collaborative 仅 humanGateStages 阶段；auto-design 与非门禁阶段一律放行）。与 resolver 的 stage-level 策略对齐，避免 collaborative 非门禁阶段的潜在死锁。
 
 **sync-artifact 防错（必备，纵深防御）**：现有 `PostToolUse → sync-artifact` 改造为 decisions 感知——主产物被写但该阶段 gated pending > 0 时不置 `drafted`。与 PreToolUse 守卫互为双保险。注意：这是阻止一次错误的 `drafted` 迁移，**不是**把 decision 状态同步进 state.json（不违反 §4「不加枚举」）。
 

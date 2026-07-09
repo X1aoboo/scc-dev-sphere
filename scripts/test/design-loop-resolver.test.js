@@ -43,6 +43,10 @@ test('isHumanGated: auto-design 全 false', () => {
   assert.strictEqual(isHumanGated('auto-design', 'businessDesign', []), false);
 });
 
+test('toQuestionData(null) 返回 null', () => {
+  assert.strictEqual(toQuestionData(null), null);
+});
+
 test('toQuestionData 映射 gated decision 为问询数据', () => {
   const d = {
     id: 'BD-DEC-001', type: 'gated', category: 'feature_scope',
@@ -165,6 +169,7 @@ test('artifact 存在 + blocking → revise（dispatch_agent draft）', () => {
   assert.strictEqual(r.kind, 'dispatch_agent');
   assert.strictEqual(r.mode, 'draft');
   assert.strictEqual(r.stage, 'businessDesign');
+  assert.strictEqual(r.requiresReReview, true);
 });
 
 test('ciCdRisk=true → 评审者含 cie', () => {
@@ -177,7 +182,7 @@ test('ciCdRisk=true → 评审者含 cie', () => {
   writeState(taskPath, st);
   const r = resolveDesignLoop(taskPath);
   assert.strictEqual(r.kind, 'dispatch_reviewers');
-  assert.ok(r.reviewers.includes('cie'));
+  assert.deepStrictEqual(r.reviewers, ['se', 'cie']);
 });
 
 test('ai_review_passed + strict → human_confirm', () => {

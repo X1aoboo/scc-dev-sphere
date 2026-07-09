@@ -5,7 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision, readDecisions } = require('../devsphere-decisions');
-const { decideWrite, checkDecisionsResolvedFromStdin } = require('../devsphere-guard');
+const { decideWrite, checkDecisionsResolvedFromStdin, slugToStage } = require('../devsphere-guard');
+const { readState, writeState } = require('../devsphere-state');
 
 function mainArtifactPath(taskPath, slug) {
   return path.join(taskPath, 'artifacts', `${slug}.md`);
@@ -135,4 +136,52 @@ test('stdin: auto-design 任务即使 gated pending → null（mode-gate 豁免�
   });
   const stdin = { tool_input: { file_path: mainArtifactPath(taskPath, 'business-design') } };
   assert.strictEqual(checkDecisionsResolvedFromStdin(stdin), null);
+});
+
+// === Fix 2: collaborative stage-aware guard ===
+
+test('slugToStage: business-design → businessDesign', () => {
+  assert.strictEqual(slugToStage('business-design'), 'businessDesign');
+  assert.strictEqual(slugToStage('implementation-design'), 'implementationDesign');
+  assert.strictEqual(slugToStage('test-design'), 'testDesign');
+});
+
+test('collaborative: businessDesign 在 humanGateStages 中 + gated pending → 拒绝（门禁阶段强制）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'collaborative-design' });
+  const st = readState(taskPath);
+  st.humanGateStages = ['businessDesign'];
+  writeState(taskPath, st);
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
+  assert.strictEqual(r.allow, false);
+  assert.match(r.reason, /1 个 gated/);
+});
+
+test('collaborative: businessDesign 不在 humanGateStages（仅 testDesign 门禁）+ gated pending → 放行（非门禁阶段豁免）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'collaborative-design' });
+  const st = readState(taskPath);
+  st.humanGateStages = ['testDesign'];
+  writeState(taskPath, st);
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
+  assert.strictEqual(r.allow, true);
+});
+
+test('auto-design + gated pending → 放行（stage-aware：humanGated=false）', () => {
+  const { taskPath, taskId } = makeTask({ workflowMode: 'auto-design' });
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', {
+    type: 'gated', category: 'feature_scope', summary: 'q',
+    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
+  });
+  const r = decideWrite(mainArtifactPath(taskPath, 'business-design'));
+  assert.strictEqual(r.allow, true);
 });

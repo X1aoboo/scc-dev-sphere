@@ -581,3 +581,4 @@ git commit -m "feat(workflow): resolve-design-loop CLI command"
   - `human_confirm` → AskUserQuestion（confirm_gate）。
   - `all_design_stages_ready` → 进 integrated-design。
 - B2 的 feature-assess 需把 CI/CD 风险评估结果写入 `state.ciCdRisk`（boolean），resolveDesignLoop 据此触发 CIE。
+- 执行 `dispatch_agent` revise 动作（带 `requiresReReview: true`）后，B2 必须派发 reviewers 重新评审，待 matrix 更新后再回 resolver；不要在 revise 后直接无条件重调 resolver（否则 blocking 仍 open 会死循环）。
