@@ -351,6 +351,11 @@ function main() {
       const taskPath = args[1];
       const stageName = args[2];
       const newStatus = args[3];
+      const VALID_STAGE_STATUSES = ['not_started', 'drafted', 'ai_review_passed', 'human_approved'];
+      if (!VALID_STAGE_STATUSES.includes(newStatus)) {
+        process.stderr.write(`Invalid stage status: ${newStatus}. Valid: ${VALID_STAGE_STATUSES.join(', ')}\n`);
+        process.exit(1);
+      }
       const { updateStageStatus } = require('../devsphere-state');
       updateStageStatus(taskPath, stageName, newStatus);
       process.stdout.write(JSON.stringify({ synced: true, stage: stageName, status: newStatus }));
@@ -386,7 +391,7 @@ function main() {
       if (ciCdRiskRaw !== undefined) state.ciCdRisk = (ciCdRiskRaw === 'true');
 
       writeState(taskPath, state);
-      process.stdout.write(JSON.stringify({ synced: true, status: state.status, workflowMode: state.workflowMode }));
+      process.stdout.write(JSON.stringify({ synced: true, status: state.status, workflowMode: state.workflowMode, humanGateStages: state.humanGateStages || [], ciCdRisk: state.ciCdRisk === true }));
       break;
     }
     default:

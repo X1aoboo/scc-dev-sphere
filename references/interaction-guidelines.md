@@ -133,7 +133,7 @@ multiSelect: true
 | `summary` | `question`（可补上下文前缀，如「[业务设计] ...」） |
 | `options[]` | `options[]`（`label`/`description` 直传） |
 | `recommendation` | 推荐项置首，`label` 后加 `(Recommended)` |
-| `askMode` | `single_select`→`multiSelect:false`；`multi_select`→`true`；`confirm_gate`→构造两选项确认式（`multiSelect:false`） |
+| `askMode` | `single_select`→`multiSelect:false`；`multi_select`→`true`；`confirm_gate`→构造两选项确认式（`multiSelect:false，见模式 2`） |
 
 **构造规则：**
 - 每条 decision = 一次 AskUserQuestion 调用（`options` 数 2-4 已由 `devsphere-decisions.js` 强校验保证）。

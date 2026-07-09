@@ -159,9 +159,9 @@ resolver 会：
    node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages> <ciCdRisk>
    ```
 
-   - `<workflowMode>` 为 feature-assess 中用户确认的模式：`auto-design` / `collaborative-design` / `strict-human-loop`
-   - `<humanGateStages>` 为逗号分隔的阶段名（仅 `collaborative-design` 时需要，其余模式可省略第4个参数），如 `businessDesign,testDesign`
-   - `<ciCdRisk>` 为 `'true'`/`'false'`（来自 feature-assess 的 CI/CD 风险评估；仅当评估命中部署/配置/CI/CD/环境风险时为 `'true'`）。`<humanGateStages>` 为空时传空串。
+   - `<workflowMode>`（第3位）为 feature-assess 中用户确认的模式：`auto-design` / `collaborative-design` / `strict-human-loop`
+   - `<humanGateStages>`（第4位，逗号分隔，无则传空串）为门禁阶段名（仅 `collaborative-design` 时需要），如 `businessDesign,testDesign`
+   - `<ciCdRisk>`（第5位，`'true'`/`'false'`）来自 feature-assess 的 CI/CD 风险评估；仅当评估命中部署/配置/CI/CD/环境风险时为 `'true'`。
 
 2. **阶段状态同步：**
 

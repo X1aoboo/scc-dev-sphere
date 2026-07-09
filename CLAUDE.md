@@ -93,7 +93,11 @@ Valid transitions are defined in `devsphere-guard.js` `VALID_TRANSITIONS`. Scrip
 | `human_confirm` | 主会话请用户批准该阶段 |
 | `all_design_stages_ready` | 设计阶段完成，进 integrated-design |
 
-三模式兼容：`humanGated = strict 全阶段 / collaborative 仅 humanGateStages / auto-design 否`。`ask` 仅在 `humanGated && gated pending>0` 触发。PreToolUse 守卫（`hooks/hooks.json` → `devsphere-guard.js check-decisions-resolved`）stage-aware 强制：gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `agents/*.md`。
+三模式兼容：`humanGated = strict 全阶段 / collaborative 仅 humanGateStages / auto-design 否`。`ask` 仅在 `humanGated && gated pending>0` 触发。
+
+PreToolUse 守卫（`hooks/hooks.json` → `devsphere-guard.js check-decisions-resolved`）stage-aware 强制：gated 未 resolved 时阶段 owner 写不出主产物（auto-design 与非门禁阶段放行）。
+
+决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。编排由 `feature-design` skill（主会话执行）消费 resolver；agent teammate 协议见 `agents/*.md`。
 
 ### Task workspace layout
 

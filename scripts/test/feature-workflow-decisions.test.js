@@ -124,3 +124,18 @@ test('set-stage-status 写入阶段状态', () => {
   const st = readState(taskPath);
   assert.strictEqual(st.stages.businessDesign.status, 'human_approved');
 });
+
+test('set-stage-status 拒绝非法 status', () => {
+  const { taskPath } = makeTask();
+  let threw = false;
+  try {
+    execFileSync('node', [
+      path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+      'set-stage-status', taskPath, 'businessDesign', 'human_apporved',
+    ], { encoding: 'utf-8', stdio: ['ignore', 'ignore', 'ignore'] });
+  } catch (e) { threw = true; }
+  assert.strictEqual(threw, true, 'invalid status must cause non-zero exit');
+  const { readState } = require('../devsphere-state');
+  const st = readState(taskPath);
+  assert.strictEqual(st.stages.businessDesign.status, 'not_started', 'invalid status must not be written');
+});
