@@ -355,6 +355,7 @@ function main() {
       const newStatus = args[2];
       const workflowMode = args[3];
       const humanGateStages = args[4] ? args[4].split(',') : [];
+      const ciCdRiskRaw = args[5];
 
       const current = readCurrentTask(workspaceRoot);
       if (!current || !current.activeTaskId) {
@@ -371,6 +372,7 @@ function main() {
       if (newStatus) state.status = newStatus;
       if (workflowMode) state.workflowMode = workflowMode;
       if (humanGateStages.length > 0) state.humanGateStages = humanGateStages;
+      if (ciCdRiskRaw !== undefined) state.ciCdRisk = (ciCdRiskRaw === 'true');
 
       writeState(taskPath, state);
       process.stdout.write(JSON.stringify({ synced: true, status: state.status, workflowMode: state.workflowMode }));

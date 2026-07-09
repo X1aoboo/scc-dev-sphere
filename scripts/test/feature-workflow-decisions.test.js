@@ -89,3 +89,27 @@ test('sync-stage-status 在 gated pending=0 时正常置 drafted', () => {
   const state = readState(taskPath);
   assert.strictEqual(state.stages.businessDesign.status, 'drafted');
 });
+
+test('set-task-status 写入 ciCdRisk=true', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'assessed', 'strict-human-loop', '', 'true',
+  ], { encoding: 'utf-8' });
+  const { readState } = require('../devsphere-state');
+  const st = readState(taskPath);
+  assert.strictEqual(st.status, 'assessed');
+  assert.strictEqual(st.workflowMode, 'strict-human-loop');
+  assert.strictEqual(st.ciCdRisk, true);
+});
+
+test('set-task-status 不传 ciCdRisk 时不改该字段', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'assessed', 'auto-design',
+  ], { encoding: 'utf-8' });
+  const { readState } = require('../devsphere-state');
+  const st = readState(taskPath);
+  assert.strictEqual(st.ciCdRisk, undefined);
+});
