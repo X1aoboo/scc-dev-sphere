@@ -22,9 +22,17 @@ function resolveNextAction(taskPath, state) {
   // --- initialized ---
   if (status === 'initialized') {
     return makeAction('run_skill', state, null, null,
+      'feature-clarify', {}, [],
+      'Task initialized. Clarify and confirm the requirement before complexity and risk assessment.',
+      [], ['inputs/requirement.md']);
+  }
+
+  // --- clarified ---
+  if (status === 'clarified') {
+    return makeAction('run_skill', state, null, null,
       'feature-assess', {}, [],
-      'Task initialized. Proceed with complexity and risk assessment.',
-      [], []);
+      'Requirement clarification is complete. Proceed with complexity and risk assessment.',
+      ['inputs/requirement.md'], []);
   }
 
   // --- assessed ---
