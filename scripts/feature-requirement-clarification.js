@@ -18,6 +18,7 @@ function createClarification(originalRequirement) {
     originalRequirement,
     requirementType: null,
     typeConfirmedAt: null,
+    typeConfirmedByUser: false,
     dimensions: {},
     technicalContracts: [],
     evidenceGaps: [],
@@ -34,6 +35,11 @@ function validateSources(sources) {
     if (kind === 'knowledge' && !nonBlank(source.evidenceId)) throw new Error('knowledge source 需要 evidenceId');
     if (kind === 'inference' && !nonBlank(source.basis)) throw new Error('inference source 需要 basis');
   }
+  if (!hasUserConfirmation(sources)) throw new Error('结论需要 user source 明确确认');
+}
+
+function hasUserConfirmation(sources) {
+  return Array.isArray(sources) && sources.some(source => source && (source.type === 'user' || source.kind === 'user'));
 }
 
 function nonBlank(value) {
@@ -51,6 +57,7 @@ function recordConclusion(clarification, key, conclusion, sources, confirmedAt) 
     if (!REQUIREMENT_TYPES.has(conclusion)) throw new Error('需求类型必须为 functional、technical 或 mixed');
     clarification.requirementType = conclusion;
     clarification.typeConfirmedAt = confirmedAt;
+    clarification.typeConfirmedByUser = true;
     clarification.history.push({
       action: 'requirement_type_confirmed', conclusion, sources, confirmedAt,
     });
@@ -73,17 +80,17 @@ function recordEvidenceGap(clarification, gap) {
 
 function shouldRequery(feedback) {
   const text = typeof feedback === 'string' ? feedback : JSON.stringify(feedback || '');
-  return /业务规则|业务实体|实体|system|系统|模块|module|接口|API|api|协议|protocol|数据|data|权限|permission|合规|compliance|性能|performance|容量|capacity|部署|deploy|环境|environment/i.test(text);
+  return /业务规则|业务实体|\bbusiness\s+(?:rule|entity)\b|系统|模块|\b(?:system|module)\b|接口|协议|\b(?:interface|api|protocol)\b|数据|\bdata\b|权限|合规|\bpermissions?\b|\bcompliance\b|性能|容量|\b(?:performance|capacity)\b|部署|环境|\b(?:deployment|environment)\b/i.test(text);
 }
 
 function validateClarification(clarification) {
   const missing = [];
-  if (!REQUIREMENT_TYPES.has(clarification.requirementType) || !nonBlank(clarification.typeConfirmedAt)) {
+  if (!REQUIREMENT_TYPES.has(clarification.requirementType) || !nonBlank(clarification.typeConfirmedAt) || clarification.typeConfirmedByUser !== true) {
     missing.push('requirementType');
   }
   for (const key of DIMENSION_KEYS) {
     const dimension = clarification.dimensions && clarification.dimensions[key];
-    if (!dimension || !nonBlank(dimension.conclusion) || !Array.isArray(dimension.sources) || !nonBlank(dimension.confirmedAt)) {
+    if (!dimension || !nonBlank(dimension.conclusion) || !hasUserConfirmation(dimension.sources) || !nonBlank(dimension.confirmedAt)) {
       missing.push(`dimensions.${key}`);
     }
   }
