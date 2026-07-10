@@ -133,6 +133,8 @@ resolver 会：
 
 特别地，如果 `nextAction.skill === 'feature-assess'`：在主会话执行（agents 为空）。feature-assess 的步骤4/5 需 AskUserQuestion 确认工作流模式/阶段门禁——这只能在主会话完成，故**不得**作为后台 teammate 派发。完成后由下方「Agent 完成后」的 set-task-status 写入用户确认的模式。
 
+特别地，如果 `nextAction.skill === 'feature-clarify'`：在 main session 执行（agents 为空）。`feature-clarify` 的用户确认和状态持久化只能在主会话完成；它自行派发一次性的 `knowledge-query` subagents 并等待结构化 EV/gap 结果。workflow 不直接查询知识库，也不把 clarify 作为后台 teammate 派发。
+
 #### 单 Agent 场景（agents 含 1 个元素）
 
 使用 **Agent tool** 派发单个 Agent（`background: true`）：
@@ -155,7 +157,7 @@ resolver 会：
 
 所有 Agent 完成后，执行以下同步流程：
 
-1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `initialized → assessed` 迁移：
+1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `clarified → assessed` 迁移：
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages> <ciCdRisk>

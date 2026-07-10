@@ -51,6 +51,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workspace.js create-feature-tas
 ### 步骤4：创建初始文件
 
 - 将用户需求描述写入 `inputs/requirement.md`
+- 使用 `scripts/feature-requirement-clarification.js` 的 `createClarification(requirement)` 初始化并保存 `inputs/clarification.json`。该文件只保存澄清状态，不代表任何结论已经确认。
 - 初始化评审矩阵：
   ```bash
   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js init "<taskPath>"
@@ -68,9 +69,9 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workspace.js create-feature-tas
 **工作流模式:** auto-design（可在评估阶段更改）
 
 **下一步:** /scc-dev-sphere:workflow
-  → 将引导你进行复杂度评估。
+  → 将先引导你完成需求澄清，再进行复杂度评估。
 ```
 
 ### 步骤6：提示下一步
 
-「使用 `/scc-dev-sphere:workflow` 进入复杂度与风险评估。」
+「使用 `/scc-dev-sphere:workflow` 进入 `feature-clarify` 需求澄清。」
