@@ -28,6 +28,16 @@ test('feature-clarify records only user-confirmed conclusions and validates befo
   assert.match(skill, /set-task-status <workspaceRoot> clarified/i);
 });
 
+test('feature-clarify recovers from auditable evidence and final-summary rejection', () => {
+  const skill = readSkill('feature-clarify');
+
+  assert.match(skill, /evidence\/evidence-registry\.json/i);
+  assert.match(skill, /EV-\*\.md/i);
+  assert.match(skill, /only re-ask incomplete or affected dimensions/i);
+  assert.match(skill, /final summary.*rejected.*return to the affected dimension/i);
+  assert.match(skill, /status.*reliability.*userResolution/is);
+});
+
 test('feature-clarify scopes technical API contracts by requirement type', () => {
   const skill = readSkill('feature-clarify');
 
@@ -49,6 +59,8 @@ test('feature-assess accepts only clarified tasks', () => {
 
   assert.match(skill, /status !== 'clarified'/i);
   assert.match(skill, /MUST NOT assess/i);
+  assert.match(skill, /validateClarification/i);
+  assert.match(skill, /feature-clarify/i);
 });
 
 test('workflow binds feature-clarify itself to main-session execution and its query subagents', () => {

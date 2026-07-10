@@ -22,6 +22,7 @@ function createClarification(originalRequirement) {
     version: 1,
     originalRequirement,
     requirementType: null,
+    typeSources: [],
     typeConfirmedAt: null,
     typeConfirmedByUser: false,
     dimensions: {},
@@ -75,16 +76,29 @@ function isClearConclusion(conclusion) {
   return nonBlank(conclusion) && !AMBIGUOUS_CONCLUSION.test(conclusion);
 }
 
-function recordConclusion(clarification, key, conclusion, sources, confirmedAt) {
+function isConfirmedItem(item) {
+  return Boolean(item)
+    && isClearConclusion(item.conclusion)
+    && hasValidUserConfirmation(item.sources)
+    && nonBlank(item.confirmedAt);
+}
+
+function createConfirmedItem(conclusion, sources, confirmedAt) {
   if (!isClearConclusion(conclusion)) {
     throw new Error('结论不能为空或含有待定措辞');
   }
   validateSources(sources);
   if (!nonBlank(confirmedAt)) throw new Error('confirmedAt 不能为空');
+  return { conclusion, sources, confirmedAt };
+}
+
+function recordConclusion(clarification, key, conclusion, sources, confirmedAt) {
+  const item = createConfirmedItem(conclusion, sources, confirmedAt);
 
   if (key === 'requirementType') {
     if (!REQUIREMENT_TYPES.has(conclusion)) throw new Error('需求类型必须为 functional、technical 或 mixed');
     clarification.requirementType = conclusion;
+    clarification.typeSources = sources;
     clarification.typeConfirmedAt = confirmedAt;
     clarification.typeConfirmedByUser = true;
     clarification.history.push({
@@ -94,9 +108,26 @@ function recordConclusion(clarification, key, conclusion, sources, confirmedAt) 
   }
   if (!DIMENSION_KEYS.includes(key)) throw new Error(`未知澄清维度: ${key}`);
 
-  clarification.dimensions[key] = { conclusion, sources, confirmedAt };
+  clarification.dimensions[key] = item;
   clarification.history.push({
     action: 'conclusion_recorded', key, conclusion, sources, confirmedAt,
+  });
+  return clarification;
+}
+
+function recordTechnicalConclusion(clarification, contract, field, conclusion, sources, confirmedAt) {
+  if (!clarification.technicalContracts?.includes(contract)) {
+    throw new Error('technical contract 必须属于 clarification');
+  }
+  const item = createConfirmedItem(conclusion, sources, confirmedAt);
+  if (field === null || field === undefined) {
+    Object.assign(contract, item);
+  } else {
+    contract[field] = item;
+  }
+  clarification.history.push({
+    action: 'technical_conclusion_recorded',
+    contract: contract.name || contract.kind || 'unnamed', field: field || null, ...item,
   });
   return clarification;
 }
@@ -114,12 +145,13 @@ function shouldRequery(feedback) {
 
 function validateClarification(clarification) {
   const missing = [];
-  if (!REQUIREMENT_TYPES.has(clarification.requirementType) || !nonBlank(clarification.typeConfirmedAt) || clarification.typeConfirmedByUser !== true) {
+  if (!REQUIREMENT_TYPES.has(clarification.requirementType) || !nonBlank(clarification.typeConfirmedAt)
+    || clarification.typeConfirmedByUser !== true || !hasValidUserConfirmation(clarification.typeSources)) {
     missing.push('requirementType');
   }
   for (const key of DIMENSION_KEYS) {
     const dimension = clarification.dimensions && clarification.dimensions[key];
-    if (!dimension || !isClearConclusion(dimension.conclusion) || !hasValidUserConfirmation(dimension.sources) || !nonBlank(dimension.confirmedAt)) {
+    if (!isConfirmedItem(dimension)) {
       missing.push(`dimensions.${key}`);
     }
   }
@@ -127,14 +159,15 @@ function validateClarification(clarification) {
     for (const contract of clarification.technicalContracts || []) {
       if (contract.applicable !== true) continue;
       const contractName = contract.name || contract.kind || 'unnamed';
+      if (!isConfirmedItem(contract)) {
+        missing.push(`technicalContracts.${contractName}`);
+      }
       if (contract.kind === 'northboundApi') {
         for (const field of NORTHBOUND_API_CONTRACTS) {
-          if (!nonBlank(contract[field]?.confirmedAt)) {
+          if (!isConfirmedItem(contract[field])) {
             missing.push(`technicalContracts.${contractName}.${field}`);
           }
         }
-      } else if (!nonBlank(contract.confirmedAt)) {
-        missing.push(`technicalContracts.${contractName}`);
       }
     }
   }
@@ -150,7 +183,12 @@ function formatSource(source) {
 
 function formatGap(gap) {
   if (typeof gap === 'string') return gap;
-  return `${gap.id || 'GAP'}: ${gap.description || JSON.stringify(gap)}`;
+  return [
+    `${gap.id || 'GAP'}: ${gap.description || JSON.stringify(gap)}`,
+    gap.status && `status: ${gap.status}`,
+    gap.reliability && `reliability: ${gap.reliability}`,
+    gap.userResolution && `userResolution: ${gap.userResolution}`,
+  ].filter(Boolean).join('; ');
 }
 
 function renderRequirementMarkdown(clarification) {
@@ -164,6 +202,7 @@ function renderRequirementMarkdown(clarification) {
     '## 需求类型',
     '',
     `- ${clarification.requirementType || '未确认'}${clarification.typeConfirmedAt ? `（${clarification.typeConfirmedAt}）` : ''}`,
+    `  - 来源: ${(clarification.typeSources || []).map(formatSource).join('; ') || '未确认'}`,
     '',
     '## 结论',
     '',
@@ -177,6 +216,22 @@ function renderRequirementMarkdown(clarification) {
     lines.push(`- ${key}: ${dimension.conclusion}`);
     lines.push(`  - 来源: ${dimension.sources.map(formatSource).join('; ')}`);
     lines.push(`  - 确认时间: ${dimension.confirmedAt}`);
+  }
+  lines.push('', '## 技术契约', '');
+  if ((clarification.technicalContracts || []).length === 0) lines.push('- 无');
+  else for (const contract of clarification.technicalContracts) {
+    const name = contract.name || contract.kind || 'unnamed';
+    lines.push(`- ${name}: ${contract.conclusion || '未确认'}`);
+    lines.push(`  - 来源: ${(contract.sources || []).map(formatSource).join('; ') || '未确认'}`);
+    lines.push(`  - 确认时间: ${contract.confirmedAt || '未确认'}`);
+    if (contract.kind === 'northboundApi') {
+      for (const field of NORTHBOUND_API_CONTRACTS) {
+        const item = contract[field];
+        lines.push(`  - ${field}: ${item?.conclusion || '未确认'}`);
+        lines.push(`    - 来源: ${(item?.sources || []).map(formatSource).join('; ') || '未确认'}`);
+        lines.push(`    - 确认时间: ${item?.confirmedAt || '未确认'}`);
+      }
+    }
   }
   lines.push('', '## 知识证据缺口', '');
   if ((clarification.evidenceGaps || []).length === 0) lines.push('- 无');
@@ -192,11 +247,11 @@ function initClarification(taskPath) {
   const requirementPath = path.join(taskPath, 'inputs', 'requirement.md');
   const state = readState(taskPath);
   if (!state) throw new Error(`State not found at ${taskPath}`);
-  const originalRequirement = state.clarification?.originalRequirement ?? fs.readFileSync(requirementPath, 'utf8');
-
-  const clarification = createClarification(originalRequirement);
-  state.clarification = clarification;
-  writeState(taskPath, state);
+  const clarification = state.clarification || createClarification(fs.readFileSync(requirementPath, 'utf8'));
+  if (!state.clarification) {
+    state.clarification = clarification;
+    writeState(taskPath, state);
+  }
   fs.writeFileSync(requirementPath, renderRequirementMarkdown(clarification), 'utf8');
   return clarification;
 }
@@ -220,6 +275,7 @@ if (require.main === module) main();
 module.exports = {
   createClarification,
   recordConclusion,
+  recordTechnicalConclusion,
   recordEvidenceGap,
   shouldRequery,
   validateClarification,

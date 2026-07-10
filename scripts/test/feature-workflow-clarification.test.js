@@ -5,8 +5,18 @@ const assert = require('node:assert');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { makeTask } = require('./helpers');
-const { readState } = require('../devsphere-state');
+const { readState, writeState } = require('../devsphere-state');
 const { resolveNextAction } = require('../workflows/feature-workflow');
+const { createClarification, recordConclusion } = require('../feature-requirement-clarification');
+
+function completeClarification() {
+  const clarification = createClarification('完成的需求');
+  recordConclusion(clarification, 'requirementType', 'functional', [{ kind: 'user' }], '2026-07-11');
+  for (const key of ['businessGoal', 'usersAndScenarios', 'functionalScope', 'nonGoalsAndBoundaries', 'acceptanceCriteria', 'constraintsAndRisks']) {
+    recordConclusion(clarification, key, `${key} 已确认`, [{ kind: 'user' }], '2026-07-11');
+  }
+  return clarification;
+}
 
 test('initialized routes to feature-clarify before assessment', () => {
   const { taskPath } = makeTask();
@@ -23,6 +33,7 @@ test('clarified routes to feature-assess with the clarified requirement input', 
   const { taskPath } = makeTask();
   const state = readState(taskPath);
   state.status = 'clarified';
+  state.clarification = completeClarification();
 
   const action = resolveNextAction(taskPath, state);
 
@@ -33,7 +44,7 @@ test('clarified routes to feature-assess with the clarified requirement input', 
   assert.match(action.reason, /clarif/i);
 });
 
-test('set-task-status clarified persists state and unlocks feature-assess', () => {
+test('manual or CLI clarified status spoof cannot bypass incomplete clarification', () => {
   const { workspaceRoot, taskPath } = makeTask();
 
   execFileSync('node', [
@@ -43,7 +54,23 @@ test('set-task-status clarified persists state and unlocks feature-assess', () =
 
   const state = readState(taskPath);
   assert.strictEqual(state.status, 'clarified');
-  assert.strictEqual(resolveNextAction(taskPath, state).skill, 'feature-assess');
+  assert.strictEqual(resolveNextAction(taskPath, state).skill, 'feature-clarify');
+});
+
+test('persisted complete clarification unlocks feature-assess after CLI status transition', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const state = readState(taskPath);
+  state.clarification = completeClarification();
+  writeState(taskPath, state);
+
+  execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'clarified',
+  ], { encoding: 'utf-8' });
+
+  const reloaded = readState(taskPath);
+  assert.strictEqual(reloaded.status, 'clarified');
+  assert.strictEqual(resolveNextAction(taskPath, reloaded).skill, 'feature-assess');
 });
 
 test('set-task-status preserves the full assessed CLI form', () => {
