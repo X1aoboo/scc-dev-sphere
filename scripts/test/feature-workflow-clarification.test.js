@@ -45,3 +45,18 @@ test('set-task-status clarified persists state and unlocks feature-assess', () =
   assert.strictEqual(state.status, 'clarified');
   assert.strictEqual(resolveNextAction(taskPath, state).skill, 'feature-assess');
 });
+
+test('set-task-status preserves the full assessed CLI form', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+
+  execFileSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'assessed', 'collaborative-design', 'businessDesign,testDesign', 'true',
+  ], { encoding: 'utf-8' });
+
+  const state = readState(taskPath);
+  assert.strictEqual(state.status, 'assessed');
+  assert.strictEqual(state.workflowMode, 'collaborative-design');
+  assert.deepStrictEqual(state.humanGateStages, ['businessDesign', 'testDesign']);
+  assert.strictEqual(state.ciCdRisk, true);
+});
