@@ -27,27 +27,51 @@ function createClarification(originalRequirement) {
 }
 
 function validateSources(sources) {
-  if (!Array.isArray(sources)) throw new Error('sources 必须是数组');
-  for (const source of sources) {
-    if (!source || typeof source !== 'object') throw new Error('source 必须是对象');
-    const kind = source.type || source.kind;
+  const normalizedSources = normalizeSources(sources);
+  for (const { source, kind } of normalizedSources) {
     if (!['knowledge', 'inference', 'user'].includes(kind)) throw new Error('source 类型无效');
     if (kind === 'knowledge' && !nonBlank(source.evidenceId)) throw new Error('knowledge source 需要 evidenceId');
     if (kind === 'inference' && !nonBlank(source.basis)) throw new Error('inference source 需要 basis');
   }
-  if (!hasUserConfirmation(sources)) throw new Error('结论需要 user source 明确确认');
+  if (!hasUserConfirmation(normalizedSources)) throw new Error('结论需要 user source 明确确认');
+  return normalizedSources;
 }
 
-function hasUserConfirmation(sources) {
-  return Array.isArray(sources) && sources.some(source => source && (source.type === 'user' || source.kind === 'user'));
+function normalizeSources(sources) {
+  if (!Array.isArray(sources)) throw new Error('sources 必须是数组');
+  return sources.map(normalizeSource);
+}
+
+function normalizeSource(source) {
+  if (!source || typeof source !== 'object') throw new Error('source 必须是对象');
+  if (source.type !== undefined && source.kind !== undefined && source.type !== source.kind) {
+    throw new Error('source type 和 kind 不一致');
+  }
+  return { source, kind: source.type ?? source.kind };
+}
+
+function hasUserConfirmation(normalizedSources) {
+  return normalizedSources.some(({ kind }) => kind === 'user');
+}
+
+function hasValidUserConfirmation(sources) {
+  try {
+    return hasUserConfirmation(validateSources(sources));
+  } catch (_) {
+    return false;
+  }
 }
 
 function nonBlank(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isClearConclusion(conclusion) {
+  return nonBlank(conclusion) && !AMBIGUOUS_CONCLUSION.test(conclusion);
+}
+
 function recordConclusion(clarification, key, conclusion, sources, confirmedAt) {
-  if (!nonBlank(conclusion) || AMBIGUOUS_CONCLUSION.test(conclusion)) {
+  if (!isClearConclusion(conclusion)) {
     throw new Error('结论不能为空或含有待定措辞');
   }
   validateSources(sources);
@@ -90,7 +114,7 @@ function validateClarification(clarification) {
   }
   for (const key of DIMENSION_KEYS) {
     const dimension = clarification.dimensions && clarification.dimensions[key];
-    if (!dimension || !nonBlank(dimension.conclusion) || !hasUserConfirmation(dimension.sources) || !nonBlank(dimension.confirmedAt)) {
+    if (!dimension || !isClearConclusion(dimension.conclusion) || !hasValidUserConfirmation(dimension.sources) || !nonBlank(dimension.confirmedAt)) {
       missing.push(`dimensions.${key}`);
     }
   }
@@ -105,7 +129,7 @@ function validateClarification(clarification) {
 }
 
 function formatSource(source) {
-  const kind = source.type || source.kind;
+  const { kind } = normalizeSource(source);
   if (kind === 'knowledge') return `knowledge: ${source.evidenceId}`;
   if (kind === 'inference') return `inference: ${source.basis}`;
   return 'user';
