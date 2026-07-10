@@ -28,6 +28,14 @@ test('feature-clarify records only user-confirmed conclusions and validates befo
   assert.match(skill, /set-task-status <workspaceRoot> clarified/i);
 });
 
+test('feature-clarify scopes technical API contracts by requirement type', () => {
+  const skill = readSkill('feature-clarify');
+
+  assert.match(skill, /functional.*MUST NOT.*API.*protocol/is);
+  assert.match(skill, /northbound API.*apiUrl.*protocol.*requestResponse.*performance/is);
+  assert.match(skill, /technical.*mixed.*applicable.*contract/is);
+});
+
 test('feature-init initializes clarification state and routes users to clarification', () => {
   const skill = readSkill('feature-init');
 

@@ -14,6 +14,7 @@ const {
   renderRequirementMarkdown,
 } = require('../feature-requirement-clarification');
 const { readState } = require('../devsphere-state');
+const { resolveNextAction } = require('../workflows/feature-workflow');
 const { makeTask } = require('./helpers');
 
 const DIMENSIONS = [
@@ -35,6 +36,24 @@ function completeClarification(type = 'functional') {
     ], '2026-07-11T09:01:00Z');
   }
   return clarification;
+}
+
+function addNorthboundApiContracts(clarification, confirmed = []) {
+  clarification.technicalContracts.push({
+    kind: 'northboundApi',
+    applicable: true,
+    name: '北向订单 API',
+    apiUrl: { confirmedAt: confirmed.includes('apiUrl') ? '2026-07-11T10:00:00Z' : null },
+    protocol: { confirmedAt: confirmed.includes('protocol') ? '2026-07-11T10:00:00Z' : null },
+    requestResponse: { confirmedAt: confirmed.includes('requestResponse') ? '2026-07-11T10:00:00Z' : null },
+    performance: { confirmedAt: confirmed.includes('performance') ? '2026-07-11T10:00:00Z' : null },
+  });
+}
+
+function promoteWhenClarified(taskPath, state) {
+  const validation = validateClarification(state.clarification);
+  if (validation.complete) state.status = 'clarified';
+  return { validation, nextAction: resolveNextAction(taskPath, state) };
 }
 
 test('createClarification 建立完整的初始状态', () => {
@@ -160,6 +179,55 @@ test('validateClarification 不将功能需求的技术契约作为放行条件'
   const clarification = completeClarification('functional');
   clarification.technicalContracts.push({ kind: 'api', applicable: true, name: '不应阻塞的 API' });
   assert.deepStrictEqual(validateClarification(clarification), { complete: true, missing: [] });
+});
+
+test('端到端：功能型背景图片需求完成六项结论且无需 API 技术契约后放行', () => {
+  const { taskPath } = makeTask();
+  const state = readState(taskPath);
+  state.clarification = completeClarification('functional');
+
+  const { validation, nextAction } = promoteWhenClarified(taskPath, state);
+
+  assert.deepStrictEqual(validation, { complete: true, missing: [] });
+  assert.equal(nextAction.skill, 'feature-assess');
+});
+
+test('端到端：技术型北向 API 缺任一 URL、协议、请求响应或性能契约时保持澄清门禁', () => {
+  for (const missingContract of ['apiUrl', 'protocol', 'requestResponse', 'performance']) {
+    const { taskPath } = makeTask();
+    const state = readState(taskPath);
+    state.clarification = completeClarification('technical');
+    addNorthboundApiContracts(state.clarification, ['apiUrl', 'protocol', 'requestResponse', 'performance']
+      .filter(contract => contract !== missingContract));
+
+    const { validation, nextAction } = promoteWhenClarified(taskPath, state);
+
+    assert.deepStrictEqual(validation, {
+      complete: false,
+      missing: [`technicalContracts.北向订单 API.${missingContract}`],
+    }, missingContract);
+    assert.equal(nextAction.skill, 'feature-clarify', missingContract);
+  }
+});
+
+test('端到端：混合型需求同时要求六项功能结论和受影响的北向 API 契约', () => {
+  const { taskPath } = makeTask();
+  const state = readState(taskPath);
+  state.clarification = completeClarification('mixed');
+  delete state.clarification.dimensions.acceptanceCriteria;
+  addNorthboundApiContracts(state.clarification, ['apiUrl', 'protocol']);
+
+  const { validation, nextAction } = promoteWhenClarified(taskPath, state);
+
+  assert.deepStrictEqual(validation, {
+    complete: false,
+    missing: [
+      'dimensions.acceptanceCriteria',
+      'technicalContracts.北向订单 API.requestResponse',
+      'technicalContracts.北向订单 API.performance',
+    ],
+  });
+  assert.equal(nextAction.skill, 'feature-clarify');
 });
 
 test('validateClarification 拒绝恢复状态中缺少用户确认的类型或结论', () => {

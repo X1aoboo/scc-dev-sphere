@@ -15,6 +15,7 @@ const DIMENSION_KEYS = [
 ];
 const REQUIREMENT_TYPES = new Set(['functional', 'technical', 'mixed']);
 const AMBIGUOUS_CONCLUSION = /待定|可能|视情况/;
+const NORTHBOUND_API_CONTRACTS = ['apiUrl', 'protocol', 'requestResponse', 'performance'];
 
 function createClarification(originalRequirement) {
   return {
@@ -124,8 +125,16 @@ function validateClarification(clarification) {
   }
   if (clarification.requirementType !== 'functional') {
     for (const contract of clarification.technicalContracts || []) {
-      if (contract.applicable === true && !nonBlank(contract.confirmedAt)) {
-        missing.push(`technicalContracts.${contract.name || contract.kind || 'unnamed'}`);
+      if (contract.applicable !== true) continue;
+      const contractName = contract.name || contract.kind || 'unnamed';
+      if (contract.kind === 'northboundApi') {
+        for (const field of NORTHBOUND_API_CONTRACTS) {
+          if (!nonBlank(contract[field]?.confirmedAt)) {
+            missing.push(`technicalContracts.${contractName}.${field}`);
+          }
+        }
+      } else if (!nonBlank(contract.confirmedAt)) {
+        missing.push(`technicalContracts.${contractName}`);
       }
     }
   }

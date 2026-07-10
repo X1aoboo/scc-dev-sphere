@@ -35,7 +35,7 @@ description: 在主会话中以用户确认和知识证据为基础澄清 featur
 
 按顺序询问 `businessGoal`、`usersAndScenarios`、`functionalScope`、`nonGoalsAndBoundaries`、`acceptanceCriteria`、`constraintsAndRisks`。**Ask one requirement dimension at a time**：展示当前维度的候选结论、相关 EV、推断和 gaps，再只问该维度的一个问题。用户确认后才调用 `recordConclusion`，sources 必须同时保留知识/推断依据（如有）和 `{ kind: 'user' }`。
 
-对于 `technical` 或 `mixed`，再逐项确认适用的 API、协议、数据、权限、性能、部署等技术契约；适用项写入 `technicalContracts` 并有 `confirmedAt`。不适用项应明确记录为不适用，不得替用户假定技术约束。
+`functional` 需求（例如背景图片自定义）**MUST NOT** 追问与用户价值、风险或验收无关的 API、protocol 或其他技术实现契约。对于 `technical` 或 `mixed`，再逐项确认实际受影响的技术契约；`technical` 或 `mixed` 的每个 applicable contract 都必须明确记录。northbound API（北向 API）至少将 `apiUrl`、`protocol`、`requestResponse` 和 `performance` 分别写入 `technicalContracts` 并各自具有 `confirmedAt`；任何一个未确认都不得放行。数据、权限、部署等其余实际受影响的契约同样必须确认。不适用项应明确记录为不适用，不得替用户假定技术约束。
 
 ### 步骤5：按反馈重查并记录缺口
 
