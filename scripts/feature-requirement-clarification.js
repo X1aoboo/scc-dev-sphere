@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
+const { readState, writeState } = require('./devsphere-state');
+
 const DIMENSION_KEYS = [
   'businessGoal',
   'usersAndScenarios',
@@ -175,6 +179,35 @@ function renderRequirementMarkdown(clarification) {
   return `${lines.join('\n')}\n`;
 }
 
+function initClarification(taskPath) {
+  const requirementPath = path.join(taskPath, 'inputs', 'requirement.md');
+  const state = readState(taskPath);
+  if (!state) throw new Error(`State not found at ${taskPath}`);
+  const originalRequirement = state.clarification?.originalRequirement ?? fs.readFileSync(requirementPath, 'utf8');
+
+  const clarification = createClarification(originalRequirement);
+  state.clarification = clarification;
+  writeState(taskPath, state);
+  fs.writeFileSync(requirementPath, renderRequirementMarkdown(clarification), 'utf8');
+  return clarification;
+}
+
+function main() {
+  const [command, taskPath] = process.argv.slice(2);
+  try {
+    if (command !== 'init' || !taskPath) {
+      throw new Error('Usage: feature-requirement-clarification.js init <taskPath>');
+    }
+    const clarification = initClarification(taskPath);
+    process.stdout.write(JSON.stringify({ taskPath, clarification }));
+  } catch (error) {
+    process.stderr.write(`Error: ${error.message}\n`);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) main();
+
 module.exports = {
   createClarification,
   recordConclusion,
@@ -182,4 +215,5 @@ module.exports = {
   shouldRequery,
   validateClarification,
   renderRequirementMarkdown,
+  initClarification,
 };

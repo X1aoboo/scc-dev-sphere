@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const {
   createClarification,
   recordConclusion,
@@ -10,6 +13,8 @@ const {
   validateClarification,
   renderRequirementMarkdown,
 } = require('../feature-requirement-clarification');
+const { readState } = require('../devsphere-state');
+const { makeTask } = require('./helpers');
 
 const DIMENSIONS = [
   'businessGoal',
@@ -46,6 +51,19 @@ test('createClarification 建立完整的初始状态', () => {
     evidenceGaps: [],
     history: [],
   });
+});
+
+test('CLI init stores clarification in state and renders the existing requirement input', () => {
+  const { taskPath } = makeTask();
+  const originalRequirement = '允许用户用包含空格和 $ 字符的搜索词筛选订单';
+  const requirementPath = path.join(taskPath, 'inputs', 'requirement.md');
+  fs.writeFileSync(requirementPath, originalRequirement, 'utf8');
+
+  execFileSync('node', [path.join(__dirname, '..', 'feature-requirement-clarification.js'), 'init', taskPath], { encoding: 'utf8' });
+
+  assert.deepStrictEqual(readState(taskPath).clarification, createClarification(originalRequirement));
+  assert.match(fs.readFileSync(requirementPath, 'utf8'), /# 原始需求/);
+  assert.match(fs.readFileSync(requirementPath, 'utf8'), /包含空格和 \$ 字符/);
 });
 
 test('recordConclusion 持久化维度结论、来源与确认时间，并记录历史', () => {

@@ -51,7 +51,11 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workspace.js create-feature-tas
 ### 步骤4：创建初始文件
 
 - 将用户需求描述写入 `inputs/requirement.md`
-- 使用 `scripts/feature-requirement-clarification.js` 的 `createClarification(requirement)` 初始化并保存 `inputs/clarification.json`。该文件只保存澄清状态，不代表任何结论已经确认。
+- 立即运行以下确定性命令初始化 `state.clarification` 并渲染 `inputs/requirement.md`：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/feature-requirement-clarification.js init "<taskPath>"
+  ```
+  The command reads the already-written `inputs/requirement.md`; **不得**把用户需求作为 shell 参数拼接或插值，从而避免空格、引号或 shell 特殊字符改变输入。
 - 初始化评审矩阵：
   ```bash
   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js init "<taskPath>"

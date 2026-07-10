@@ -11,15 +11,15 @@ description: 在主会话中以用户确认和知识证据为基础澄清 featur
 
 - **入口:** `/scc-dev-sphere:feature-clarify`
 - **前置状态:** `state.status` 必须为 `initialized`
-- **读取:** `state.json`、`inputs/requirement.md`、`inputs/clarification.json`（若存在）
-- **输出:** 用户确认的 `inputs/clarification.json`、更新后的 `inputs/requirement.md`、已记录的证据缺口
+- **读取:** `state.json`（含 `clarification`，若存在）、`inputs/requirement.md`
+- **输出:** `state.clarification` 中的用户确认结论、更新后的 `inputs/requirement.md`、已记录的证据缺口
 - **完成标准:** `validateClarification` 通过且用户最终确认，然后执行 `set-task-status <workspaceRoot> clarified`
 
 ## 执行步骤
 
 ### 步骤1：加载或初始化澄清状态
 
-读取任务状态；若 `status !== 'initialized'`，停止并提示从 workflow 获取下一合法动作。读取原始需求和已有 `inputs/clarification.json`；不存在时调用 `createClarification(originalRequirement)` 初始化并保存。不得把模型推测或知识库内容写成结论。
+读取任务状态；若 `status !== 'initialized'`，停止并提示从 workflow 获取下一合法动作。读取原始需求和已有 `state.clarification`；不存在时调用 `createClarification(originalRequirement)` 并写入 `state.clarification`。不得把模型推测或知识库内容写成结论。
 
 ### 步骤2：获取初始知识证据
 

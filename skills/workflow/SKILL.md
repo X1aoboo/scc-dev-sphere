@@ -131,9 +131,9 @@ resolver 会：
 
 特别地，如果 `nextAction.skill === 'feature-design'`：在主会话执行 `feature-design` skill，它是**薄编排器**：按阶段顺序派发 owner agent（用 `devsphere-dispatch.js build` 生成派发 prompt）、代问 gated decision、派评审、人工批准。**workflow 不直接派发设计 agent**。feature-design 内部自驱直到全阶段完成。agentId 在 feature-design 自身上下文内跨轮持有（SendMessage 恢复同一 teammate）。依赖 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`。
 
-特别地，如果 `nextAction.skill === 'feature-assess'`：在主会话执行（agents 为空）。feature-assess 的步骤4/5 需 AskUserQuestion 确认工作流模式/阶段门禁——这只能在主会话完成，故**不得**作为后台 teammate 派发。完成后由下方「Agent 完成后」的 set-task-status 写入用户确认的模式。
+特别地，如果 `nextAction.skill === 'feature-assess'`：在 main session 执行（agents 为空）。feature-assess 的步骤4/5 需 AskUserQuestion 确认工作流模式/阶段门禁——这只能在主会话完成，故**不得**作为后台 teammate 派发。完成后由下方「Agent 完成后」的 set-task-status 写入用户确认的模式。
 
-特别地，如果 `nextAction.skill === 'feature-clarify'`：在 main session 执行（agents 为空）。`feature-clarify` 的用户确认和状态持久化只能在主会话完成；它自行派发一次性的 `knowledge-query` subagents 并等待结构化 EV/gap 结果。workflow 不直接查询知识库，也不把 clarify 作为后台 teammate 派发。
+特别地，如果 `nextAction.skill === 'feature-clarify'`：在 main session 执行（agents 为空）。`feature-clarify` 的用户确认和状态持久化只能在主会话完成；它自行派发一次性的 `knowledge-query` subagents 并等待结构化 EV/gap 结果。workflow 不直接查询知识库，**MUST NOT dispatch feature-clarify as a background teammate**。
 
 #### 单 Agent 场景（agents 含 1 个元素）
 
