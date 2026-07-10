@@ -96,8 +96,16 @@ function createConfirmedItem(conclusion, sources, confirmedAt) {
   return { conclusion, sources, confirmedAt };
 }
 
+function invalidateFinalConfirmation(clarification) {
+  if (clarification.finalConfirmedAt) {
+    clarification.finalConfirmedAt = null;
+    clarification.history.push({ action: 'final_confirmation_invalidated' });
+  }
+}
+
 function recordConclusion(clarification, key, conclusion, sources, confirmedAt) {
   const item = createConfirmedItem(conclusion, sources, confirmedAt);
+  invalidateFinalConfirmation(clarification);
 
   if (key === 'requirementType') {
     if (!REQUIREMENT_TYPES.has(conclusion)) throw new Error('需求类型必须为 functional、technical 或 mixed');
@@ -124,6 +132,7 @@ function recordTechnicalConclusion(clarification, contract, field, conclusion, s
     throw new Error('technical contract 必须属于 clarification');
   }
   const item = createConfirmedItem(conclusion, sources, confirmedAt);
+  invalidateFinalConfirmation(clarification);
   if (field === null || field === undefined) {
     Object.assign(contract, item);
   } else {
@@ -137,6 +146,7 @@ function recordTechnicalConclusion(clarification, contract, field, conclusion, s
 }
 
 function recordEvidenceGap(clarification, gap) {
+  invalidateFinalConfirmation(clarification);
   clarification.evidenceGaps.push(gap);
   clarification.history.push({ action: 'evidence_gap_recorded', gap });
   return clarification;
@@ -147,6 +157,7 @@ function recordTechnicalImpactDecision(clarification, id, name, applicability, c
     throw new Error('technical impact applicability 必须为 applicable 或 not_applicable');
   }
   const decision = createConfirmedItem(conclusion, sources, confirmedAt);
+  invalidateFinalConfirmation(clarification);
   const impacts = clarification.technicalImpacts || (clarification.technicalImpacts = []);
   const impact = impacts.find(item => item.id === id) || { id, name };
   impact.name = name || impact.name;
@@ -160,7 +171,9 @@ function recordTechnicalImpactDecision(clarification, id, name, applicability, c
 }
 
 function confirmNoTechnicalImpacts(clarification, conclusion, sources, confirmedAt) {
-  clarification.noTechnicalImpacts = createConfirmedItem(conclusion, sources, confirmedAt);
+  const item = createConfirmedItem(conclusion, sources, confirmedAt);
+  invalidateFinalConfirmation(clarification);
+  clarification.noTechnicalImpacts = item;
   clarification.history.push({ action: 'no_technical_impacts_confirmed', ...clarification.noTechnicalImpacts });
   return clarification;
 }
@@ -178,6 +191,7 @@ function persistAdoptedEvidence(taskPath, clarification, evidence) {
   if (!nonBlank(evidence?.id) || !/^EV-/.test(evidence.id) || !nonBlank(evidence.content)) {
     throw new Error('evidence 需要 EV ID 和 content');
   }
+  invalidateFinalConfirmation(clarification);
   const knowledgeDir = path.join(taskPath, 'evidence', 'knowledge');
   const registryPath = path.join(taskPath, 'evidence', 'evidence-registry.json');
   fs.mkdirSync(knowledgeDir, { recursive: true });

@@ -248,7 +248,29 @@ test('technical impact inventory requires an explicit applicability decision', (
   assert.deepStrictEqual(validateClarification(clarification), { complete: false, missing: ['technicalImpacts.deploy'] });
 
   recordTechnicalImpactDecision(clarification, 'deploy', '部署环境', 'not_applicable', '本次不改变部署环境', [{ kind: 'user' }], '2026-07-11');
+  recordFinalConfirmation(clarification, '2026-07-11T12:00:00Z');
   assert.deepStrictEqual(validateClarification(clarification), { complete: true, missing: [] });
+});
+
+test('any substantive mutation invalidates final confirmation until the user confirms again', () => {
+  const dimension = completeClarification('functional');
+  recordConclusion(dimension, 'businessGoal', '更新后的业务目标', [{ kind: 'user' }], '2026-07-11T13:00:00Z');
+  assert.deepStrictEqual(validateClarification(dimension), { complete: false, missing: ['finalConfirmation'] });
+  recordFinalConfirmation(dimension, '2026-07-11T13:01:00Z');
+  assert.deepStrictEqual(validateClarification(dimension), { complete: true, missing: [] });
+
+  const impact = completeClarification('technical');
+  recordTechnicalImpactDecision(impact, 'deploy', '部署环境', 'not_applicable', '不改部署', [{ kind: 'user' }], '2026-07-11T13:00:00Z');
+  assert.deepStrictEqual(validateClarification(impact), { complete: false, missing: ['finalConfirmation'] });
+  recordFinalConfirmation(impact, '2026-07-11T13:01:00Z');
+
+  const contract = completeClarification('technical', '北向 API', false);
+  addNorthboundApiContracts(contract, ['apiUrl', 'protocol', 'requestResponse', 'performance']);
+  recordFinalConfirmation(contract, '2026-07-11T13:00:00Z');
+  recordTechnicalConclusion(contract, contract.technicalContracts[0], 'protocol', 'HTTPS', [{ kind: 'user' }], '2026-07-11T13:01:00Z');
+  assert.deepStrictEqual(validateClarification(contract), { complete: false, missing: ['finalConfirmation'] });
+  recordFinalConfirmation(contract, '2026-07-11T13:02:00Z');
+  assert.deepStrictEqual(validateClarification(contract), { complete: true, missing: [] });
 });
 
 test('shouldRequery 检出八类范围变化的中英文反馈', () => {
@@ -273,10 +295,11 @@ test('validateClarification 仅在类型、六个维度和适用技术契约均�
   recordTechnicalImpactDecision(clarification, 'payment-api', '支付 API', 'applicable', '需要支付接口', [{ kind: 'user' }], '2026-07-11T10:00:00Z', '支付 API');
   assert.deepStrictEqual(validateClarification(clarification), {
     complete: false,
-    missing: ['technicalImpacts.payment-api', 'technicalContracts.支付 API'],
+    missing: ['technicalImpacts.payment-api', 'technicalContracts.支付 API', 'finalConfirmation'],
   });
 
   recordTechnicalConclusion(clarification, contract, null, '支付 API 契约', [{ kind: 'user' }], '2026-07-11T10:00:00Z');
+  recordFinalConfirmation(clarification, '2026-07-11T10:01:00Z');
   assert.deepStrictEqual(validateClarification(clarification), { complete: true, missing: [] });
 });
 
@@ -332,7 +355,7 @@ test('端到端：技术型北向 API 缺任一 URL、协议、请求响应或�
 
     assert.deepStrictEqual(validation, {
       complete: false,
-      missing: [`technicalContracts.北向订单 API.${missingContract}`],
+      missing: [`technicalContracts.北向订单 API.${missingContract}`, 'finalConfirmation'],
     }, missingContract);
     assert.equal(reloadedState.status, 'initialized', missingContract);
     assert.equal(nextAction.skill, 'feature-clarify', missingContract);
@@ -354,6 +377,7 @@ test('端到端：混合型需求同时要求六项功能结论和受影响的�
       'dimensions.acceptanceCriteria',
       'technicalContracts.北向订单 API.requestResponse',
       'technicalContracts.北向订单 API.performance',
+      'finalConfirmation',
     ],
   });
   assert.equal(reloadedState.status, 'initialized');
@@ -365,6 +389,7 @@ test('端到端：完整混合型需求持久化澄清状态并路由到 feature
   const state = readState(taskPath);
   state.clarification = completeClarification('mixed', '博客系统支持背景图片并提供配置同步 API');
   addNorthboundApiContracts(state.clarification, ['apiUrl', 'protocol', 'requestResponse', 'performance']);
+  recordFinalConfirmation(state.clarification, '2026-07-11T10:01:00Z');
 
   const { validation, reloadedState, nextAction } = persistClarificationAndResolve(taskPath, state);
 
