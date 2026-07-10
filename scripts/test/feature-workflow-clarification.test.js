@@ -7,14 +7,15 @@ const { execFileSync } = require('child_process');
 const { makeTask } = require('./helpers');
 const { readState, writeState } = require('../devsphere-state');
 const { resolveNextAction } = require('../workflows/feature-workflow');
-const { createClarification, recordConclusion } = require('../feature-requirement-clarification');
+const { createClarification, recordConclusion, recordFinalConfirmation } = require('../feature-requirement-clarification');
 
-function completeClarification() {
+function completeClarification(finalConfirmed = true) {
   const clarification = createClarification('完成的需求');
   recordConclusion(clarification, 'requirementType', 'functional', [{ kind: 'user' }], '2026-07-11');
   for (const key of ['businessGoal', 'usersAndScenarios', 'functionalScope', 'nonGoalsAndBoundaries', 'acceptanceCriteria', 'constraintsAndRisks']) {
     recordConclusion(clarification, key, `${key} 已确认`, [{ kind: 'user' }], '2026-07-11');
   }
+  if (finalConfirmed) recordFinalConfirmation(clarification, '2026-07-11T10:00:00Z');
   return clarification;
 }
 
@@ -55,6 +56,18 @@ test('manual or CLI clarified status spoof cannot bypass incomplete clarificatio
   const state = readState(taskPath);
   assert.strictEqual(state.status, 'clarified');
   assert.strictEqual(resolveNextAction(taskPath, state).skill, 'feature-clarify');
+});
+
+test('complete but not finally confirmed clarified status remains on feature-clarify', () => {
+  const { taskPath } = makeTask();
+  const state = readState(taskPath);
+  state.status = 'clarified';
+  state.clarification = completeClarification(false);
+
+  const action = resolveNextAction(taskPath, state);
+
+  assert.strictEqual(action.skill, 'feature-clarify');
+  assert.deepStrictEqual(action.args.missing, ['finalConfirmation']);
 });
 
 test('persisted complete clarification unlocks feature-assess after CLI status transition', () => {
