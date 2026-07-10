@@ -35,18 +35,18 @@ feature-init
 | 组件 | 职责 |
 | --- | --- |
 | `feature-init` | 只收集原始需求、创建工作区和初始 `requirement.md`；保持 `initialized`。 |
-| `feature-clarify`（新增） | 查询知识、判定需求类型、逐项澄清、维护需求记录、做最终确认。 |
-| `knowledge-query` | 按已有契约执行 MCP 查询、保存被采用的 evidence 快照、登记证据或缺口。 |
+| `feature-clarify`（新增） | 派发知识查询 subagent、判定需求类型、逐项澄清、维护需求记录、做最终确认。 |
+| `knowledge-query` | 由查询 subagent 按已有契约执行 MCP 查询、保存被采用的 evidence 快照、登记证据或缺口。 |
 | workflow resolver | `initialized` 路由 `feature-clarify`；`clarified` 路由 `feature-assess`。 |
 | `feature-assess` | 只消费已澄清的需求，评估复杂度、风险和工作流模式。 |
 
-`feature-clarify` 是在主会话执行的交互 skill；它不派发后台 agent。状态转换由现有 `feature-workflow.js set-task-status` 写入，增加 `clarified` 的合法流转测试。
+`feature-clarify` 是在主会话执行的交互 skill。它只负责用户交互和流程判定，**不得在主会话直接调用知识库工具**：首轮及每次需要再检索时，必须派发一个 `knowledge-query` subagent，等待其返回结构化结果、证据快照和缺口后再继续。查询 subagent 是一次性工作单元，不持久化 agent 身份或承担用户交互。状态转换由现有 `feature-workflow.js set-task-status` 写入，增加 `clarified` 的合法流转测试。
 
 ## 3. 澄清流程
 
 ### 3.1 首轮知识查询与类型判定
 
-读取原始需求后，skill 必须先调用 `knowledge-query`。查询意图从需求中的业务实体、产品能力、系统/模块、技术名词、规则和约束中提取。采用的结果按既有契约保存为 `evidence/knowledge/EV-*.md`，并登记 `evidence/evidence-registry.json`。
+读取原始需求后，主会话必须先派发一个加载 `knowledge-query` 的 subagent。查询意图从需求中的业务实体、产品能力、系统/模块、技术名词、规则和约束中提取。subagent 返回结构化检索结论后，主会话才能提出需求类型判断或首个澄清问题。采用的结果按既有契约保存为 `evidence/knowledge/EV-*.md`，并登记 `evidence/evidence-registry.json`。
 
 基于原始需求和查询结果，skill 提出并确认需求类型：
 
@@ -81,7 +81,7 @@ feature-init
 
 ### 3.3 反馈后的再查询
 
-每次用户反馈被合并为已确认事实后，skill 评估是否需要再次调用 `knowledge-query`。下列新增或变更信息触发再查询：业务实体或规则、系统/模块、接口/协议、数据、权限/合规、性能/容量、部署/环境等。未引入新检索线索时不进行重复查询。
+每次用户反馈被合并为已确认事实后，主会话评估是否需要再次派发 `knowledge-query` subagent。下列新增或变更信息触发再查询：业务实体或规则、系统/模块、接口/协议、数据、权限/合规、性能/容量、部署/环境等。未引入新检索线索时不进行重复查询。每个再查询均是独立的一次性 subagent 派发；主会话须等待结果后再生成下一条带来源标注的建议。
 
 查询策略随类型收敛：功能型优先查询业务规则、既有产品能力和交互规范；技术型优先查询架构约束、接口规范、现有契约及性能/安全标准。
 
@@ -128,7 +128,7 @@ feature-init
 
 ## 5. 错误处理与不变量
 
-- 首轮知识查询是澄清的必经步骤；查询异常或无结果必须显式记录，不能静默跳过。
+- 首轮知识查询必须由 `knowledge-query` subagent 执行；主会话不得直接调用知识库工具。查询异常或无结果必须显式记录，不能静默跳过。
 - 缺知识时，阻塞项是“用户尚未给出明确结论”，而不是“知识库没有资料”。
 - 所有推荐结论都必须有来源类型和理由；无 EV 的内容不得标称为知识库结论。
 - `feature-assess` 不得被 `initialized` 状态直接调用，防止经 workflow 绕过澄清硬门禁。
@@ -148,7 +148,7 @@ feature-init
 
 1. `initialized → feature-clarify`，`clarified → feature-assess`；
 2. 六项任一缺失、含歧义或未确认时，不能进入 `clarified`；
-3. 首轮调用知识查询；反馈引入新检索线索时再查询，否则不重复查询；
+3. 首轮派发 `knowledge-query` subagent；反馈引入新检索线索时再次派发，否则不重复查询；主会话不直接调用知识库工具；
 4. EV 引用、来源标识和 evidence gap 被正确保存；
 5. 知识库无结果但用户给出明确结论可继续；最终汇总被拒绝则返回澄清；
 6. 恢复时仅继续未完成或受影响维度；
@@ -158,4 +158,4 @@ feature-init
 
 ## 7. 取舍
 
-独立的 `feature-clarify` 与 `clarified` 状态比把逻辑塞入 `feature-assess` 多了一次状态迁移，但澄清、评估的恢复、审计和测试边界清晰。以六项固定结论配合需求类型自适应清单，在保证设计输入质量的同时避免对简单功能需求过度工程。知识库是强制信息源，但用户确认仍是事实的最终来源，适用于知识库滞后或未覆盖的新业务。
+独立的 `feature-clarify` 与 `clarified` 状态比把逻辑塞入 `feature-assess` 多了一次状态迁移，但澄清、评估的恢复、审计和测试边界清晰。由一次性 `knowledge-query` subagent 执行每次知识检索，既满足知识查询的强制前置，也让主会话专注用户对话和结论判断。以六项固定结论配合需求类型自适应清单，在保证设计输入质量的同时避免对简单功能需求过度工程。知识库是强制信息源，但用户确认仍是事实的最终来源，适用于知识库滞后或未覆盖的新业务。
