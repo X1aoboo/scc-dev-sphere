@@ -72,7 +72,7 @@ docs/             PRD, technical design doc, Q&A history
 ### Feature task state machine
 
 ```
-initialized → assessed → designing → design_ready → approved_for_implementation
+initialized → clarified → assessed → designing → design_ready → approved_for_implementation
 → implementation_planned → implementing → verification_ready → completed
 
 blocked ↪ designing | implementing (resolve and re-enter)

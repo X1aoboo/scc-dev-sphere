@@ -6,7 +6,6 @@ const { readMatrix } = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { readDecisions, countGatedPending } = require('../devsphere-decisions');
 const { stageToArtifact } = require('../feature-design-router');
-const { validateClarification } = require('../feature-requirement-clarification');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -29,14 +28,10 @@ function resolveNextAction(taskPath, state) {
   }
 
   // --- clarified ---
+  // Completeness of the clarification is judged by feature-clarify (and the user's
+  // final confirmation) per the skill's written principles; routing here keys only
+  // off status. There is intentionally no deterministic re-validation gate.
   if (status === 'clarified') {
-    const clarification = validateClarification(state.clarification || {});
-    if (!clarification.complete) {
-      return makeAction('run_skill', state, null, null,
-        'feature-clarify', { missing: clarification.missing }, [],
-        'Clarified status is invalid because requirement conclusions are incomplete. Resume clarification before assessment.',
-        [], ['inputs/requirement.md']);
-    }
     return makeAction('run_skill', state, null, null,
       'feature-assess', {}, [],
       'Requirement clarification is complete. Proceed with complexity and risk assessment.',
