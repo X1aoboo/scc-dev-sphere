@@ -21,8 +21,7 @@ test('feature-clarify independently requires one-shot subagents, waiting, and a 
 test('feature-clarify writes conclusions into requirement.md and self-judges completeness', () => {
   const skill = readSkill('feature-clarify');
 
-  // Option A: no state.clarification, no deterministic validate*. Conclusions live
-  // only in inputs/requirement.md; the skill carries a written completion principle.
+  // Conclusions live in requirement.md; the skill carries a written completion principle.
   assert.match(skill, /inputs\/requirement\.md/i);
   assert.match(skill, /完成判断原则/);
   assert.match(skill, /set-task-status <workspaceRoot> clarified/i);

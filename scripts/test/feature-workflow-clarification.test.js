@@ -20,9 +20,7 @@ test('initialized routes to feature-clarify before assessment', () => {
 });
 
 test('clarified routes to feature-assess on status alone', () => {
-  // Option A: no state.clarification, no deterministic re-validation gate.
-  // Completeness is judged by feature-clarify + the user's final confirmation;
-  // routing keys only off status === 'clarified'.
+  // Completeness is judged inside feature-clarify; routing here is status-only.
   const { taskPath } = makeTask();
   const state = readState(taskPath);
   state.status = 'clarified';
