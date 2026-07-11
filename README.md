@@ -52,14 +52,14 @@ initialized → clarified → assessed → designing → design_ready
 ```mermaid
 flowchart TB
   U[用户 / Claude Code] --> W[workflow Skill]
-  W --> R[确定性 Workflow Resolver]
-  R --> N[nextAction]
-  N --> S[阶段 Skills]
-  S --> A[角色 Agents]
-  S --> P[任务产物与决策]
+  W --> TR[devsphere-workflow<br/>按 taskType 路由]
+  TR --> FR[feature-workflow<br/>任务级状态 → nextAction]
+  FR --> NA{nextAction}
+  NA --> SS[对应阶段 Skill / 人工确认 / 状态展示]
+  NA --> FD[nextAction = feature-design<br/>设计 workflow 入口]
+  SS --> P[任务状态与阶段产物]
   H[Hooks / Guards] --> P
-  H --> R
-  P --> R
+  P --> FR
 ```
 
 | 组件 | 职责 | 不负责 |
@@ -67,10 +67,35 @@ flowchart TB
 | `skills/` | 提供可调用的阶段工作单元，生成或更新约定产物 | 决定跨阶段状态推进 |
 | `agents/` | 提供 SA、SE、MDE、DEV、TSE、CIE 等角色上下文 | 充当工作流主干 |
 | `hooks/` | 执行硬门禁、状态同步与一致性检查 | 替代人工判断或自动接受风险 |
-| `scripts/` | 管理状态、评审矩阵、批准记录和确定性路由 | 生成设计内容或调度 Agent |
+| `scripts/` | 管理状态、评审矩阵、批准记录、确定性路由和派发词渲染 | 生成设计内容或直接调用 Agent |
 | `templates/` | 定义任务产物、评审、批准和转测交付的结构 | 充当独立流程引擎 |
 
-`workflow` 是统一入口：它读取当前任务的 `taskType`，调用对应 resolver，并将输出的 `nextAction` 转化为下一次 Claude Code 交互。当前仅注册 `feature` resolver；未知 task type 会被明确提示为 MVP 尚未实现。
+`workflow` 是统一入口：它读取当前任务的 `taskType`，由顶层 router 选择对应流程 resolver；当前 Feature resolver 再根据任务稳定状态、产物和批准记录输出任务级 `nextAction`。设计状态的 nextAction 只会进入 `feature-design`，不在主干 workflow 内选择业务/方案/实现/测试子阶段，也不生成 teammate prompt。当前仅注册 `feature` resolver；未知 task type 会被明确提示为 MVP 尚未实现。
+
+### 设计阶段 workflow
+
+设计 workflow 与主干 workflow 解耦：只有主干的 `nextAction=feature-design` 才会进入该流程。`feature-design` 在主会话运行，是执行器而不是决策者；它在进入设计阶段及每次 teammate 事件后同步确定性状态，调用 `feature-design-router`。
+
+```mermaid
+flowchart LR
+  FD[feature-design 薄执行器] --> SYNC[sync-stage-status]
+  SYNC --> DR[feature-design-router]
+  DR --> DA[designAction]
+  DA --> PA[produce_draft / dispatch_reviews]
+  PA --> DC[dispatchCmd]
+  DC --> DB[devsphere-dispatch<br/>渲染确定性 prompt]
+  DB --> TM[指定 teammate]
+  TM --> SK[执行指定 feature-design-*<br/>或 feature-review Skill]
+  SK --> P[设计产物 / decisions / review matrix]
+  P --> FD
+  DA --> HG[ask_gated / human_approve]
+  HG --> SYNC
+  DA --> END[design_phase_complete / design_blocked]
+```
+
+`feature-design-router` 基于设计产物、阶段状态、gated decisions、review matrix、协作模式和 CI/CD 风险，确定唯一的 `designAction`：产出草稿、代问决策、派发评审、请求人工批准、回修或结束设计。
+
+对于 `produce_draft` 和 `dispatch_reviews`，`designAction` 携带角色、目标 Skill、确定性 teammate 名称及 `dispatchCmd`。router 不直接调用 Agent；`feature-design` 原样执行 `dispatchCmd`，`devsphere-dispatch` 将其渲染为确定性 prompt，再由 Claude Code 原生 teammate 执行指定 Skill。也就是说：router 决定“下一步做什么、由谁做、执行哪个 Skill”，薄执行器只响应 router 结果和 teammate 事件，并用 harness 原语落实该动作。
 
 ## 任务工作区与审计链
 
