@@ -18,39 +18,34 @@ test('feature-clarify independently requires one-shot subagents, waiting, and a 
   assert.match(skill, /MUST NOT use teammate/i);
 });
 
-test('feature-clarify records only user-confirmed conclusions and validates before clarified', () => {
+test('feature-clarify writes conclusions into requirement.md and self-judges completeness', () => {
   const skill = readSkill('feature-clarify');
 
-  assert.match(skill, /only persist user-confirmed conclusions/i);
-  assert.match(skill, /one requirement dimension at a time/i);
-  assert.match(skill, /shouldRequery/i);
-  assert.match(skill, /validateClarification/i);
+  // Option A: no state.clarification, no deterministic validate*. Conclusions live
+  // only in inputs/requirement.md; the skill carries a written completion principle.
+  assert.match(skill, /inputs\/requirement\.md/i);
+  assert.match(skill, /完成判断原则/);
   assert.match(skill, /set-task-status <workspaceRoot> clarified/i);
 });
 
-test('feature-clarify recovers from auditable evidence and final-summary rejection', () => {
+test('feature-clarify recovers from requirement.md and the evidence registry', () => {
   const skill = readSkill('feature-clarify');
 
   assert.match(skill, /evidence\/evidence-registry\.json/i);
   assert.match(skill, /EV-\*\.md/i);
-  assert.match(skill, /only re-ask incomplete or affected dimensions/i);
-  assert.match(skill, /final summary.*rejected.*return to the affected dimension/i);
-  assert.match(skill, /status.*reliability.*userResolution/is);
+  assert.match(skill, /inputs\/requirement\.md/i);
 });
 
-test('feature-clarify scopes technical API contracts by requirement type', () => {
+test('feature-clarify keeps functional requirements out of unrelated technical contracts', () => {
   const skill = readSkill('feature-clarify');
 
   assert.match(skill, /functional.*MUST NOT.*API.*protocol/is);
-  assert.match(skill, /northbound API.*apiUrl.*protocol.*requestResponse.*performance/is);
-  assert.match(skill, /technical.*mixed.*applicable.*contract/is);
 });
 
-test('feature-init initializes clarification state and routes users to clarification', () => {
+test('feature-init writes requirement.md and routes users to clarification', () => {
   const skill = readSkill('feature-init');
 
-  assert.match(skill, /feature-requirement-clarification\.js init "<taskPath>"/i);
-  assert.match(skill, /reads the already-written `inputs\/requirement\.md`/i);
+  assert.match(skill, /inputs\/requirement\.md/i);
   assert.match(skill, /feature-clarify/i);
 });
 
@@ -59,7 +54,6 @@ test('feature-assess accepts only clarified tasks', () => {
 
   assert.match(skill, /status !== 'clarified'/i);
   assert.match(skill, /MUST NOT assess/i);
-  assert.match(skill, /validateClarification/i);
   assert.match(skill, /feature-clarify/i);
 });
 

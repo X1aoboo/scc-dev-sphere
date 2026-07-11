@@ -4,6 +4,7 @@
 - **日期:** 2026-07-11
 - **范围:** `skills/feature-clarify/SKILL.md`（仅此一处实质改动）；确定性 script、测试、`inputs/requirement.md` 契约不变
 - **关联文档:** `docs/superpowers/specs/2026-07-11-feature-requirement-clarification-design.md`（澄清硬门禁基线设计）
+- **后续修订（2026-07-11）：** 持久化目标已由 `state.clarification` 迁移至 `inputs/requirement.md`（单一内容真源），确定性 `validateClarification` 移除、改为 skill 内「完成判断原则」自判。挖掘策略本身不变。
 
 ## 1. 背景与目标
 

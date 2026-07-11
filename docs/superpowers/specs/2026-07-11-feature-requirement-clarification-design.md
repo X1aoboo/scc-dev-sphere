@@ -1,5 +1,7 @@
 # Feature 需求澄清硬门禁设计
 
+> **SUPERSEDED（部分）：** 确定性校验闸门（`validateClarification`）与 `state.clarification` 已于 2026-07-11 移除；澄清记录改为只写入 `inputs/requirement.md`，完整性由 `feature-clarify` 的「完成判断原则」+ 用户最终确认自判。下文为历史快照，仅作背景。
+
 - **状态:** 已通过设计评审，待用户审阅文档
 - **日期:** 2026-07-11
 - **范围:** `feature-init`、新增 `feature-clarify`、`knowledge-query` 调用约定、workflow resolver、任务状态、`inputs/requirement.md`、相关测试
