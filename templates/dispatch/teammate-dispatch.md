@@ -24,6 +24,7 @@
 1. 加载并遵循 skill: {{skill}}(评审方法)。
 2. 评审 artifact:{{artifactPath}}(从你的角色视角)。
 3. 评审结论写入 review-matrix:blocking(必须解决)/ advisory(建议,需人工确认)/ risk_candidate(风险标记)。
-4. 不得替 stage owner 做决策;发现「需用户决策」的点 → 提 blocking 项回流给 stage owner(owner 在 revise 轮补成 gated decision,见 conduct 的评审回流约定)。
-5. 评审完成 → 通知 lead「{{stage}} 评审完成,blocking=N」。
+4. 不得替用户做决策；发现 advisory/risk 时保持 pending 并通知 lead 代问。apply/no_change 等人工结果由 lead 写回原 issue。
+5. 修订复评时，已确认修复的原 issue 使用原 ID 执行 `devsphere-review-matrix.js close --status closed`；未修复 issue 保持 open 并通知 lead 继续 revise。
+6. 评审完成 → 通知 lead「{{stage}} 评审完成,blocking=N」。
 {{/review}}

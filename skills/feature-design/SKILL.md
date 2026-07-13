@@ -30,8 +30,9 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
   1. `node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js init <taskPath> <slug> <taskId> <stage>`(初始化该阶段 decisions 文件;<taskPath>/<slug>/<taskId>/<stage> 从 action 与 current-task 取)。
   2. 执行 `action.dispatchCmd`,把 **stdout 原样**作为 Agent prompt,**后台 spawn** 一个名为 `action.name`(形如 `sa-businessDesign`)的 teammate。
 - `payload.mode === 'continue'` 或 `'revise'`:
-  - **按名字 message** 名为 `action.name` 的 teammate(agent-teams 原语:存在则唤醒续线程;不存在则按 initial 的 dispatchCmd 重新 spawn)。message 内容:continue 时附 `payload.resolutions`;revise 时附 `payload.blockingItems`。**message 为字符串时必带 summary**。
-- 执行后**等 teammate 回报**,不重咨询。
+  - **按名字 message** 名为 `action.name` 的 teammate(agent-teams 原语:存在则唤醒续线程;不存在则按 initial 的 dispatchCmd 重新 spawn)。message 内容:continue 时附 `payload.resolutions`;revise 时附统一的 `payload.reviewItems`（可同时包含 blocking/advisory/risk_candidate）。**message 为字符串时必带 summary**。
+  - `payload.requiresReReview === true` 时，设计 teammate 通知修订完成后，先按 `payload.reviewers` 重新派发评审，不得直接重咨询 router。所有评审 teammate 返回后，再回到咨询循环。
+- 执行后**等 teammate 回报**；需要复评时先完成复评，不重咨询。
 
 ### `ask_gated`
 - 对 `action.decisions` **逐项** AskUserQuestion(遵循 `references/interaction-guidelines.md` 的 decision_loop,按各 decision 的 `askMode` 选 single_select/multi_select/confirm_gate,`options`/`recommendation` 直接取自 decision)。
@@ -42,9 +43,24 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
   `<resolution json>` 形如 `{"chosen":"<选项 label>","note":"<可选>"}`。
 - 全部 resolve 后**立即重咨询**(步骤 1)。
 
+### `ask_review`
+- 这是 Lead 代 feature-review teammate 向用户询问 review issue 的动作；review teammate 不调用 `AskUserQuestion`。
+- 对 `action.issues` 中每个 pending advisory/risk 逐项调用 `AskUserQuestion`：
+  - advisory：`apply` / `no_change`；
+  - risk_candidate：`apply` / `accepted_risk` / `mitigated` / `rejected`。
+- 用户选择后，Lead 仅更新原 issue 的 `humanDecision`，不新增 issue、不转换为 blocking：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js close <taskPath> <issueId> --decision <decision> --closure "用户确认 <decision>"
+  ```
+- 全部 pending issue 决策完成后立即重咨询；router 会把 open blocking 与 `humanDecision=apply` 的 advisory/risk 合并到同一个 revise action。
+
 ### `dispatch_reviews`
 - 对 `action.reviewers` **并行**后台 spawn:每个执行其 `dispatchCmd`,stdout 原样作为 Agent prompt,teammate 名为其 `name`(形如 `se-review-businessDesign`)。
-- 评审是 one-shot,不持 agentId。执行后**等所有评审回报**,不重咨询。
+- 评审是 one-shot,不持 agentId。执行后**等所有评审回报**，Lead 先尝试：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js set-status <taskPath> <slug> reviewed
+  ```
+  若脚本因未关闭 issue 而拒绝，则回到咨询循环继续 revise；成功后再执行 sync/router。
 
 ### `human_approve`
 - AskUserQuestion(confirm_gate 模式)请用户批准 `action.stage` 的设计。

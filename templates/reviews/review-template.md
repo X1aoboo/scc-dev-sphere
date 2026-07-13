@@ -30,7 +30,7 @@
 - **Suggestion:**
 - **Rationale:**
 - **Round:** {{ROUND}}
-- **Human Decision:** pending | apply | no_change | convert_to_blocking（matrix 事实源）
+- **Human Decision:** pending | apply | no_change（matrix 事实源）
 - **Closure Evidence:** <!-- 决策后填：决策依据/确认记录 -->
 
 ## Risk Candidates
@@ -41,7 +41,7 @@
 - **Potential Impact:**
 - **Suggested Mitigation:**
 - **Round:** {{ROUND}}
-- **Human Decision:** pending | accepted_risk | mitigated | rejected（matrix 事实源）
+- **Human Decision:** pending | apply | accepted_risk | mitigated | rejected（matrix 事实源）
 - **Closure Evidence:** <!-- 决策后填：接受/缓解依据 -->
 
 ## Review Attestation

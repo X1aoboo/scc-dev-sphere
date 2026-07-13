@@ -179,6 +179,29 @@ function getPendingHumanDecisions(matrix, artifact) {
   return out;
 }
 
+// Issues selected for the next design revision. Blocking issues are always
+// included while open; advisory/risk issues are included only after the lead
+// records the user's apply decision and before the reviewer closes them.
+function getRevisionItems(matrix, artifact) {
+  const out = [];
+  if (!matrix || !matrix.artifacts) return out;
+  for (const [a, entry] of Object.entries(matrix.artifacts)) {
+    if (artifact && a !== artifact) continue;
+    for (const it of ensureIssuesList(entry)) {
+      const blocking = it.type === 'blocking' && it.status === 'open';
+      const applied = (it.type === 'advisory' || it.type === 'risk_candidate')
+        && it.status === 'open' && it.humanDecision === 'apply';
+      if (blocking || applied) out.push({ artifact: a, ...it });
+    }
+  }
+  return out;
+}
+
+function getOpenApplyItems(matrix, artifact) {
+  return getRevisionItems(matrix, artifact)
+    .filter(it => it.humanDecision === 'apply');
+}
+
 // Deterministic gate: a non-pending (passed) status requires blocking=0 and all
 // advisory/risk decided. This is what enforces "advisory/risk can't pass without human decision".
 function setArtifactStatus(taskPath, artifact, status) {
@@ -195,6 +218,10 @@ function setArtifactStatus(taskPath, artifact, status) {
     }
     if (pending.length > 0) {
       throw new Error(`Cannot set status '${status}': ${pending.length} pending advisory/risk decision(s) remain`);
+    }
+    const openApply = getOpenApplyItems(matrix, artifact);
+    if (openApply.length > 0) {
+      throw new Error(`Cannot set status '${status}': ${openApply.length} apply revision issue(s) remain open`);
     }
   }
   entry.status = status;
@@ -288,5 +315,6 @@ module.exports = {
   hasBlocking, getPendingAdvisoryItems, getBaseReviewers,
   addIssue, closeIssue, listIssues, recomputeCounts, setArtifactStatus,
   getPendingHumanDecisions, findIssue,
+  getRevisionItems, getOpenApplyItems,
   BASE_REVIEWERS, TYPE_PREFIX, VALID_HUMAN_DECISIONS,
 };

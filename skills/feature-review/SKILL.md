@@ -39,29 +39,29 @@ description: 多角色 AI 交叉评审与修订闭环。对设计产物输出结
    node scripts/devsphere-review-matrix.js add <taskPath> <artifact> '{"type":"blocking","reviewerAgent":"se","round":N}'
    ```
    返回的 ID（B-/ADV-/RISK-NNN）回填到 `<agent>-review.md` 对应条目，保证叙述与 matrix 一一对应。
-4. **门禁判断**（读取派生计数）：
+4. **完成评审并通知 Lead**（读取派生计数）：
    ```bash
    node scripts/devsphere-review-matrix.js read <taskPath>
    ```
-   - `blocking > 0` → 进入修订闭环（步骤5）。
-   - `blocking = 0` 且 `advisory/risk_candidate = 0` → 跳到步骤7 设为通过。
-   - `blocking = 0` 但有待决策 advisory/risk → 步骤6 人工确认。
-5. **修订闭环**（blocking > 0）：本 skill 不直接改设计产物。workflow resolver 检测到 blocking 后重新派发**设计 Agent** 修订；修订完成后重新派发评审复核。`round` 递增，**上限 3 轮**。达上限仍未归零 → 标记未解决 blocking 待人工处理，停止。
-6. **advisory / risk 人工确认**（blocking = 0，有待决策项）：
-   - 用 `AskUserQuestion`（遵循 `references/interaction-guidelines.md`）逐项获取决策。
-   - advisory 选项：`apply` / `no_change` / `convert_to_blocking`；risk 选项：`accepted_risk` / `mitigated` / `rejected`。
-   - **risk_candidate 不得自动变为 accepted_risk**，必须人工确认。
-   - 决策落盘：写 `advisory-confirmation.json` + 经脚本关闭 issue：
+   本 teammate 不调用 `AskUserQuestion`，不替用户写 advisory/risk 的 `humanDecision`，也不设置 artifact `reviewed`。
+5. **统一修订闭环**：Lead 在完成 pending advisory/risk 决策后，由 router 一次性派发设计 Agent，`reviewItems` 同时包含 open blocking 和用户选择 `apply` 的 advisory/risk。本 skill 不直接修改设计产物。
+6. **修订复评**：复评时检查本轮传入的所有 review issue：
+   - 确认已修复 → 使用原 issue ID 执行：
      ```bash
-     node scripts/devsphere-review-matrix.js close <taskPath> ADV-001 --decision apply --closure "用户确认 apply"
+     node scripts/devsphere-review-matrix.js close <taskPath> <issueId> --status closed --closure "复评确认已修复"
      ```
-   - `convert_to_blocking` 的 advisory → 重新 `add` 一条 blocking 并回到步骤4。
-7. **设为评审通过**（blocking=0 且全部决策完成）：
+     apply issue 保留原 `humanDecision=apply`。
+   - 未修复 → 保持 issue open，通知 Lead 继续 revise，不创建重复 issue。
+   - 新发现的独立问题 → 经脚本 `add` 新 issue。
+7. **人工决策**：pending advisory/risk 由 Lead 的 `ask_review` 动作逐项询问：
+   - advisory：`apply` / `no_change`；
+   - risk_candidate：`apply` / `accepted_risk` / `mitigated` / `rejected`。
+8. **设为评审通过**：所有 issue 已复评且人工决策完成后，通知 Lead 调用：
    ```bash
    node scripts/devsphere-review-matrix.js set-status <taskPath> <artifact> reviewed
    ```
-   脚本内置门禁：blocking>0 或有待决策 advisory/risk 时会**拒绝**设置。设置成功后 `status='reviewed'`（非 pending），`sync-stage-status` 即可将阶段推进到 `ai_review_passed`。
-8. **集成评审**（`--target integrated-design`）：执行跨阶段一致性检查（business→solution→implementation→test 追溯无关键缺口、冲突已解决、accepted_risk 均有 DEC 来源），同样按步骤 2-7 记录 issue 并设状态。
+   脚本内置门禁：blocking>0、pending advisory/risk 或 open apply issue 时会**拒绝**设置。
+9. **集成评审**（`--target integrated-design`）：执行跨阶段一致性检查（business→solution→implementation→test 追溯无关键缺口、冲突已解决、accepted_risk 均有 DEC 来源），同样按步骤 2-8 记录 issue、复评并通知 Lead。
 
 ## 评审视角矩阵
 
@@ -75,9 +75,10 @@ description: 多角色 AI 交叉评审与修订闭环。对设计产物输出结
 
 ## 人工确认触发
 
-- advisory：每条需人工 `apply`/`no_change`/`convert_to_blocking`。
-- risk_candidate：每条需人工 `accepted_risk`/`mitigated`/`rejected`，**禁止自动接受**。
-- 用 `AskUserQuestion` 的 `single_select`（逐项决策）或 `multi_select`（批量筛选待处理项）。
+- pending advisory/risk 由 Lead 通过 `ask_review` 逐项询问。
+- advisory：`apply` / `no_change`。
+- risk_candidate：`apply` / `accepted_risk` / `mitigated` / `rejected`。
+- 本 skill 不调用 `AskUserQuestion`。
 
 ## 失败处理
 
@@ -88,13 +89,14 @@ description: 多角色 AI 交叉评审与修订闭环。对设计产物输出结
 ## 完成标准
 
 - 每条 issue 在 matrix 与叙述文件中 ID 一一对应。
-- `blocking = 0` 或已达 3 轮上限（未解决项已标记）。
-- advisory / risk_candidate 全部经人工决策（`getPendingHumanDecisions` 为空）。
-- 通过的产物 `status = reviewed`（经 `set-status` 门禁验证）。
+- 所有本轮 issue 已复评：已修复 issue 已由评审 Agent 关闭，未修复 issue 保持 open。
+- advisory / risk_candidate 全部经 Lead 决策（`getPendingHumanDecisions` 为空）。
+- 产物是否 `reviewed` 由 Lead 通过 `set-status` 门禁决定。
 
 ## 禁止事项
 
 - 不直接编辑 `review-matrix.json`（必须经脚本命令）。
 - 不自动把 risk_candidate 变为 accepted_risk。
+- 不把 apply issue 转换为 blocking，不创建 blocking 影子 issue。
 - 不修改设计产物、`state.json`、`approvals/`、`decisions/`。
 - 不在 blocking 未归零时设 `status` 为非 pending（脚本会拒绝）。

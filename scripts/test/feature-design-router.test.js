@@ -117,7 +117,51 @@ test('drafted + blocking>0 → produce_draft revise', () => {
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'produce_draft');
   assert.strictEqual(action.payload.mode, 'revise');
-  assert.strictEqual(action.payload.blockingItems.length, 1);
+  assert.strictEqual(action.payload.reviewItems.length, 1);
+  assert.strictEqual(action.payload.reviewItems[0].type, 'blocking');
+  assert.strictEqual(action.payload.requiresReReview, true);
+  assert.ok(Array.isArray(action.payload.reviewers));
+});
+
+test('drafted + blocking 与 pending advisory/risk → ask_review 优先', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
+  addIssue(taskPath, 'business-design', { type: 'advisory', reviewerAgent: 'se', round: 1 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'ask_review');
+  assert.strictEqual(action.issues.length, 1);
+  assert.strictEqual(action.issues[0].type, 'advisory');
+});
+
+test('drafted + blocking/apply advisory/apply risk → unified reviseItems', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
+  addIssue(taskPath, 'business-design', {
+    type: 'advisory', reviewerAgent: 'se', round: 1, humanDecision: 'apply',
+  });
+  addIssue(taskPath, 'business-design', {
+    type: 'risk_candidate', reviewerAgent: 'se', round: 1, humanDecision: 'apply',
+  });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'produce_draft');
+  assert.strictEqual(action.payload.mode, 'revise');
+  assert.deepStrictEqual(action.payload.reviewItems.map(i => i.type), [
+    'blocking', 'advisory', 'risk_candidate',
+  ]);
+  assert.ok(action.payload.reviewItems.every(i => i.status === 'open'));
+  assert.strictEqual(action.payload.requiresReReview, true);
 });
 
 test('drafted + round 达上限 → design_blocked', () => {
@@ -190,5 +234,24 @@ test('ai_review_passed + blocking>0(人工驳回注入) → produce_draft revise
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'produce_draft');
   assert.strictEqual(action.payload.mode, 'revise');
-  assert.strictEqual(action.payload.blockingItems.length, 1);
+  assert.strictEqual(action.payload.reviewItems.length, 1);
+});
+
+test('open apply issue blocks artifact reviewed until reviewer closes original issue', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  const issue = addIssue(taskPath, 'business-design', {
+    type: 'advisory', reviewerAgent: 'se', humanDecision: 'apply',
+  });
+  assert.throws(
+    () => setArtifactStatus(taskPath, 'business-design', 'reviewed'),
+    /apply revision issue/i,
+  );
+  const { closeIssue, readMatrix } = require('../devsphere-review-matrix');
+  closeIssue(taskPath, issue.id, {
+    status: 'closed', humanDecision: 'apply', closureEvidence: 're-review passed',
+  });
+  const matrix = readMatrix(taskPath);
+  assert.strictEqual(matrix.artifacts['business-design'].issuesList[0].id, issue.id);
+  assert.doesNotThrow(() => setArtifactStatus(taskPath, 'business-design', 'reviewed'));
 });
