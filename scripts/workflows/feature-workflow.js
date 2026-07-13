@@ -2,7 +2,9 @@
 
 const path = require('path');
 const fs = require('fs');
-const { readMatrix } = require('../devsphere-review-matrix');
+const {
+  readMatrix, getPendingHumanDecisions, getOpenApplyItems,
+} = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { readDecisions, countGatedPending } = require('../devsphere-decisions');
 const { stageToArtifact } = require('../feature-design-router');
@@ -187,7 +189,15 @@ function main() {
           if (stageData.status !== 'drafted') continue;
           const artifactTarget = stageToArtifact(stageName);
           const artifactMatrix = matrix.artifacts[artifactTarget];
-          if (artifactMatrix && artifactMatrix.issues && artifactMatrix.issues.blocking === 0 && artifactMatrix.status !== 'pending') {
+          const pendingReview = artifactMatrix
+            ? getPendingHumanDecisions(matrix, artifactTarget) : [];
+          const openApply = artifactMatrix
+            ? getOpenApplyItems(matrix, artifactTarget) : [];
+          if (artifactMatrix && artifactMatrix.issues
+            && artifactMatrix.issues.blocking === 0
+            && artifactMatrix.status !== 'pending'
+            && pendingReview.length === 0
+            && openApply.length === 0) {
             stageData.status = 'ai_review_passed';
             updated.push({ stage: stageName, from: 'drafted', to: 'ai_review_passed' });
           }
@@ -206,6 +216,29 @@ function main() {
       if (!VALID_STAGE_STATUSES.includes(newStatus)) {
         process.stderr.write(`Invalid stage status: ${newStatus}. Valid: ${VALID_STAGE_STATUSES.join(', ')}\n`);
         process.exit(1);
+      }
+      const artifactTarget = stageToArtifact(stageName);
+      const matrix = readMatrix(taskPath);
+      const artifactMatrix = matrix && matrix.artifacts ? matrix.artifacts[artifactTarget] : null;
+      if (artifactMatrix && (newStatus === 'ai_review_passed' || newStatus === 'human_approved')) {
+        if (artifactMatrix.status !== 'reviewed') {
+          process.stderr.write(`Cannot set stage '${stageName}': artifact review status is not reviewed\n`);
+          process.exit(1);
+        }
+        const pendingReview = getPendingHumanDecisions(matrix, artifactTarget);
+        const openApply = getOpenApplyItems(matrix, artifactTarget);
+        if (artifactMatrix.issues.blocking > 0) {
+          process.stderr.write(`Cannot set stage '${stageName}': open blocking issue(s) remain\n`);
+          process.exit(1);
+        }
+        if (pendingReview.length > 0) {
+          process.stderr.write(`Cannot set stage '${stageName}': pending advisory/risk decision(s) remain\n`);
+          process.exit(1);
+        }
+        if (openApply.length > 0) {
+          process.stderr.write(`Cannot set stage '${stageName}': apply revision issue(s) remain open\n`);
+          process.exit(1);
+        }
       }
       const { updateStageStatus } = require('../devsphere-state');
       updateStageStatus(taskPath, stageName, newStatus);

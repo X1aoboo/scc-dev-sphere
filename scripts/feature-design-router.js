@@ -3,7 +3,9 @@
 
 const path = require('path');
 const { listGatedPending, readDecisions } = require('./devsphere-decisions');
-const { readMatrix, getBaseReviewers } = require('./devsphere-review-matrix');
+const {
+  readMatrix, getBaseReviewers, getPendingHumanDecisions, getRevisionItems,
+} = require('./devsphere-review-matrix');
 
 const DISPATCH_SCRIPT = path.join(__dirname, 'devsphere-dispatch.js');
 const MAX_REVISE = 3;
@@ -61,12 +63,6 @@ function maxBlockingRound(matrix, slug) {
     (m, i) => (i.type === 'blocking' && i.status === 'open' ? Math.max(m, i.round || 1) : m), 0);
 }
 
-function openBlockingIssues(matrix, slug) {
-  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) return [];
-  return (matrix.artifacts[slug].issuesList || [])
-    .filter(i => i.type === 'blocking' && i.status === 'open');
-}
-
 function reviewerName(role, stage) {
   return `${role}-review-${stage}`;
 }
@@ -83,6 +79,29 @@ function buildReviewers(stage, slug, state, taskPath) {
     role, name: reviewerName(role, stage),
     dispatchCmd: reviewDispatchCmd(role, stage, taskPath, artifactPath),
   }));
+}
+
+function buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix, reason) {
+  const reviewers = buildReviewers(stage, slug, state, taskPath);
+  return {
+    kind: 'produce_draft', stage, slug, humanGated: gated,
+    reason, role, skill, mode, name,
+    payload: {
+      mode: 'revise',
+      reviewItems: getRevisionItems(matrix, slug),
+      requiresReReview: true,
+      reviewers,
+      artifactPath: path.join(taskPath, 'artifacts', `${slug}.md`),
+    },
+    dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+  };
+}
+
+function buildAskReviewAction(stage, slug, gated, name, matrix, reason) {
+  return {
+    kind: 'ask_review', stage, slug, humanGated: gated, name, reason,
+    issues: getPendingHumanDecisions(matrix, slug),
+  };
 }
 
 // resolveDesignAction: 按阶段顺序解析设计阶段下一步动作。
@@ -142,18 +161,20 @@ function resolveDesignAction(taskPath, state) {
       const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
       const blocking = entry ? entry.issues.blocking : 0;
       const matrixStatus = entry ? entry.status : 'pending';
+      const pendingReview = getPendingHumanDecisions(matrix, slug);
 
+      // Human review decisions must be collected before any blocking/apply
+      // revision is dispatched, so one revision can contain all issue types.
+      if (pendingReview.length > 0) {
+        return buildAskReviewAction(stage, slug, gated, name, matrix,
+          `${stage} 有 ${pendingReview.length} 项 advisory/risk 待 Lead 确认`);
+      }
       if (maxBlockingRound(matrix, slug) >= MAX_REVISE) {
         return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${MAX_REVISE} 轮上限` };
       }
-      if (blocking > 0) {
-        return {
-          kind: 'produce_draft', stage, slug, humanGated: gated,
-          reason: `${stage} 评审 blocking=${blocking},回流 owner revise`,
-          role, skill, mode, name,
-          payload: { mode: 'revise', blockingItems: openBlockingIssues(matrix, slug) },
-          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
-        };
+      if (blocking > 0 || getRevisionItems(matrix, slug).length > 0) {
+        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix,
+          `${stage} 汇总 blocking/advisory/risk 修订项,回流 owner revise`);
       }
       if (matrixStatus === 'pending') {
         return {
@@ -173,17 +194,17 @@ function resolveDesignAction(taskPath, state) {
       const matrix = readMatrix(taskPath);
       const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
       const blocking = entry ? entry.issues.blocking : 0;
+      const pendingReview = getPendingHumanDecisions(matrix, slug);
+      if (pendingReview.length > 0) {
+        return buildAskReviewAction(stage, slug, gated, name, matrix,
+          `${stage} 有 ${pendingReview.length} 项 advisory/risk 待 Lead 确认`);
+      }
       if (maxBlockingRound(matrix, slug) >= MAX_REVISE) {
         return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${MAX_REVISE} 轮上限` };
       }
-      if (blocking > 0) {
-        return {
-          kind: 'produce_draft', stage, slug, humanGated: gated,
-          reason: `${stage} 人工驳回注入 blocking=${blocking},回流 owner revise`,
-          role, skill, mode, name,
-          payload: { mode: 'revise', blockingItems: openBlockingIssues(matrix, slug) },
-          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
-        };
+      if (blocking > 0 || getRevisionItems(matrix, slug).length > 0) {
+        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix,
+          `${stage} 人工反馈包含待修订 review issue,回流 owner revise`);
       }
       if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
       continue; // 非门禁视为完成,下一阶段
@@ -221,4 +242,5 @@ if (require.main === module) main();
 module.exports = {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
   getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign, MAX_REVISE,
+  buildRevisionAction, buildAskReviewAction,
 };

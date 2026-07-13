@@ -92,3 +92,25 @@ test('knowledge-query returns adoptable evidence and never asks the user', () =>
   assert.match(skill, /gaps/i);
   assert.match(skill, /MUST NOT ask the user/i);
 });
+
+test('feature-design uses one unified reviewItems revise contract', () => {
+  const skill = readSkill('feature-design');
+
+  assert.match(skill, /payload\.reviewItems/);
+  assert.match(skill, /blocking\/advisory\/risk_candidate/);
+  assert.match(skill, /requiresReReview/);
+  assert.match(skill, /ask_review/);
+  assert.doesNotMatch(skill, /payload\.blockingItems/);
+});
+
+test('feature-review delegates human decisions and closes only after re-review', () => {
+  const skill = readSkill('feature-review');
+  const conduct = readSkill('devsphere-teammate-conduct');
+
+  assert.match(skill, /本 teammate 不调用 `AskUserQuestion`/);
+  assert.match(skill, /原 issue ID 执行/);
+  assert.match(skill, /--status closed/);
+  assert.match(skill, /Lead.*ask_review/);
+  assert.match(conduct, /保持 advisory\/risk pending/);
+  assert.doesNotMatch(conduct, /提 blocking 项回流/);
+});
