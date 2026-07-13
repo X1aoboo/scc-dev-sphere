@@ -41,10 +41,21 @@
 
 正常任务生命周期为：
 
-```text
-initialized → clarified → assessed → designing → design_ready
-→ approved_for_implementation → implementation_planned → implementing
-→ verification_ready → completed
+```mermaid
+flowchart LR
+  initialized["initialized"] --> clarified["clarified"]
+  clarified --> assessed["assessed"]
+  assessed --> designing["designing"]
+  designing --> design_ready["design_ready"]
+  design_ready --> approved["approved_for_implementation"]
+  approved --> planned["implementation_planned"]
+  planned --> implementing["implementing"]
+  implementing --> verification_ready["verification_ready"]
+  verification_ready --> completed["completed"]
+  designing -.-> blocked["blocked"]
+  implementing -.-> blocked
+  blocked -.-> designing
+  blocked -.-> implementing
 ```
 
 异常或不可继续时进入 `blocked`，处理阻塞原因后再回到允许的阶段。顶层 resolver 当前支持的 Feature 状态包括：
@@ -66,31 +77,31 @@ initialized → clarified → assessed → designing → design_ready
 
 ```mermaid
 flowchart TB
-  U[用户 / Claude Code 主会话] --> WS[/scc-dev-sphere:workflow]
-  WS --> WR[scripts/devsphere-workflow.js]
-  WR --> FR[scripts/workflows/feature-workflow.js]
-  FR --> NA[nextAction]
+  U["用户 / Claude Code 主会话"] --> WS["/scc-dev-sphere:workflow"]
+  WS --> WR["scripts/devsphere-workflow.js"]
+  WR --> FR["scripts/workflows/feature-workflow.js"]
+  FR --> NA["nextAction"]
 
-  NA --> CL[feature-clarify]
-  NA --> AS[feature-assess]
-  NA --> FD[feature-design 主会话薄执行器]
-  NA --> AP[feature-approve]
-  NA --> IP[feature-plan-implementation]
-  NA --> IM[feature-implement]
-  NA --> VE[feature-verify]
+  NA --> CL["feature-clarify"]
+  NA --> AS["feature-assess"]
+  NA --> FD["feature-design 主会话薄执行器"]
+  NA --> AP["feature-approve"]
+  NA --> IP["feature-plan-implementation"]
+  NA --> IM["feature-implement"]
+  NA --> VE["feature-verify"]
 
-  FD --> SY[sync-stage-status]
-  SY --> DR[scripts/feature-design-router.js]
-  DR --> DA[designAction]
-  DA --> DS[devsphere-dispatch.js]
-  DS --> TM[确定性 teammate 名称]
-  TM --> SK[阶段 Skill / feature-review]
-  SK --> ART[artifacts / decisions / evidence / reviews]
+  FD --> SY["sync-stage-status"]
+  SY --> DR["scripts/feature-design-router.js"]
+  DR --> DA["designAction"]
+  DA --> DS["devsphere-dispatch.js"]
+  DS --> TM["确定性 teammate 名称"]
+  TM --> SK["阶段 Skill / feature-review"]
+  SK --> ART["artifacts / decisions / evidence / reviews"]
   ART --> FD
 
-  H[hooks/hooks.json] --> G[写入保护与状态同步]
+  H["hooks/hooks.json"] --> G["写入保护与状态同步"]
   G --> ART
-  S[状态 / 评审 / 决策 / 批准脚本] --> ART
+  S["状态 / 评审 / 决策 / 批准脚本"] --> ART
 ```
 
 ### 组件职责
@@ -113,20 +124,24 @@ flowchart TB
 
 设计阶段固定按以下顺序推进：
 
-```text
-businessDesign → solutionDesign → implementationDesign → testDesign
+```mermaid
+flowchart LR
+  businessDesign["businessDesign / SA"] --> solutionDesign["solutionDesign / SE"]
+  solutionDesign --> implementationDesign["implementationDesign / MDE"]
+  implementationDesign --> testDesign["testDesign / TSE"]
 ```
 
 每个阶段均遵循：
 
-```text
-owner 产出草稿
-  → 交叉评审
-  → Lead 处理 pending advisory/risk 决策
-  → 汇总 blocking + apply issue 统一 revise
-  → 评审 Agent 复评并关闭已修复原 issue
-  → artifact/status 门禁通过
-  → 进入下一阶段
+```mermaid
+flowchart TD
+  owner["owner 产出草稿"] --> review["交叉评审"]
+  review --> lead["Lead 处理 pending advisory/risk 决策"]
+  lead --> revise["汇总 blocking + apply issue 统一 revise"]
+  revise --> rereview["评审 Agent 复评"]
+  rereview -->|未修复| revise
+  rereview -->|已修复| gate["artifact/status 门禁通过"]
+  gate --> next["进入下一阶段"]
 ```
 
 ### 设计阶段 owner 与评审者
