@@ -256,14 +256,14 @@ git commit -m "refactor: feature-assess 剥离状态写入"
 1. 将阻塞项反馈给原设计 Agent。
 2. 设计 Agent 修订产物。
 3. 原评审者复核其阻塞项。
-4. 重复直到 blocking=0 或达到最大 3 轮。
+4. 重复直到 blocking=0 或达到 `state.json.designRevisionLimit` 上限（默认 25）。
 ```
 
 **new_string:**
 ```
 ### 步骤4：修订循环
 
-如果 blocking > 0：修订循环由 workflow 驱动——resolver 检测到 blocking 后重新派发设计 Agent 修订，修订完成后重新派发评审 Agent 复核。循环上限 3 轮。
+如果 blocking > 0：修订循环由 workflow 驱动——resolver 检测到 blocking 后重新派发设计 Agent 修订，修订完成后重新派发评审 Agent 复核。循环上限由 `state.json.designRevisionLimit` 控制，默认 25 轮。
 ```
 
 - [ ] **Step 3: 删除步骤6的状态更新**

@@ -199,6 +199,7 @@ Only stable boundaries are recorded — NOT transient states like `drafting` or 
   "taskType": "feature",
   "workflowMode": "auto-design",
   "humanGateStages": [],
+  "designRevisionLimit": 25,
   "status": "designing",
   "stages": {
     "businessDesign": {

@@ -3,7 +3,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { writeState, writeCurrentTask } = require('./devsphere-state');
+const {
+  writeState, writeCurrentTask, getDesignRevisionLimit,
+} = require('./devsphere-state');
 
 const DIRS = [
   'inputs',
@@ -33,6 +35,7 @@ function initState(taskPath, opts = {}) {
     taskType: 'feature',
     workflowMode: opts.workflowMode || 'auto-design',
     humanGateStages: opts.humanGateStages || [],
+    designRevisionLimit: getDesignRevisionLimit(opts),
     status: 'initialized',
     stages: {
       businessDesign: { status: 'not_started', artifact: 'artifacts/business-design.md' },

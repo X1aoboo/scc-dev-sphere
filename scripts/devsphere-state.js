@@ -4,6 +4,17 @@
 const fs = require('fs');
 const path = require('path');
 
+const DEFAULT_DESIGN_REVISION_LIMIT = 25;
+
+function getDesignRevisionLimit(state) {
+  const value = state && state.designRevisionLimit;
+  if (value === undefined) return DEFAULT_DESIGN_REVISION_LIMIT;
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error('state.designRevisionLimit must be a positive integer');
+  }
+  return value;
+}
+
 // --- Core I/O ---
 
 function readJSON(filePath) {
@@ -157,6 +168,8 @@ if (require.main === module) {
 
 // Module exports for use by other scripts
 module.exports = {
+  DEFAULT_DESIGN_REVISION_LIMIT,
+  getDesignRevisionLimit,
   readJSON,
   writeJSON,
   readState,

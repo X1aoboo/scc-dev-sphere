@@ -60,6 +60,12 @@ test('not_started + 无 gated → produce_draft initial', () => {
   assert.ok(action.dispatchCmd.includes('feature-design-business'), 'dispatchCmd 含 skill');
 });
 
+test('新任务默认设计修订上限为 25', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  const { readState } = require('../devsphere-state');
+  assert.strictEqual(readState(taskPath).designRevisionLimit, 25);
+});
+
 test('not_started + 有 gated pending → ask_gated', () => {
   const { taskPath, taskId } = makeTask({ workflowMode: 'strict-human-loop' });
   initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
@@ -164,16 +170,70 @@ test('drafted + blocking/apply advisory/apply risk → unified reviseItems', () 
   assert.strictEqual(action.payload.requiresReReview, true);
 });
 
-test('drafted + round 达上限 → design_blocked', () => {
+test('drafted + 默认 round 达 25 次上限 → design_blocked', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
-  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 3 });
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 25 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
   state.stages.businessDesign.status = 'drafted';
   writeState(taskPath, state);
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'design_blocked');
+  assert.match(action.reason, /25/);
+});
+
+test('缺少 designRevisionLimit 的旧 state 按默认 25 次执行', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 25 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  delete state.designRevisionLimit;
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'design_blocked');
+  assert.match(action.reason, /25/);
+});
+
+test('自定义 designRevisionLimit=5 生效', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design', designRevisionLimit: 5 });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 5 });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'drafted';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'design_blocked');
+  assert.match(action.reason, /5/);
+});
+
+test('非法 designRevisionLimit 返回明确配置错误', () => {
+  const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.designRevisionLimit = 0;
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'design_blocked');
+  assert.match(action.reason, /designRevisionLimit.*positive integer/i);
+});
+
+test('三种 workflow mode 使用相同的 designRevisionLimit', () => {
+  for (const workflowMode of ['auto-design', 'collaborative-design', 'strict-human-loop']) {
+    const { taskPath } = makeTask({ workflowMode, designRevisionLimit: 2 });
+    initMatrix(taskPath);
+    addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 2 });
+    const { readState, writeState } = require('../devsphere-state');
+    const state = readState(taskPath);
+    state.stages.businessDesign.status = 'drafted';
+    writeState(taskPath, state);
+    const action = resolveDesignAction(taskPath, state);
+    assert.strictEqual(action.kind, 'design_blocked', workflowMode);
+    assert.match(action.reason, /2/, workflowMode);
+  }
 });
 
 test('ai_review_passed + 门禁 → human_approve', () => {

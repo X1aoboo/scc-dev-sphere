@@ -2646,7 +2646,7 @@ Execute formal AI review on a design artifact. This skill implements the review-
 - **Entry:** `/scc-dev-sphere:feature-review --target <artifact>`
 - **Inputs:** Target artifact path, review-matrix.json, base review matrix from spec
 - **Outputs:** Review files in `reviews/<target>/`, updated `review-matrix.json`
-- **Completion criteria:** All blocking closed OR max 3 rounds reached
+- **Completion criteria:** All blocking closed OR `state.json.designRevisionLimit` reached (default 25)
 
 ## Parameters
 
@@ -2677,7 +2677,7 @@ If blocking > 0:
 1. Return blocking issues to the original design agent.
 2. Design agent revises the artifact.
 3. Original reviewers re-verify their blocking issues.
-4. Repeat until blocking=0 or max 3 rounds.
+4. Repeat until blocking=0 or `state.json.designRevisionLimit` is reached (default 25).
 
 ### Step 5: Advisory Compilation
 

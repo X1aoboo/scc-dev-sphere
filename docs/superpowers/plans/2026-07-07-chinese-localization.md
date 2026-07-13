@@ -833,7 +833,7 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 - **入口:** `/scc-dev-sphere:feature-review --target <artifact>`
 - **入参:** 目标产物路径、review-matrix.json、spec 中的基础评审矩阵
 - **输出:** `reviews/<target>/` 中的评审文件、更新后的 `review-matrix.json`
-- **完成标准:** 所有阻塞项关闭 OR 达到最大 3 轮
+- **完成标准:** 所有阻塞项关闭 OR 达到 `state.json.designRevisionLimit`（默认 25）
 
 ## 参数
 
@@ -864,7 +864,7 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 1. 将阻塞项反馈给原设计 Agent。
 2. 设计 Agent 修订产物。
 3. 原评审者复核其阻塞项。
-4. 重复直到 blocking=0 或达到最大 3 轮。
+4. 重复直到 blocking=0 或达到 `state.json.designRevisionLimit`（默认 25）。
 
 ### 步骤5：建议项汇总
 
@@ -881,7 +881,7 @@ description: 对设计产物执行 AI 交叉评审和修订闭环。支持阶段
 ## 退出条件
 
 - 所有阻塞项关闭 → 成功
-- 达到最大 3 轮修订 → 部分完成，标记未解决的阻塞项待人工处理
+- 达到 `state.json.designRevisionLimit`（默认 25）轮修订 → 部分完成，标记未解决的阻塞项待人工处理
 - 评审 Agent 之间出现无法调和的冲突 → 标记待人工决策
 - 需要人工信息或决策 → 暂停并请求输入
 ```

@@ -14,7 +14,7 @@
 - **状态写权**:router 只读不写。status 推进仍由 `workflows/feature-workflow.js` 的 `set-task-status` / `set-stage-status` / `sync-stage-status` 写命令完成。
 - **agentId**:插件不持有、不持久化 teammate agentId。teammate 寻址用确定性名字 `<role>-<stage>`(owner)/`<role>-review-<stage>`(评审者)。身份/唤醒归 Claude Code harness。
 - **测试约定**:沿用 `scripts/test/`(node:test);fixture 用 `scripts/test/helpers.js` 的 `makeTask()`;CI 无,手动 `node --test scripts/test/`。
-- **MAX_REVISE = 3**(round 上限,与 `feature-review` skill 一致)。
+- **`state.json.designRevisionLimit`**(round 上限,默认 25；缺失时兼容回退为 25)。
 - **派发词**:router 输出的 `dispatchCmd` 调 `devsphere-dispatch.js build`,SKILL 原样执行其 stdout,不自由发挥。
 
 ---
@@ -108,7 +108,7 @@ const { listGatedPending } = require('./devsphere-decisions');
 const { readMatrix, getBaseReviewers } = require('./devsphere-review-matrix');
 
 const DISPATCH_SCRIPT = path.join(__dirname, 'devsphere-dispatch.js');
-const MAX_REVISE = 3;
+const DEFAULT_DESIGN_REVISION_LIMIT = 25;
 
 const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
 
@@ -165,7 +165,7 @@ function resolveDesignAction(taskPath, state) {
 
 module.exports = {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
-  getDesignAgent, getDesignSkill, resolveDesignAction, MAX_REVISE,
+  getDesignAgent, getDesignSkill, resolveDesignAction,
 };
 
 // CLI 入口在 Task 4 补。
@@ -315,7 +315,7 @@ git commit -m "feat(router): not_started branch — produce_draft initial + ask_
 
 **Interfaces:**
 - Produces:
-  - `drafted` + `round>=MAX_REVISE` → `{ kind:'design_blocked', stage, slug, reason }`
+  - `drafted` + `round>=state.designRevisionLimit` → `{ kind:'design_blocked', stage, slug, reason }`
   - `drafted` + `blocking>0` → `{ kind:'produce_draft', ..., payload:{mode:'revise', blockingItems:[...]} }`
   - `drafted` + `matrixStatus==='pending'`(评审未跑) → `{ kind:'dispatch_reviews', stage, slug, humanGated, reason, artifactPath, reviewers:[{role,name,dispatchCmd}] }`
   - `drafted` + `matrixStatus==='reviewed'`(兜底,sync 正常会先升 ai_review_passed):门禁→`human_approve`;非门禁→skip
@@ -480,8 +480,8 @@ function buildReviewers(stage, slug, state, taskPath) {
       const blocking = entry ? entry.issues.blocking : 0;
       const matrixStatus = entry ? entry.status : 'pending';
 
-      if (maxBlockingRound(matrix, slug) >= MAX_REVISE) {
-        return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${MAX_REVISE} 轮上限` };
+      if (maxBlockingRound(matrix, slug) >= state.designRevisionLimit) {
+        return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${state.designRevisionLimit} 轮上限` };
       }
       if (blocking > 0) {
         return {
@@ -594,7 +594,7 @@ if (require.main === module) main();
 ```js
 module.exports = {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
-  getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign, MAX_REVISE,
+  getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign,
 };
 ```
 

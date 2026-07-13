@@ -118,7 +118,7 @@ workflow 执行 feature-design 后获得此输出，直接按其派发 Agent。w
 - 步骤4：「将阻塞项反馈给原设计 Agent」→ workflow 的 resolver 循环自然处理
 - 步骤6：更新 stage 状态 → Hook 不做，workflow 显式同步
 
-**保留：** 评审方法、问题分类标准、修订循环规则（max 3 轮）、建议项确认流程
+**保留：** 评审方法、问题分类标准、修订循环规则（由 `state.json.designRevisionLimit` 控制，默认 25 轮）、建议项确认流程
 
 ### 3.6 workflow SKILL — 多 Agent 派发 + 状态同步
 
@@ -180,7 +180,7 @@ resolver → workflow 并行派发评审 Agent
   → if blocking>0: resolver → workflow 派发设计 Agent 修订
     → 修订完成 → 同步状态 → 重新 resolver
     → resolver → workflow 派发评审 Agent 复核
-    → ... 循环直到 blocking=0 或达 3 轮上限
+    → ... 循环直到 blocking=0 或达到 `state.json.designRevisionLimit` 上限（默认 25）
 ```
 
 循环上限由 resolver/feature-review skill 追踪轮次，workflow 不感知。
