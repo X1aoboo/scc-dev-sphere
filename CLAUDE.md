@@ -8,6 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 It does **not** have its own runtime. It composes Claude Code primitives: `skills` (slash commands), `agents` (custom subagents with role contexts), `hooks` (hard gates), and Node.js `scripts` (deterministic state/validation logic).
 
+## Global constraints
+
+1. **Claude Code plugin boundary.** `scc-dev-sphere` is a Claude Code plugin, not a standalone agent platform or application. All architecture, design, and implementation decisions MUST conform to the current [official Claude Code plugin documentation](https://code.claude.com/docs/en/plugins) and its supported schemas and extension points. When repository conventions conflict with the official plugin contract, the official contract takes precedence. Use Claude Code-native plugin components and paths; do not invent parallel plugin semantics.
+2. **Simplicity first; avoid an Agent runtime.** Prefer the smallest design that solves the stated problem and reuse Claude Code behavior before adding abstractions. Do not introduce a separate Agent runtime, including a custom agent scheduler, lifecycle manager, registry, message bus, persistent agent-ID system, or execution engine. Node.js scripts may provide deterministic state, routing, validation, and artifact operations, but must remain bounded helpers rather than a self-built runtime. Any exception requires an explicit requirement, documented tradeoff, and confirmation that the official plugin model cannot satisfy it.
+
 ## Commands
 
 This is not a traditional npm project — there is no `package.json`, no build step, no test suite for the plugin itself. The only runnable code is the Node.js scripts:

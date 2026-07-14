@@ -12,6 +12,11 @@
 - Hooks 负责写入保护、决策门禁和事实同步。
 - Node.js 脚本负责状态读写、路由、评审矩阵和确定性校验。
 
+## 全局约束
+
+1. **Claude Code Plugins 优先。** 本项目定位为 Claude Code Plugin；架构设计和实现必须遵循 [Claude Code 官方插件文档](https://code.claude.com/docs/en/plugins) 及其支持的 manifest、目录结构和扩展点。官方插件契约与仓库既有约定冲突时，以官方契约为准。
+2. **简洁优先，避免自建 Agent runtime。** 优先复用 Claude Code 原生能力和最小必要改动，不引入独立的 Agent 调度器、生命周期管理器、注册表、消息总线、持久化 Agent ID 或执行引擎。Node.js 脚本仅承担确定性的状态、路由、校验和产物操作，不演变为自建 runtime；确有例外时必须有明确需求、取舍记录，并先确认官方插件模型无法满足。
+
 当前仓库已经实现 Feature 研发 golden path；`taskType` 是后续接入 Bugfix 等研发流程的扩展边界。
 
 ## 设计目标
