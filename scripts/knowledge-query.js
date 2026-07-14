@@ -239,19 +239,30 @@ function sanitizeDescription(desc) {
   return desc.replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'evidence';
 }
 
-function registerEvidence(workspaceRoot, description) {
-  if (!workspaceRoot || !description) {
-    throw new Error('Usage: echo "<content>" | register-evidence <workspaceRoot> <description>');
+function registerEvidence(workspaceRoot, description, sourceType, query) {
+  const VALID_SOURCE_TYPES = ['skill', 'local', 'repo', 'mcp', 'web', 'user'];
+  if (!workspaceRoot || !description || !sourceType) {
+    throw new Error('Usage: echo "<summary>" | register-evidence <workspaceRoot> <description> <sourceType> <query>');
+  }
+  if (!VALID_SOURCE_TYPES.includes(sourceType)) {
+    throw new Error(`Invalid sourceType: ${sourceType}. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`);
   }
 
   const { nextId } = nextEvId(workspaceRoot);
   const safeDesc = sanitizeDescription(description);
   const snapshotName = `${nextId}-${safeDesc}.md`;
   const snapshotPath = path.join(getEvidenceDir(workspaceRoot), snapshotName);
+  const timestamp = new Date().toISOString();
 
-  // Read content from stdin
-  const content = fs.readFileSync(0, 'utf-8');
-  const snapshotContent = `# ${nextId}: ${description}\n\n**Registered:** ${new Date().toISOString()}\n\n${content}`;
+  // Read content summary from stdin
+  const summary = fs.readFileSync(0, 'utf-8').trim();
+  const snapshotContent = `# ${nextId}: ${description}
+
+- **Source:** ${sourceType}
+- **Query:** ${query || '-'}
+- **Retrieved:** ${timestamp}
+- **Content Summary:**
+${summary}`;
 
   ensureDir(getEvidenceDir(workspaceRoot));
   fs.writeFileSync(snapshotPath, snapshotContent, 'utf-8');
@@ -261,8 +272,10 @@ function registerEvidence(workspaceRoot, description) {
   registry.evidences.push({
     id: nextId,
     description: description,
+    sourceType: sourceType,
+    query: query || '',
     file: path.relative(workspaceRoot, snapshotPath),
-    registeredAt: new Date().toISOString()
+    retrievedAt: timestamp
   });
   writeJSON(getRegistryPath(workspaceRoot), registry);
 
@@ -305,7 +318,7 @@ function main() {
     console.error('');
     console.error('Evidence commands:');
     console.error('  next-ev-id <workspaceRoot>');
-    console.error('  register-evidence <workspaceRoot> <description>  (content from stdin)');
+    console.error('  register-evidence <workspaceRoot> <description> <sourceType> <query>  (content from stdin)');
     console.error('  read-evidence <workspaceRoot> <evId>');
     process.exit(0);
   }
@@ -342,7 +355,7 @@ function main() {
         console.log(JSON.stringify(result));
         break;
       case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[2]);
+        result = registerEvidence(workspaceRoot, args[2], args[3], args[4]);
         console.log(JSON.stringify(result));
         break;
       case 'read-evidence':
