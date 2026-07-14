@@ -1,0 +1,98 @@
+{
+  "categories": [
+    {
+      "id": "goal-user",
+      "name": "目标与用户",
+      "items": [
+        { "id": "GU-001", "check": "已说明本需求要解决的核心问题", "result": null, "evidence": null },
+        { "id": "GU-002", "check": "已说明需求完成后希望产生的业务结果", "result": null, "evidence": null },
+        { "id": "GU-003", "check": "已明确主要用户或参与角色", "result": null, "evidence": null },
+        { "id": "GU-004", "check": "已说明用户当前的工作方式或主要痛点", "result": null, "evidence": null },
+        { "id": "GU-005", "check": "功能需求能够关联到用户目标，而不是单纯堆叠功能名词", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "scenario",
+      "name": "场景完整性",
+      "items": [
+        { "id": "SC-001", "check": "至少存在一条端到端核心使用场景", "result": null, "evidence": null },
+        { "id": "SC-002", "check": "核心场景包含参与者、触发条件、主流程和成功结果", "result": null, "evidence": null },
+        { "id": "SC-003", "check": "能够说明用户从发起操作到获得结果的完整过程", "result": null, "evidence": null },
+        { "id": "SC-004", "check": "已识别会显著影响结果的主要异常场景", "result": null, "evidence": null },
+        { "id": "SC-005", "check": "核心场景不存在明显流程断点", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "function-rule",
+      "name": "功能与规则",
+      "items": [
+        { "id": "FR-001", "check": "核心功能均使用明确、单义的行为描述", "result": null, "evidence": null },
+        { "id": "FR-002", "check": "每项核心功能说明了系统需要产生的结果", "result": null, "evidence": null },
+        { "id": "FR-003", "check": "关键业务规则已明确", "result": null, "evidence": null },
+        { "id": "FR-004", "check": "功能需求之间不存在明显矛盾", "result": null, "evidence": null },
+        { "id": "FR-005", "check": "未将具体技术实现方案写成需求", "result": null, "evidence": null },
+        { "id": "FR-006", "check": "未遗漏用户回答中确认的重要约束", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "scope-boundary",
+      "name": "范围与边界",
+      "items": [
+        { "id": "SB-001", "check": "已明确本次需求包含的核心范围", "result": null, "evidence": null },
+        { "id": "SB-002", "check": "已明确容易产生误解的非目标", "result": null, "evidence": null },
+        { "id": "SB-003", "check": "本次范围与业务目标一致", "result": null, "evidence": null },
+        { "id": "SB-004", "check": "未混入没有用户价值或场景支撑的扩展功能", "result": null, "evidence": null },
+        { "id": "SB-005", "check": "不属于本阶段的设计问题已合理延后，而非强行确定", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "constraint-dependency",
+      "name": "约束与依赖",
+      "items": [
+        { "id": "CD-001", "check": "已识别影响需求实现的业务约束", "result": null, "evidence": null },
+        { "id": "CD-002", "check": "已识别已确认的平台、兼容性、安全或合规约束", "result": null, "evidence": null },
+        { "id": "CD-003", "check": "已识别关键外部系统和服务依赖", "result": null, "evidence": null },
+        { "id": "CD-004", "check": "外部依赖不可用时的影响已经说明", "result": null, "evidence": null },
+        { "id": "CD-005", "check": "约束描述的是必须满足的条件，而不是具体实现方式", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "verifiability",
+      "name": "验收性",
+      "items": [
+        { "id": "VF-001", "check": "每项核心能力至少有一条对应的验收标准", "result": null, "evidence": null },
+        { "id": "VF-002", "check": "验收标准可以通过操作和观察判断通过或失败", "result": null, "evidence": null },
+        { "id": "VF-003", "check": "验收标准覆盖核心主流程", "result": null, "evidence": null },
+        { "id": "VF-004", "check": "验收标准覆盖关键异常流程", "result": null, "evidence": null },
+        { "id": "VF-005", "check": "未使用无法验证的表述", "result": null, "evidence": null },
+        { "id": "VF-006", "check": "性能、容量或时效要求如有必要，已经给出可验证标准", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "ambiguity-consistency",
+      "name": "模糊点与一致性",
+      "items": [
+        { "id": "AC-001", "check": "不存在未解决的核心需求模糊点", "result": null, "evidence": null },
+        { "id": "AC-002", "check": "ambiguity-backlog.json 中不存在仍为 open 的高影响事项", "result": null, "evidence": null },
+        { "id": "AC-003", "check": "所有标记为 resolved 的核心模糊点均已反映到 requirement.md", "result": null, "evidence": null },
+        { "id": "AC-004", "check": "用户前后表达不存在未处理的冲突", "result": null, "evidence": null },
+        { "id": "AC-005", "check": "Agent 推断均已获得用户确认，或未作为正式需求事实", "result": null, "evidence": null },
+        { "id": "AC-006", "check": "延后设计的问题均已明确需求约束", "result": null, "evidence": null }
+      ]
+    },
+    {
+      "id": "doc-quality",
+      "name": "文档质量",
+      "items": [
+        { "id": "DQ-001", "check": "原始需求完整保留", "result": null, "evidence": null },
+        { "id": "DQ-002", "check": "文档结构符合本规范", "result": null, "evidence": null },
+        { "id": "DQ-003", "check": "核心场景、功能需求和验收标准具有稳定编号", "result": null, "evidence": null },
+        { "id": "DQ-004", "check": "同一概念在全文中使用一致名称", "result": null, "evidence": null },
+        { "id": "DQ-005", "check": "没有大段复制澄清会话", "result": null, "evidence": null },
+        { "id": "DQ-006", "check": "没有与需求无关的知识调研内容", "result": null, "evidence": null },
+        { "id": "DQ-007", "check": "没有无处理说明的模糊表达", "result": null, "evidence": null },
+        { "id": "DQ-008", "check": "用户已完成最终确认", "result": null, "evidence": null }
+      ]
+    }
+  ]
+}
