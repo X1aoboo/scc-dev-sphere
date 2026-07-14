@@ -77,23 +77,30 @@ test('workflow binds feature-assess itself to main-session execution', () => {
   assert.match(assessSection[0], /main session/i);
 });
 
-test('knowledge-query persists every adopted fact, including clarification facts', () => {
+test('knowledge-query uses multi-source config and 4-step query flow', () => {
   const skill = readSkill('knowledge-query');
 
-  assert.match(skill, /every adopted fact/i);
-  assert.match(skill, /including clarification-adopted facts/i);
-  assert.match(skill, /EV snapshot/i);
-  assert.match(skill, /evidence registry/i);
+  assert.match(skill, /knowledge-sources\.json/i);
+  assert.match(skill, /subagent-prompt\.md/i);
+  assert.match(skill, /evidence-registry\.json/i);
+  assert.match(skill, /EV-xxx-\*\.md/i);
+  assert.match(skill, /步骤1/i);
+  assert.match(skill, /步骤2/i);
+  assert.match(skill, /步骤3/i);
+  assert.match(skill, /步骤4/i);
 });
 
-test('knowledge-query returns adoptable evidence and never asks the user', () => {
+test('knowledge-query dispatches subagent, may ask user, and returns markdown format', () => {
   const skill = readSkill('knowledge-query');
 
-  assert.match(skill, /adoptable facts/i);
-  assert.match(skill, /EV IDs/i);
-  assert.match(skill, /reliability/i);
-  assert.match(skill, /gaps/i);
-  assert.match(skill, /MUST NOT ask the user/i);
+  assert.match(skill, /Agent.*派发/i);
+  assert.match(skill, /general-purpose/i);
+  assert.match(skill, /AskUserQuestion/i);
+  assert.match(skill, /EV-ID/i);
+  assert.match(skill, /查询结果/i);
+  assert.match(skill, /已有证据/i);
+  assert.match(skill, /本次发现/i);
+  assert.match(skill, /未找到/i);
 });
 
 test('feature-design uses one unified reviewItems revise contract', () => {
