@@ -53,13 +53,13 @@ node scripts/knowledge-query.js <command> <workspaceRoot> [args...]
 
 **Before**: `` \`scripts/knowledge-query.js register-evidence\` ``
 
-**After**: `` \`node scripts/knowledge-query.js register-evidence <workspaceRoot> "<描述>" <临时文件路径>\` ``
+**After**: `` \`echo "..." | node scripts/knowledge-query.js register-evidence <workspaceRoot> "<描述>"\` ``
 
 ### 3.4 步骤3
 
 **Before**: `` \`scripts/knowledge-query.js register-evidence\` ``
 
-**After**: `` \`node scripts/knowledge-query.js register-evidence <workspaceRoot> "<描述>" <临时文件路径>\` ``
+**After**: `` \`echo "..." | node scripts/knowledge-query.js register-evidence <workspaceRoot> "<描述>"\` ``
 
 ### 3.5 步骤4
 

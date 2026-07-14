@@ -117,10 +117,10 @@ Registry 不存在时自动初始化为空 `evidences` 数组。
 | 命令 | 参数 | 功能 | 输出 |
 |------|------|------|------|
 | `next-ev-id <workspaceRoot>` | — | 返回下一个可用 EV 编号 | JSON: `{ nextId }` |
-| `register-evidence <workspaceRoot> <description> <contentFile>` | contentFile 为内容文件路径 | 分配 ID + 写快照 + 更新 registry | JSON: `{ evId, snapshotPath }` |
+| `register-evidence <workspaceRoot> <description>` | 内容通过 stdin 传入 | 分配 ID + 写快照 + 更新 registry | JSON: `{ evId, snapshotPath }` |
 | `read-evidence <workspaceRoot> <evId>` | — | 按 ID 读取快照 | 文本 |
 
-注意：`register-evidence` 的第三个参数是文件路径而非内容字符串，避免 shell 转义问题。
+注意：`register-evidence` 通过 stdin 接收内容，无需临时文件，避免 shell 转义和文件清理问题。调用方式：`echo "..." | node scripts/knowledge-query.js register-evidence <workspaceRoot> "<描述>"`。
 
 ### 3.5 SKILL.md 中的引用方式
 
