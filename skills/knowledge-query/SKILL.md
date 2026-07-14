@@ -1,11 +1,11 @@
 ---
 name: knowledge-query
-description: 统一知识查询入口。自然语言触发，自动检索已有证据、从多数据源发现知识、记录新 evidence。
+description: 统一知识查询入口。支持多数据源（skill、本地目录、代码仓、MCP、WebSearch），自动检索已有 evidence、派发子 Agent 发现新知识、记录 evidence 快照。
 ---
 
 # Knowledge Query — 知识查询
 
-统一知识查询入口。自然语言触发，步骤1 自动判断进入配置流还是查询流。
+多数据源统一知识查询入口。自动判断配置/查询意图，4 步查询流（registry 检索 → subagent 搜索 → 用户请求 → 快照返回），查询结果以 EV-ID 追踪。
 
 ## 配置
 
@@ -19,7 +19,38 @@ skills/knowledge-query/knowledge-sources.json    ← skill 默认
 
 默认数据源及优先级：skill → 本地目录 → 代码仓 → MCP → WebSearch。skill 和本地/代码仓默认启用（需配置具体名称/路径），MCP 和 WebSearch 默认关闭。
 
-## 工作流一：数据源配置
+## 处理流程
+
+```mermaid
+flowchart TD
+    START[用户发起查询] --> CLASSIFY{识别意图}
+    CLASSIFY -->|配置意图| CFG_SHOW[展示生效配置]
+    CLASSIFY -->|查询意图| Q1[步骤1: 解析意图 + 检索 registry]
+
+    CFG_SHOW --> CFG_ACT{用户操作}
+    CFG_ACT -->|修改| CFG_INTERACT[交互式修改配置]
+    CFG_ACT -->|重置| CFG_RESET[删除 workspace config]
+    CFG_INTERACT --> CFG_WRITE[写入 workspace config]
+    CFG_RESET --> CFG_DONE[配置生效]
+    CFG_WRITE --> CFG_DONE
+
+    Q1 --> Q1_MATCH{registry 命中?}
+    Q1_MATCH -->|是| Q4[步骤4: 读快照返回]
+    Q1_MATCH -->|否| Q2[步骤2: 派发 subagent 查询]
+    Q2 --> Q2_MATCH{查到?}
+    Q2_MATCH -->|是| Q2_EV[分配EV-ID + 写快照]
+    Q2_MATCH -->|否| Q3[步骤3: 向用户请求]
+    Q2_EV --> Q4
+    Q3 --> Q3_MATCH{用户提供?}
+    Q3_MATCH -->|是| Q3_EV[分配EV-ID + 写快照]
+    Q3_MATCH -->|否| NOT_FOUND[返回: 未找到]
+    Q3_EV --> Q4
+    Q4 --> DONE[返回: 知识内容 + EV-ID]
+```
+
+## 配置工作流
+
+配置读取/修改/重置 使用 `scripts/knowledge-query.js`。
 
 自然语言自动识别配置意图：
 
@@ -29,11 +60,11 @@ skills/knowledge-query/knowledge-sources.json    ← skill 默认
 
 交互式修改：展示当前配置 → 逐项询问启用/禁用/加路径/调优先级 → 确认 → 写入。
 
-## 工作流二：知识查询
+## 查询工作流
 
 ### 步骤1 — 解析意图 + 检索 registry
 
-读取 `evidence-registry.json` + 已有快照摘要。判断是否覆盖本次查询。
+读取 `evidence-registry.json` + 已有快照摘要。registry 检索由 `scripts/knowledge-query.js` 确定性执行。判断是否覆盖本次查询。
 
 - 匹配 → EV-ID 列表 → 跳步骤4
 - 未匹配 → 进入步骤2
@@ -47,6 +78,9 @@ skills/knowledge-query/knowledge-sources.json    ← skill 默认
 子 Agent 按优先级逐个查询自动源，每层命中且置信度足够即停止。
 
 - 查到 → 子 Agent 分配 EV-ID + 写快照 + 更新 registry → 返回 EV-ID → 跳步骤4
+
+evidence 写入（分配 EV-ID + 写快照 + 更新 registry）由 `scripts/knowledge-query.js register-evidence` 确定性执行。
+
 - 未查到 → 进入步骤3
 
 ### 步骤3 — 向用户请求
