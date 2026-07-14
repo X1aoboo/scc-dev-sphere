@@ -34,7 +34,7 @@ function ensureDir(dir) {
 // --- Config paths ---
 
 function getWorkspaceConfigPath(workspaceRoot) {
-  return path.join(workspaceRoot, 'config', 'knowledge-sources.json');
+  return path.join(workspaceRoot, '.devsphere', 'config', 'knowledge-sources.json');
 }
 
 // --- Config operations ---
