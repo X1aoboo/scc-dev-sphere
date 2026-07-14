@@ -239,12 +239,9 @@ function sanitizeDescription(desc) {
   return desc.replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'evidence';
 }
 
-function registerEvidence(workspaceRoot, description, contentFile) {
-  if (!workspaceRoot || !description || !contentFile) {
-    throw new Error('Usage: register-evidence <workspaceRoot> <description> <contentFile>');
-  }
-  if (!fs.existsSync(contentFile)) {
-    throw new Error('Content file not found: ' + contentFile);
+function registerEvidence(workspaceRoot, description) {
+  if (!workspaceRoot || !description) {
+    throw new Error('Usage: echo "<content>" | register-evidence <workspaceRoot> <description>');
   }
 
   const { nextId } = nextEvId(workspaceRoot);
@@ -252,8 +249,8 @@ function registerEvidence(workspaceRoot, description, contentFile) {
   const snapshotName = `${nextId}-${safeDesc}.md`;
   const snapshotPath = path.join(getEvidenceDir(workspaceRoot), snapshotName);
 
-  // Copy content from file to snapshot
-  const content = fs.readFileSync(contentFile, 'utf-8');
+  // Read content from stdin
+  const content = fs.readFileSync(0, 'utf-8');
   const snapshotContent = `# ${nextId}: ${description}\n\n**Registered:** ${new Date().toISOString()}\n\n${content}`;
 
   ensureDir(getEvidenceDir(workspaceRoot));
@@ -308,7 +305,7 @@ function main() {
     console.error('');
     console.error('Evidence commands:');
     console.error('  next-ev-id <workspaceRoot>');
-    console.error('  register-evidence <workspaceRoot> <description> <contentFile>');
+    console.error('  register-evidence <workspaceRoot> <description>  (content from stdin)');
     console.error('  read-evidence <workspaceRoot> <evId>');
     process.exit(0);
   }
@@ -345,7 +342,7 @@ function main() {
         console.log(JSON.stringify(result));
         break;
       case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[2], args[3]);
+        result = registerEvidence(workspaceRoot, args[2]);
         console.log(JSON.stringify(result));
         break;
       case 'read-evidence':
