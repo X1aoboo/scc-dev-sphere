@@ -203,6 +203,26 @@ function checkDecisionsFormatFromStdin(stdinJson) {
   };
 }
 
+function reviewJSONPath(filePath) {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  if (/(?:^|\/)reviews\/review-matrix\.json$/.test(norm)) return 'review-matrix.json';
+  if (/(?:^|\/)reviews\/[^/]+\/(?:sa|se|mde|tse|dev|cie)\.json$/.test(norm)) return 'reviewer snapshot';
+  return null;
+}
+
+function checkReviewWritesFromStdin(stdinJson) {
+  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  const target = reviewJSONPath(filePath);
+  if (!target) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `${target} 禁止通过 Write/Edit 直接修改；使用 Lead 的 review merge 或 devsphere-review-state.js complete 命令。`,
+    },
+  };
+}
+
 // TeammateIdle 质量门：活跃任务下所有 decisions/*.json 必须 schema 合法。
 // 返回 {ok:true} 或 {ok:false, file, reason}。CLI 据此 exit 2（回喂 stderr，teammate 继续）。
 function checkTeammateDecisions(workspaceRoot) {
@@ -243,6 +263,25 @@ function checkDecisionsBashFromStdin(stdinJson) {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
         permissionDecisionReason: 'design 文件（decisions/、artifacts/）禁止用 Bash 直接写：decisions 用 `devsphere-decisions.js` CLI（init/add/resolve），artifacts 用 Write 工具。',
+      },
+    };
+  }
+  return null;
+}
+
+function checkReviewBashFromStdin(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti || typeof ti.command !== 'string') return null;
+  const command = ti.command;
+  const targetsReviewJSON = /reviews\/(?:review-matrix\.json|[^/]+\/(?:sa|se|mde|tse|dev|cie)\.json)/.test(command);
+  const isReviewCLI = command.includes('devsphere-review-state.js')
+    || command.includes('devsphere-review-matrix.js');
+  if (targetsReviewJSON && !isReviewCLI) {
+    return {
+      hookSpecificOutput: {
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: '评审 JSON 禁止通过 Bash 直接写入；Reviewer 使用 devsphere-review-state.js complete，Lead 使用 review-state merge 或 review-matrix 门禁命令。',
       },
     };
   }
@@ -335,6 +374,15 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-review-writes': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkReviewWritesFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
       case 'check-teammate-decisions': {
         const r = checkTeammateDecisions(workspaceRoot);
         if (!r.ok) {
@@ -359,6 +407,15 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-review-bash': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkReviewBashFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -375,4 +432,10 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat, checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions, checkDecisionsBashFromStdin };
+module.exports = {
+  checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite,
+  checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat,
+  checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions,
+  checkDecisionsBashFromStdin, reviewJSONPath, checkReviewWritesFromStdin,
+  checkReviewBashFromStdin,
+};

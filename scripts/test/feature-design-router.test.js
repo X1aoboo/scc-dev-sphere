@@ -3,13 +3,26 @@ const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert');
 const { execFileSync } = require('child_process');
-const { makeTask } = require('./helpers');
+const { makeTask, writeArtifact } = require('./helpers');
 const { initMatrix, addIssue, setArtifactStatus } = require('../devsphere-review-matrix');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
 const {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
-  getDesignAgent, getDesignSkill, resolveDesignAction,
+  getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign,
 } = require('../feature-design-router');
+
+function completeBusinessReview(taskPath, version = '0.1.0') {
+  initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design', version);
+  const {
+    authorizeReview, recordReviewResult, mergeReviewResults,
+  } = require('../devsphere-review-state');
+  authorizeReview(taskPath, 'business-design', version);
+  recordReviewResult(taskPath, 'business-design', 'se', {
+    artifactId: 'business-design', artifactVersion: version, issueFindings: [],
+  });
+  mergeReviewResults(taskPath, 'business-design', version);
+}
 
 test('DESIGN_STAGE_ORDER 固定四阶段顺序', () => {
   assert.deepStrictEqual(DESIGN_STAGE_ORDER,
@@ -40,7 +53,7 @@ test('resolveDesignAction: 四阶段全完成 → design_phase_complete', () => 
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   const { readState } = require('../devsphere-state');
   const state = readState(taskPath);
-  for (const stage of DESIGN_STAGE_ORDER) state.stages[stage].status = 'ai_review_passed';
+  for (const stage of DESIGN_STAGE_ORDER) state.stages[stage].status = 'human_approved';
   const action = resolveDesignAction(taskPath, state);
   assert.strictEqual(action.kind, 'design_phase_complete');
 });
@@ -53,7 +66,7 @@ test('not_started + 无 gated → produce_draft initial', () => {
   assert.strictEqual(action.stage, 'businessDesign');
   assert.strictEqual(action.role, 'sa');
   assert.strictEqual(action.skill, 'feature-design-business');
-  assert.strictEqual(action.name, 'sa-businessDesign');
+  assert.strictEqual(action.name, 'design-sa');
   assert.strictEqual(action.humanGated, true);
   assert.strictEqual(action.payload.mode, 'initial');
   assert.ok(action.dispatchCmd.includes('build design sa businessDesign '), 'dispatchCmd 含 design 派发参数');
@@ -78,7 +91,7 @@ test('not_started + 有 gated pending → ask_gated', () => {
   const action = resolveDesignAction(taskPath, readState(taskPath));
   assert.strictEqual(action.kind, 'ask_gated');
   assert.strictEqual(action.stage, 'businessDesign');
-  assert.strictEqual(action.name, 'sa-businessDesign');
+  assert.strictEqual(action.name, 'design-sa');
   assert.strictEqual(action.decisions.length, 1);
   assert.strictEqual(action.decisions[0].id, 'BD-DEC-001');
 });
@@ -86,6 +99,7 @@ test('not_started + 有 gated pending → ask_gated', () => {
 test('drafted + 评审未跑(pending) → dispatch_reviews', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
   state.stages.businessDesign.status = 'drafted';
@@ -96,13 +110,15 @@ test('drafted + 评审未跑(pending) → dispatch_reviews', () => {
   assert.ok(action.artifactPath.endsWith('artifacts/business-design.md'));
   assert.strictEqual(action.reviewers.length, 1); // business-design 基础评审者只有 se
   assert.strictEqual(action.reviewers[0].role, 'se');
-  assert.strictEqual(action.reviewers[0].name, 'se-review-businessDesign');
-  assert.ok(action.reviewers[0].dispatchCmd.includes('build review se businessDesign '));
+  assert.strictEqual(action.reviewers[0].name, 'design-se');
+  assert.ok(action.reviewers[0].promptCmd.includes('build review se businessDesign '));
+  assert.match(action.authorizeCmd, /devsphere-review-state\.js" authorize/);
 });
 
 test('drafted + ciCdRisk=true → 评审者含 cie', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
   state.stages.businessDesign.status = 'drafted';
@@ -115,6 +131,7 @@ test('drafted + ciCdRisk=true → 评审者含 cie', () => {
 test('drafted + blocking>0 → produce_draft revise', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
@@ -126,12 +143,13 @@ test('drafted + blocking>0 → produce_draft revise', () => {
   assert.strictEqual(action.payload.reviewItems.length, 1);
   assert.strictEqual(action.payload.reviewItems[0].type, 'blocking');
   assert.strictEqual(action.payload.requiresReReview, true);
-  assert.ok(Array.isArray(action.payload.reviewers));
+  assert.strictEqual(action.payload.reviewers, undefined);
 });
 
 test('drafted + blocking 与 pending advisory/risk → ask_review 优先', () => {
   const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
   addIssue(taskPath, 'business-design', { type: 'advisory', reviewerAgent: 'se', round: 1 });
   const { readState, writeState } = require('../devsphere-state');
@@ -148,6 +166,7 @@ test('drafted + blocking 与 pending advisory/risk → ask_review 优先', () =>
 test('drafted + blocking/apply advisory/apply risk → unified reviseItems', () => {
   const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1 });
   addIssue(taskPath, 'business-design', {
     type: 'advisory', reviewerAgent: 'se', round: 1, humanDecision: 'apply',
@@ -173,6 +192,7 @@ test('drafted + blocking/apply advisory/apply risk → unified reviseItems', () 
 test('drafted + 默认 round 达 25 次上限 → design_blocked', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 25 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
@@ -186,6 +206,7 @@ test('drafted + 默认 round 达 25 次上限 → design_blocked', () => {
 test('缺少 designRevisionLimit 的旧 state 按默认 25 次执行', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 25 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
@@ -200,6 +221,7 @@ test('缺少 designRevisionLimit 的旧 state 按默认 25 次执行', () => {
 test('自定义 designRevisionLimit=5 生效', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design', designRevisionLimit: 5 });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 5 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
@@ -225,6 +247,7 @@ test('三种 workflow mode 使用相同的 designRevisionLimit', () => {
   for (const workflowMode of ['auto-design', 'collaborative-design', 'strict-human-loop']) {
     const { taskPath } = makeTask({ workflowMode, designRevisionLimit: 2 });
     initMatrix(taskPath);
+    writeArtifact(taskPath, 'business-design');
     addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 2 });
     const { readState, writeState } = require('../devsphere-state');
     const state = readState(taskPath);
@@ -238,6 +261,7 @@ test('三种 workflow mode 使用相同的 designRevisionLimit', () => {
 
 test('ai_review_passed + 门禁 → human_approve', () => {
   const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  completeBusinessReview(taskPath);
   const { readState } = require('../devsphere-state');
   const state = readState(taskPath);
   state.stages.businessDesign.status = 'ai_review_passed';
@@ -248,6 +272,7 @@ test('ai_review_passed + 门禁 → human_approve', () => {
 
 test('ai_review_passed + 非门禁 → skip 到下一阶段', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
+  completeBusinessReview(taskPath);
   const { readState } = require('../devsphere-state');
   const state = readState(taskPath);
   state.stages.businessDesign.status = 'ai_review_passed';
@@ -256,11 +281,38 @@ test('ai_review_passed + 非门禁 → skip 到下一阶段', () => {
   assert.strictEqual(action.stage, 'solutionDesign'); // 跳到下一未完成阶段
 });
 
+test('ai_review_passed + 当前版本评审未完成 → 不得直接跳阶段', () => {
+  const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
+  initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design', '0.2.0');
+  const { readState, writeState } = require('../devsphere-state');
+  const state = readState(taskPath);
+  state.stages.businessDesign.status = 'ai_review_passed';
+  writeState(taskPath, state);
+  const action = resolveDesignAction(taskPath, state);
+  assert.strictEqual(action.kind, 'dispatch_reviews');
+  assert.strictEqual(action.artifactVersion, '0.2.0');
+});
+
+test('routeDesign: 未启用 Agent Teams 时阻断，不回退串行派发', () => {
+  const { workspaceRoot } = makeTask({ workflowMode: 'auto-design' });
+  const previous = process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
+  delete process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
+  try {
+    const action = routeDesign(workspaceRoot);
+    assert.strictEqual(action.kind, 'design_blocked');
+    assert.match(action.reason, /Agent Teams/);
+  } finally {
+    if (previous === undefined) delete process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS;
+    else process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = previous;
+  }
+});
+
 test('CLI: workspaceRoot → stdout JSON', () => {
   const { workspaceRoot } = makeTask({ workflowMode: 'strict-human-loop' });
   const out = execFileSync('node',
     [path.join(__dirname, '..', 'feature-design-router.js'), workspaceRoot],
-    { encoding: 'utf-8' });
+    { encoding: 'utf-8', env: { ...process.env, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' } });
   const action = JSON.parse(out);
   assert.strictEqual(action.kind, 'produce_draft');
   assert.strictEqual(action.stage, 'businessDesign');
@@ -286,6 +338,7 @@ test('not_started + gated 已 resolve → produce_draft continue', () => {
 test('ai_review_passed + blocking>0(人工驳回注入) → produce_draft revise', () => {
   const { taskPath } = makeTask({ workflowMode: 'strict-human-loop' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
   addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'human', round: 1 });
   const { readState, writeState } = require('../devsphere-state');
   const state = readState(taskPath);
@@ -300,6 +353,12 @@ test('ai_review_passed + blocking>0(人工驳回注入) → produce_draft revise
 test('open apply issue blocks artifact reviewed until reviewer closes original issue', () => {
   const { taskPath } = makeTask({ workflowMode: 'auto-design' });
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
+  const { authorizeReview, recordReviewResult } = require('../devsphere-review-state');
+  authorizeReview(taskPath, 'business-design', '0.1.0');
+  recordReviewResult(taskPath, 'business-design', 'se', {
+    artifactId: 'business-design', artifactVersion: '0.1.0', issueFindings: [],
+  });
   const issue = addIssue(taskPath, 'business-design', {
     type: 'advisory', reviewerAgent: 'se', humanDecision: 'apply',
   });

@@ -7,6 +7,9 @@ const {
   readMatrix, getBaseReviewers, getPendingHumanDecisions, getRevisionItems,
 } = require('./devsphere-review-matrix');
 const { getDesignRevisionLimit } = require('./devsphere-state');
+const {
+  readArtifactVersion, getReviewStatus, snapshotPath, markdownPath,
+} = require('./devsphere-review-state');
 
 const DISPATCH_SCRIPT = path.join(__dirname, 'devsphere-dispatch.js');
 
@@ -49,11 +52,17 @@ function getDesignSkill(stageName) {
 }
 
 function teammateName(role, stage) {
-  return `${role}-${stage}`;
+  // One stable teammate per design role is reused as both owner and reviewer.
+  // The stage remains a task parameter, not part of the teammate identity.
+  return `design-${role}`;
 }
 
-function designDispatchCmd(role, stage, taskPath, skill, humanGated, mode) {
-  return `node "${DISPATCH_SCRIPT}" build design ${role} ${stage} ${taskPath} ${skill} ${humanGated} ${mode}`;
+function decisionPolicyFor(gated) {
+  return gated ? 'lead-confirm' : 'agent-autonomy';
+}
+
+function designDispatchCmd(role, stage, taskPath, skill, decisionPolicy) {
+  return `node "${DISPATCH_SCRIPT}" build design ${role} ${stage} ${taskPath} ${skill} ${decisionPolicy}`;
 }
 
 function maxBlockingRound(matrix, slug) {
@@ -63,26 +72,38 @@ function maxBlockingRound(matrix, slug) {
     (m, i) => (i.type === 'blocking' && i.status === 'open' ? Math.max(m, i.round || 1) : m), 0);
 }
 
+function isCurrentReviewComplete(taskPath, artifact, entry) {
+  if (!entry || entry.status !== 'reviewed') return false;
+  try {
+    const artifactVersion = readArtifactVersion(taskPath, artifact);
+    return entry.reviewedVersion === artifactVersion
+      && getReviewStatus(taskPath, artifact, artifactVersion).allCompleted;
+  } catch (error) {
+    return false;
+  }
+}
+
 function reviewerName(role, stage) {
-  return `${role}-review-${stage}`;
+  return teammateName(role, stage);
 }
 
-function reviewDispatchCmd(role, stage, taskPath, artifactPath) {
-  return `node "${DISPATCH_SCRIPT}" build review ${role} ${stage} ${taskPath} scc-dev-sphere:feature-review ${artifactPath}`;
+function reviewPromptCmd(role, stage, taskPath, artifactPath, artifactVersion) {
+  return `node "${DISPATCH_SCRIPT}" build review ${role} ${stage} ${taskPath} scc-dev-sphere:feature-review ${artifactPath} ${artifactVersion}`;
 }
 
-function buildReviewers(stage, slug, state, taskPath) {
+function buildReviewers(stage, slug, state, taskPath, artifactVersion) {
   const artifactPath = path.join(taskPath, 'artifacts', `${slug}.md`);
   const roles = getBaseReviewers(slug).slice();
   if (state.ciCdRisk === true && !roles.includes('cie')) roles.push('cie');
   return roles.map(role => ({
     role, name: reviewerName(role, stage),
-    dispatchCmd: reviewDispatchCmd(role, stage, taskPath, artifactPath),
+    promptCmd: reviewPromptCmd(role, stage, taskPath, artifactPath, artifactVersion),
+    reviewStatePath: snapshotPath(taskPath, slug, role),
+    reviewMarkdownPath: markdownPath(taskPath, slug, role),
   }));
 }
 
-function buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix, reason) {
-  const reviewers = buildReviewers(stage, slug, state, taskPath);
+function buildRevisionAction(stage, slug, gated, role, skill, mode, name, taskPath, matrix, reason) {
   return {
     kind: 'produce_draft', stage, slug, humanGated: gated,
     reason, role, skill, mode, name,
@@ -90,10 +111,36 @@ function buildRevisionAction(stage, slug, gated, role, skill, mode, name, state,
       mode: 'revise',
       reviewItems: getRevisionItems(matrix, slug),
       requiresReReview: true,
-      reviewers,
       artifactPath: path.join(taskPath, 'artifacts', `${slug}.md`),
     },
-    dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+    dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, decisionPolicyFor(gated)),
+  };
+}
+
+function buildDispatchReviewsAction(stage, slug, gated, state, taskPath, artifactVersion, reason) {
+  const reviewers = buildReviewers(stage, slug, state, taskPath, artifactVersion);
+  return {
+    kind: 'dispatch_reviews', stage, slug, humanGated: gated, reason,
+    artifactVersion,
+    authorizeCmd: `node "${path.join(__dirname, 'devsphere-review-state.js')}" authorize ${taskPath} ${slug} ${artifactVersion}`,
+    artifactPath: path.join(taskPath, 'artifacts', `${slug}.md`),
+    reviewers,
+  };
+}
+
+function buildMergeReviewsAction(stage, slug, gated, artifactVersion, taskPath, reason) {
+  return {
+    kind: 'merge_reviews', stage, slug, humanGated: gated, reason,
+    artifactVersion,
+    mergeCmd: `node "${path.join(__dirname, 'devsphere-review-state.js')}" merge ${taskPath} ${slug} ${artifactVersion}`,
+  };
+}
+
+function buildWaitReviewsAction(stage, slug, gated, artifactVersion, reviewStatus, reason) {
+  return {
+    kind: 'wait_reviews', stage, slug, humanGated: gated, reason,
+    artifactVersion,
+    pendingReviewers: reviewStatus.missingReviewers.concat(reviewStatus.pendingReviewers),
   };
 }
 
@@ -118,7 +165,15 @@ function resolveDesignAction(taskPath, state) {
 
   for (const stage of DESIGN_STAGE_ORDER) {
     const stageData = stages[stage] || { status: 'not_started' };
-    if (isStageReady(stageData.status, stage, mode, humanGates)) continue;
+    if (isStageReady(stageData.status, stage, mode, humanGates)) {
+      if (stageData.status !== 'ai_review_passed') continue;
+      const readySlug = stageToArtifact(stage);
+      const readyMatrix = readMatrix(taskPath);
+      const readyEntry = readyMatrix && readyMatrix.artifacts ? readyMatrix.artifacts[readySlug] : null;
+      // Do not let a manually/stale-set ai_review_passed flag bypass the
+      // current artifact version review. A missing matrix is also unsafe.
+      if (isCurrentReviewComplete(taskPath, readySlug, readyEntry)) continue;
+    }
 
     const slug = stageToArtifact(stage);
     const gated = isHumanGated(mode, stage, humanGates);
@@ -152,22 +207,35 @@ function resolveDesignAction(taskPath, state) {
               note: d.resolution && d.resolution.note,
             })),
           },
-          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+          dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, decisionPolicyFor(gated)),
         };
       }
       return {
         kind: 'produce_draft', stage, slug, humanGated: gated, reason: `${stage} 派发 owner 产 draft`,
         role, skill, mode, name, payload: { mode: 'initial' },
-        dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, gated, mode),
+        dispatchCmd: designDispatchCmd(role, stage, taskPath, skill, decisionPolicyFor(gated)),
       };
     }
 
     if (stageData.status === 'drafted') {
+      let artifactVersion;
+      try {
+        artifactVersion = readArtifactVersion(taskPath, slug);
+      } catch (error) {
+        return { kind: 'design_blocked', stage, slug, reason: `无法读取当前 artifactVersion: ${error.message}` };
+      }
       const matrix = readMatrix(taskPath);
       const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
       const blocking = entry ? entry.issues.blocking : 0;
-      const matrixStatus = entry ? entry.status : 'pending';
+      const matrixStatus = entry && entry.status === 'reviewed'
+        && entry.reviewedVersion === artifactVersion ? 'reviewed' : 'pending';
       const pendingReview = getPendingHumanDecisions(matrix, slug);
+      let reviewStatus;
+      try {
+        reviewStatus = getReviewStatus(taskPath, slug, artifactVersion);
+      } catch (error) {
+        return { kind: 'design_blocked', stage, slug, reason: `无法读取当前评审状态: ${error.message}` };
+      }
 
       // Human review decisions must be collected before any blocking/apply
       // revision is dispatched, so one revision can contain all issue types.
@@ -179,16 +247,20 @@ function resolveDesignAction(taskPath, state) {
         return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${revisionLimit} 轮上限` };
       }
       if (blocking > 0 || getRevisionItems(matrix, slug).length > 0) {
-        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix,
+        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, taskPath, matrix,
           `${stage} 汇总 blocking/advisory/risk 修订项,回流 owner revise`);
       }
       if (matrixStatus === 'pending') {
-        return {
-          kind: 'dispatch_reviews', stage, slug, humanGated: gated,
-          reason: `${stage} 派发交叉评审`,
-          artifactPath: path.join(taskPath, 'artifacts', `${slug}.md`),
-          reviewers: buildReviewers(stage, slug, state, taskPath),
-        };
+        if (reviewStatus.allCompleted) {
+          return buildMergeReviewsAction(stage, slug, gated, artifactVersion, taskPath,
+            `${stage} 所有角色评审完成,由 Lead 合并结论`);
+        }
+        if (!reviewStatus.hasCurrentReview) {
+          return buildDispatchReviewsAction(stage, slug, gated, state, taskPath, artifactVersion,
+            `${stage} Lead 授权并派发交叉评审`);
+        }
+        return buildWaitReviewsAction(stage, slug, gated, artifactVersion, reviewStatus,
+          `${stage} 等待全部 Reviewer 完成当前版本评审`);
       }
       // matrixStatus === 'reviewed',blocking=0:sync 正常已升 ai_review_passed;兜底
       if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
@@ -197,6 +269,12 @@ function resolveDesignAction(taskPath, state) {
 
     if (stageData.status === 'ai_review_passed') {
       // 人工驳回可能注入 blocking → 回流 revise,避免无限 human_approve
+      let artifactVersion;
+      try {
+        artifactVersion = readArtifactVersion(taskPath, slug);
+      } catch (error) {
+        return { kind: 'design_blocked', stage, slug, reason: `无法读取当前 artifactVersion: ${error.message}` };
+      }
       const matrix = readMatrix(taskPath);
       const entry = matrix && matrix.artifacts ? matrix.artifacts[slug] : null;
       const blocking = entry ? entry.issues.blocking : 0;
@@ -209,8 +287,38 @@ function resolveDesignAction(taskPath, state) {
         return { kind: 'design_blocked', stage, slug, reason: `${stage} revise 超过 ${revisionLimit} 轮上限` };
       }
       if (blocking > 0 || getRevisionItems(matrix, slug).length > 0) {
-        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, state, taskPath, matrix,
+        return buildRevisionAction(stage, slug, gated, role, skill, mode, name, taskPath, matrix,
           `${stage} 人工反馈包含待修订 review issue,回流 owner revise`);
+      }
+      if (!entry) {
+        return { kind: 'design_blocked', stage, slug, reason: `${stage} 缺少 review matrix,不能跳过当前版本评审` };
+      }
+      // A stage marked ai_review_passed is only reusable when the matrix and
+      // all role snapshots refer to the same artifact version. This protects
+      // the lead-driven state machine from a stale stage flag after a draft
+      // was changed without completing its new review cycle.
+      if (entry) {
+        let reviewStatus;
+        try {
+          reviewStatus = getReviewStatus(taskPath, slug, artifactVersion);
+        } catch (error) {
+          return { kind: 'design_blocked', stage, slug, reason: `无法读取当前评审状态: ${error.message}` };
+        }
+        const currentReviewComplete = entry.status === 'reviewed'
+          && entry.reviewedVersion === artifactVersion
+          && reviewStatus.allCompleted;
+        if (!currentReviewComplete) {
+          if (reviewStatus.allCompleted) {
+            return buildMergeReviewsAction(stage, slug, gated, artifactVersion, taskPath,
+              `${stage} 当前版本评审已完成,由 Lead 合并结论`);
+          }
+          if (!reviewStatus.hasCurrentReview) {
+            return buildDispatchReviewsAction(stage, slug, gated, state, taskPath, artifactVersion,
+              `${stage} 当前版本尚未授权评审,由 Lead 派发`);
+          }
+          return buildWaitReviewsAction(stage, slug, gated, artifactVersion, reviewStatus,
+            `${stage} 等待当前版本全部 Reviewer 完成`);
+        }
       }
       if (gated) return { kind: 'human_approve', stage, slug, humanGated: true, reason: `${stage} 评审通过,请求人工批准` };
       continue; // 非门禁视为完成,下一阶段
@@ -230,6 +338,12 @@ function routeDesign(workspaceRoot) {
   const taskPath = getTaskPath(workspaceRoot);
   const state = readState(taskPath);
   if (!state) return { kind: 'blocked', reason: 'State file not found.' };
+  if (process.env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS !== '1') {
+    return {
+      kind: 'design_blocked',
+      reason: '设计阶段需要 Claude Code Agent Teams。请启用 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 后重试。',
+    };
+  }
   return resolveDesignAction(taskPath, state);
 }
 
@@ -248,5 +362,6 @@ if (require.main === module) main();
 module.exports = {
   DESIGN_STAGE_ORDER, isHumanGated, isStageReady, stageToArtifact,
   getDesignAgent, getDesignSkill, resolveDesignAction, routeDesign,
-  buildRevisionAction, buildAskReviewAction,
+  buildRevisionAction, buildAskReviewAction, buildDispatchReviewsAction,
+  buildMergeReviewsAction, buildWaitReviewsAction, decisionPolicyFor,
 };

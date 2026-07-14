@@ -34,9 +34,9 @@ function initMatrix(taskPath) {
     matrix.artifacts[artifact] = {
       requiredReviewers: reviewers,
       status: 'pending',
+      reviewedVersion: null,
       issues: { blocking: 0, advisory: 0, risk_candidate: 0 },
       issuesList: [],
-      reviews: {},
     };
   }
 
@@ -211,6 +211,20 @@ function setArtifactStatus(taskPath, artifact, status) {
   }
   const entry = matrix.artifacts[artifact];
   if (status !== 'pending') {
+    // A reviewed artifact must have a complete reviewer snapshot for its
+    // current version. The require is intentionally lazy to avoid a module
+    // cycle: review-state uses this module to merge conclusions.
+    const {
+      readArtifactVersion,
+      getReviewStatus,
+    } = require('./devsphere-review-state');
+    const artifactVersion = readArtifactVersion(taskPath, artifact);
+    const reviewStatus = getReviewStatus(taskPath, artifact, artifactVersion);
+    if (!reviewStatus.allCompleted) {
+      throw new Error(
+        `Cannot set status '${status}': required reviewer(s) incomplete for artifactVersion ${artifactVersion}: ${reviewStatus.missingReviewers.join(', ') || 'pending result'}`,
+      );
+    }
     recomputeCounts(entry);
     const pending = getPendingHumanDecisions(matrix, artifact);
     if (entry.issues.blocking > 0) {
@@ -225,8 +239,93 @@ function setArtifactStatus(taskPath, artifact, status) {
     }
   }
   entry.status = status;
+  if (status === 'reviewed') {
+    const { readArtifactVersion } = require('./devsphere-review-state');
+    entry.reviewedVersion = readArtifactVersion(taskPath, artifact);
+  } else if (status === 'pending') {
+    entry.reviewedVersion = null;
+  }
   writeMatrix(taskPath, matrix);
   return { artifact, status: entry.status, issues: entry.issues };
+}
+
+// Apply a complete set of role-owned review conclusions in one matrix write.
+// Reviewers never call this directly; Lead invokes it after all role snapshots
+// for the current artifactVersion are complete.
+function applyReviewResults(taskPath, artifact, artifactVersion, snapshots) {
+  const matrix = readMatrix(taskPath);
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[artifact]) {
+    throw new Error(`Unknown artifact: ${artifact}`);
+  }
+  const entry = matrix.artifacts[artifact];
+  const assignedIssueIds = [];
+  const normalizedSnapshots = Array.isArray(snapshots) ? snapshots : [];
+
+  // Validate all closure decisions before mutating the matrix so a malformed
+  // reviewer result cannot leave a partially merged matrix.
+  for (const snapshot of normalizedSnapshots) {
+    if (!snapshot || snapshot.artifactId !== artifact || snapshot.artifactVersion !== artifactVersion) {
+      throw new Error(`Review result version mismatch for ${snapshot && snapshot.reviewer}`);
+    }
+    for (const decision of snapshot.closureDecisions || []) {
+      if (!decision || typeof decision.issueId !== 'string') {
+        throw new Error(`Invalid closure decision from ${snapshot.reviewer}`);
+      }
+      const found = findIssue(matrix, decision.issueId);
+      if (!found || found.artifact !== artifact) {
+        throw new Error(`Issue not found in ${artifact}: ${decision.issueId}`);
+      }
+      if (decision.status && !['open', 'closed'].includes(decision.status)) {
+        throw new Error(`Invalid closure status for ${decision.issueId}: ${decision.status}`);
+      }
+      if (decision.status === 'closed' && !decision.closureEvidence) {
+        throw new Error(`Closure evidence required for ${decision.issueId}`);
+      }
+    }
+  }
+
+  for (const snapshot of normalizedSnapshots) {
+    for (const decision of snapshot.closureDecisions || []) {
+      const found = findIssue(matrix, decision.issueId);
+      const issue = found.issue;
+      if (decision.status) issue.status = decision.status;
+      if (decision.closureEvidence !== undefined) issue.closureEvidence = decision.closureEvidence;
+    }
+
+    for (const finding of snapshot.issueFindings || []) {
+      if (!finding || !TYPE_PREFIX[finding.type]) {
+        throw new Error(`Invalid issue type from ${snapshot.reviewer}: ${finding && finding.type}`);
+      }
+      const findingId = finding.findingId;
+      if (typeof findingId !== 'string' || findingId.length === 0) {
+        throw new Error(`findingId required for ${snapshot.reviewer}`);
+      }
+      const source = `${artifact}@${artifactVersion}:${snapshot.reviewer}:${findingId}`;
+      const existing = ensureIssuesList(entry).find(issue => issue.source === source);
+      if (existing) {
+        assignedIssueIds.push({ reviewer: snapshot.reviewer, findingId, issueId: existing.id, reused: true });
+        continue;
+      }
+      const issue = {
+        id: nextIssueId(entry, finding.type),
+        type: finding.type,
+        reviewerAgent: finding.reviewerAgent || snapshot.reviewer,
+        status: 'open',
+        round: finding.round || 1,
+        // Human decisions are owned by Lead. Reviewers can only propose an
+        // issue; advisory/risk therefore always start as pending.
+        humanDecision: 'pending',
+        closureEvidence: '',
+        source,
+      };
+      ensureIssuesList(entry).push(issue);
+      assignedIssueIds.push({ reviewer: snapshot.reviewer, findingId, issueId: issue.id, reused: false });
+    }
+  }
+
+  recomputeCounts(entry);
+  writeMatrix(taskPath, matrix);
+  return { artifact, artifactVersion, assignedIssueIds, issues: entry.issues };
 }
 
 // --- CLI ---
@@ -316,5 +415,6 @@ module.exports = {
   addIssue, closeIssue, listIssues, recomputeCounts, setArtifactStatus,
   getPendingHumanDecisions, findIssue,
   getRevisionItems, getOpenApplyItems,
+  applyReviewResults,
   BASE_REVIEWERS, TYPE_PREFIX, VALID_HUMAN_DECISIONS,
 };

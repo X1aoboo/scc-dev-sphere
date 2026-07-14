@@ -107,10 +107,11 @@ test('feature-review delegates human decisions and closes only after re-review',
   const skill = readSkill('feature-review');
   const conduct = readSkill('devsphere-teammate-conduct');
 
-  assert.match(skill, /本 teammate 不调用 `AskUserQuestion`/);
-  assert.match(skill, /原 issue ID 执行/);
-  assert.match(skill, /--status closed/);
+  assert.match(skill, /Reviewer 不调用 `AskUserQuestion`/);
+  assert.match(skill, /closureDecisions/);
+  assert.match(skill, /review-state\.js complete/);
+  assert.match(skill, /review-matrix/);
   assert.match(skill, /Lead.*ask_review/);
   assert.match(conduct, /保持 advisory\/risk pending/);
-  assert.doesNotMatch(conduct, /提 blocking 项回流/);
+  assert.match(conduct, /review-state\.js/);
 });

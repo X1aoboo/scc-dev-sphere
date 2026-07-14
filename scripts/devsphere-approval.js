@@ -5,7 +5,12 @@ const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const { readState } = require('./devsphere-state');
-const { readMatrix, hasBlocking, getPendingAdvisoryItems } = require('./devsphere-review-matrix');
+const {
+  readMatrix,
+  hasBlocking,
+  getPendingHumanDecisions,
+  getOpenApplyItems,
+} = require('./devsphere-review-matrix');
 
 const APPROVAL_TYPES = {
   DESIGN_FINAL: 'design-final-approval',
@@ -70,7 +75,7 @@ function validateDesignReady(taskPath) {
     }
   }
 
-  // Check review matrix
+  // Check review matrix and the same issue gates used by set-status reviewed.
   const matrix = readMatrix(taskPath);
   if (!matrix) {
     issues.push('Review matrix not found');
@@ -82,19 +87,13 @@ function validateDesignReady(taskPath) {
     if (hasBlocking(matrix, artifactName)) {
       issues.push(`Artifact ${artifactName} has unclosed blocking issues`);
     }
-  }
-
-  // Check advisory items
-  const pendingAdvisory = getPendingAdvisoryItems(matrix);
-  if (pendingAdvisory.length > 0) {
-    // Check advisory-confirmation.json
-    const confirmPath = path.join(taskPath, 'reviews', 'advisory-confirmation.json');
-    try {
-      const confirm = JSON.parse(fs.readFileSync(confirmPath, 'utf-8'));
-      const confirmedIds = new Set((confirm.items || []).map(i => i.advisoryId));
-      // Only flag if advisory count > confirmed count (simplified check)
-    } catch (e) {
-      issues.push(`Pending advisory items without confirmation: ${pendingAdvisory.map(a => a.artifact).join(', ')}`);
+    const pending = getPendingHumanDecisions(matrix, artifactName);
+    if (pending.length > 0) {
+      issues.push(`Artifact ${artifactName} has ${pending.length} pending advisory/risk decision(s)`);
+    }
+    const openApply = getOpenApplyItems(matrix, artifactName);
+    if (openApply.length > 0) {
+      issues.push(`Artifact ${artifactName} has ${openApply.length} open apply revision issue(s)`);
     }
   }
 

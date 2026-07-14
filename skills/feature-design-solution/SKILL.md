@@ -18,7 +18,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 ## 前置条件
 
 - 存在 active feature task。
-- `artifacts/business-design.md` 存在且 `businessDesign` 已 `ai_review_passed` 或 `human_approved`（collaborative 模式下经确认）。
+- `artifacts/business-design.md` 存在且上游 business design 已通过当前流程门禁。
 - `solutionDesign` 状态为 `not_started`/`drafted`，或修订模式。
 - 已 `human_approved` 则必须 `--mode revise`。
 
@@ -26,7 +26,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 
 **读取：** business-design、business decisions、方案模板、`state.json`、架构规范（`knowledge-query`）。
 **允许写入：** `artifacts/solution-design.md`、`decisions/solution-design-decisions.json`、`evidence/` 与 registry。
-**禁止写入：** business/implementation/test 产物、`state.json`、`reviews/`、`approvals/`。
+**禁止写入：** business/implementation/test 产物、`state.json`、`reviews/`、`approvals/`。评审任务由 `feature-review` Skill 负责写入角色评审快照。
 
 ## 执行步骤
 
@@ -55,7 +55,7 @@ description: 方案与架构设计。SE Agent 基于 business-design，产出含
 - 关键业务规则
 - 非功能需求(性能/安全/兼容)
 - 与下游(solution/test)的交接边界
-vague 需求 = 大量空白维度 = 必须明确(humanGated 时问用户;非 humanGated 时显式自决并记 assumption)。
+vague 需求 = 大量空白维度 = 必须明确；是否需要 Lead 决策由派发 prompt 的 decisionPolicy 决定。
 
 ## 专业方法与图示
 

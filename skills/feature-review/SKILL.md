@@ -1,69 +1,59 @@
 ---
 name: feature-review
-description: 多角色 AI 交叉评审与修订闭环。对设计产物输出结构化 blocking/advisory/risk_candidate issue，经人工确认与修订循环驱动设计达到可批准状态。issue 状态以 review-matrix.json 为事实源。
+description: 多角色 AI 交叉评审与修订闭环。Reviewer 按角色写入当前 artifactVersion 的独立评审快照和 Markdown，由 Lead 在全部 Reviewer 完成后统一合并 issue 结论。
 ---
 
-# Feature Review — 多角色交叉评审与修订闭环
+# Feature Review — 多角色 AI 交叉评审与修订闭环
 
-对设计产物执行正式 AI 评审，输出**结构化 issue**（blocking / advisory / risk_candidate），驱动评审-修订闭环直到 blocking 归零、advisory/risk 经人工决策。
+本 Skill 在 design team 的 Reviewer teammate 中运行。它只负责当前产物版本的独立评审，不负责派发其他 Reviewer、不推进流程、不直接写共享 review matrix。
 
 ## 集成契约
 
-- **入口:** `/scc-dev-sphere:feature-review --target <artifact> [--round N]`
-- **入参:** 目标产物、`reviews/review-matrix.json`、评审者矩阵、当前轮次
-- **输出:** `reviews/<target>/<agent>-review.md`（叙述）、更新后的 `review-matrix.json`（结构化 issue + 状态）
-- **完成标准:** 见文末
+- **入口:** Lead 发送 `review_request`，包含目标产物、`artifactVersion`、reviewer role 和评审路径。
+- **输入:** 目标产物、上游产物、当前 `artifactVersion`、`reviews/review-matrix.json`、自己的角色评审快照。
+- **机器输出:** `reviews/<target>/<reviewer>.json`（只由当前 Reviewer 更新）。
+- **历史输出:** `reviews/<target>/<reviewer>-review.md`（保留现有文件，按 artifactVersion 追加章节）。
+- **Lead 合并:** 全部 required Reviewer 完成后，由 Lead 调用 `devsphere-review-state.js merge`，一次性更新 `review-matrix.json`。
 
 ## 前置条件
 
-- 存在 active feature task。
-- 目标产物文件存在且阶段状态为 `drafted`（或修订后待复核）。
-- `--target` 为 `business-design`/`solution-design`/`implementation-design`/`test-design`/`integrated-design` 之一。
+- 当前 task 存在且目标 artifact 存在；
+- 当前 artifact 的 frontmatter 包含 `version`；
+- 角色快照已经由 Lead 以当前 `artifactVersion` 授权；
+- `artifactVersion` 不匹配时立即停止，不能使用旧版本评审结果。
 
-## 输入与写入范围
+## 评审步骤
 
-**读取：** 目标产物、上游产物（跨阶段一致性时）、`review-matrix.json`、`state.json`。
-**允许写入：**
-- `reviews/<target>/<agent>-review.md`（评审叙述）
-- `reviews/review-matrix.json`（**只能经 `devsphere-review-matrix.js` 命令写入**，不直接编辑 JSON）
-- `reviews/advisory-confirmation.json`（advisory 决策记录，兼容审批）
+1. **显式加载 Skill**：必须显式加载 `scc-dev-sphere:feature-review`，不依赖 Agent definition 的 `skills` frontmatter 是否在 teammate 路径生效。
+2. **读取产物**：从自身专业视角评审目标产物及必要的上游产物。
+3. **形成角色结论**：识别 `blocking`、`advisory`、`risk_candidate`。本次发现使用角色内 `findingId`（例如 `se-001`），全局 B-/ADV-/RISK- issue ID 由 Lead 合并时分配。
+4. **记录复评结论**：对已存在的 issue，在 `closureDecisions` 中填写原 issue ID、`status` 和 `closureEvidence`；不直接调用 `close`。
+5. **写入角色快照**：使用：
 
-**禁止写入：** 设计产物本身、`state.json`、`approvals/`、`decisions/`。
-
-## 执行步骤
-
-1. **确定评审者**：按 `BASE_REVIEWERS`（见评审视角矩阵）+ 风险增强（部署/配置/迁移风险 → 加 CIE）。
-2. **多角色评审**：每位评审者以自身专业视角评审目标产物，识别 blocking / advisory / risk_candidate。每个 issue 在叙述文件中写明标题、位置、描述、预期修复/理由。
-3. **记录结构化 issue**（经脚本，**不手编 JSON**）：
    ```bash
-   node scripts/devsphere-review-matrix.js add <taskPath> <artifact> '{"type":"blocking","reviewerAgent":"se","round":N}'
+   node scripts/devsphere-review-state.js complete <taskPath> <artifact> <reviewer> '<review-result-json>'
    ```
-   返回的 ID（B-/ADV-/RISK-NNN）回填到 `<agent>-review.md` 对应条目，保证叙述与 matrix 一一对应。
-4. **完成评审并通知 Lead**（读取派生计数）：
-   ```bash
-   node scripts/devsphere-review-matrix.js read <taskPath>
-   ```
-   本 teammate 不调用 `AskUserQuestion`，不替用户写 advisory/risk 的 `humanDecision`，也不设置 artifact `reviewed`。
-5. **统一修订闭环**：Lead 在完成 pending advisory/risk 决策后，由 router 一次性派发设计 Agent，`reviewItems` 同时包含 open blocking 和用户选择 `apply` 的 advisory/risk。本 skill 不直接修改设计产物。
-6. **修订复评**：复评时检查本轮传入的所有 review issue：
-   - 确认已修复 → 使用原 issue ID 执行：
-     ```bash
-     node scripts/devsphere-review-matrix.js close <taskPath> <issueId> --status closed --closure "复评确认已修复"
-     ```
-     apply issue 保留原 `humanDecision=apply`。
-   - 未修复 → 保持 issue open，通知 Lead 继续 revise，不创建重复 issue。
-   - 新发现的独立问题 → 经脚本 `add` 新 issue。
-7. **人工决策**：pending advisory/risk 由 Lead 的 `ask_review` 动作逐项询问：
-   - advisory：`apply` / `no_change`；
-   - risk_candidate：`apply` / `accepted_risk` / `mitigated` / `rejected`。
-8. **设为评审通过**：所有 issue 已复评且人工决策完成后，通知 Lead 调用：
-   ```bash
-   node scripts/devsphere-review-matrix.js set-status <taskPath> <artifact> reviewed
-   ```
-   脚本内置门禁：blocking>0、pending advisory/risk 或 open apply issue 时会**拒绝**设置。
-9. **集成评审**（`--target integrated-design`）：执行跨阶段一致性检查（business→solution→implementation→test 追溯无关键缺口、冲突已解决、accepted_risk 均有 DEC 来源），同样按步骤 2-8 记录 issue、复评并通知 Lead。
 
-## 评审视角矩阵
+   示例：
+
+   ```json
+   {
+     "artifactId": "business-design",
+     "artifactVersion": "0.2.0",
+     "issueFindings": [
+       {"findingId": "se-001", "type": "blocking", "round": 1}
+     ],
+     "closureDecisions": [
+       {"issueId": "B-001", "status": "closed", "closureEvidence": "复评确认接口错误分支已补齐"}
+     ],
+     "summary": "..."
+   }
+   ```
+
+6. **保留 Markdown 历史**：在 `reviews/<target>/<reviewer>-review.md` 中追加当前 `artifactVersion` 的评审章节，不覆盖已有版本叙述。
+7. **通知 Lead**：角色快照和 Markdown 均写入成功后，通知 Lead 当前 artifact/version 评审完成。通知丢失时，Lead 仍可通过角色快照恢复状态。
+
+## 评审矩阵
 
 | 产物 | 基础评审者 | 风险增强 |
 |------|-----------|---------|
@@ -73,30 +63,39 @@ description: 多角色 AI 交叉评审与修订闭环。对设计产物输出结
 | test-design | SA, SE, MDE | — |
 | integrated-design | SA, SE, MDE, TSE | — |
 
-## 人工确认触发
+## Issue 与修订规则
 
-- pending advisory/risk 由 Lead 通过 `ask_review` 逐项询问。
-- advisory：`apply` / `no_change`。
-- risk_candidate：`apply` / `accepted_risk` / `mitigated` / `rejected`。
-- 本 skill 不调用 `AskUserQuestion`。
+- `blocking`：保持 open 时阻断，进入统一 revise；
+- `advisory`：由 Lead 按 workflow policy 决定 `apply` / `no_change`；
+- `risk_candidate`：由 Lead 按 workflow policy 决定 `apply` / `accepted_risk` / `mitigated` / `rejected`；
+- `apply` issue 保留原 ID，不转换为 blocking；
+- 统一 revise 的 `reviewItems` 同时包含 open blocking 和 open apply advisory/risk；
+- 设计 Agent 修订后递增 artifact version，Reviewer 重新评审新版本；
+- Reviewer 只判断是否修复并写入 closure decision，Lead 只做机械合并，不重新判断。
 
-## 失败处理
+## 通信和流程边界
 
-- 评审者之间不可调和冲突 → 标记待人工决策，停止。
-- 目标产物明显不完整（缺关键章节）→ 直接提 blocking，不强行评审。
-- 脚本命令失败（如 issue 未找到）→ 输出错误，不静默跳过。
+- Lead 直接并行派发所有 Reviewer；
+- Reviewer 不向设计 Agent 发送正式评审结果；
+- 全部 Reviewer 完成前，设计 Agent 不得 revise；
+- Reviewer 之间可以进行事实澄清，但不能以 peer 消息替代角色快照；
+- Reviewer 不调用 `AskUserQuestion`；需要用户决策时保留 issue pending，由 Lead 执行 `ask_review`；
+- Reviewer 不修改 `state.json`、artifact status、stage status 或 `review-matrix.json`。
 
 ## 完成标准
 
-- 每条 issue 在 matrix 与叙述文件中 ID 一一对应。
-- 所有本轮 issue 已复评：已修复 issue 已由评审 Agent 关闭，未修复 issue 保持 open。
-- advisory / risk_candidate 全部经 Lead 决策（`getPendingHumanDecisions` 为空）。
-- 产物是否 `reviewed` 由 Lead 通过 `set-status` 门禁决定。
+- 当前 artifactVersion 的所有 required Reviewer 均有 `status=completed` 的角色快照；
+- 评审 Markdown 已按版本追加；
+- 所有新发现和 closure decision 均可由 Lead 合并；
+- Lead 合并前不触发 revise；
+- Lead 合并后，router 再判断人工决策、统一 revise 或 reviewed 门禁。
 
 ## 禁止事项
 
-- 不直接编辑 `review-matrix.json`（必须经脚本命令）。
-- 不自动把 risk_candidate 变为 accepted_risk。
-- 不把 apply issue 转换为 blocking，不创建 blocking 影子 issue。
-- 不修改设计产物、`state.json`、`approvals/`、`decisions/`。
-- 不在 blocking 未归零时设 `status` 为非 pending（脚本会拒绝）。
+- 不直接编辑 `reviews/review-matrix.json`；
+- 不直接调用 `devsphere-review-matrix.js add/close`；
+- 不替用户写 advisory/risk 的 `humanDecision`；
+- 不创建重复 issue；
+- 不把 apply issue 转换为 blocking；
+- 不修改设计产物、`state.json`、`approvals/`、`decisions/`；
+- 不在全部 required Reviewer 完成前通知设计 Agent revise。

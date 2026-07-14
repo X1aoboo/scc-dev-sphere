@@ -21,6 +21,8 @@ node scripts/devsphere-guard.js check-implement <workspace-root>
 node scripts/devsphere-guard.js check-approve <workspace-root>
 node scripts/devsphere-review-matrix.js init <task-path>
 node scripts/devsphere-review-matrix.js read <task-path>
+node scripts/devsphere-review-state.js status <task-path> <artifact>
+node scripts/devsphere-review-state.js merge <task-path> <artifact> <artifact-version>
 node scripts/devsphere-approval.js validate-design-ready <task-path>
 node scripts/devsphere-workspace.js create-feature-task <workspace-root> <task-id> [workflow-mode]
 ```
@@ -48,7 +50,8 @@ agents/           Role-specific subagent definitions (frontmatter + system promp
 scripts/          Deterministic Node.js — no AI, no ambiguity
   ├── devsphere-state.js       Read/write state.json and current-task.json
   ├── devsphere-guard.js        Hard gates: state transition validation, entry guards
-  ├── devsphere-review-matrix.js Review matrix CRUD (blocking/advisory/risk_candidate)
+  ├── devsphere-review-matrix.js Review matrix CRUD and Lead merge gate
+  ├── devsphere-review-state.js Role-owned review snapshots, version checks, and merge
   ├── devsphere-approval.js     Design-ready validation, approval record management
   ├── devsphere-workspace.js    Task workspace/directory creation
   ├── devsphere-workflow.js     Main router: state → nextAction (run skill, human confirm, etc.)
@@ -57,6 +60,8 @@ scripts/          Deterministic Node.js — no AI, no ambiguity
 
 hooks/            Claude Code lifecycle hooks (hooks.json)
   ├── UserPromptExpansion — guards on /feature-implement and /feature-approve entry
+  ├── PreToolUse — decisions/artifact/review JSON write guards
+  ├── TeammateIdle — decision-file quality fallback
   └── PostToolUse — auto-syncs artifact existence to state after Write/Edit
 
 templates/        Document templates copied into new task workspaces
@@ -80,13 +85,15 @@ blocked ↪ designing | implementing (resolve and re-enter)
 
 Valid transitions are defined in `devsphere-guard.js` `VALID_TRANSITIONS`. Scripts enforce these — never skip states in skill prompts.
 
-### 设计阶段决策循环（strict-human-loop / collaborative-design 门禁阶段）
+### 设计阶段决策循环
 
-设计阶段由 `feature-design` skill（主会话薄编排器）驱动：按阶段顺序派发 owner agent（`devsphere-dispatch.js build` 生成确定性派发 prompt）、代问 gated decision、派评审、人工批准。不再有 `resolve-design-loop` 微观状态机。
+设计阶段由 `feature-design` skill（主会话薄编排器）驱动：入口创建当前会话内的固定设计团队，按阶段顺序向稳定 teammate 派发 owner 任务；评审时由 Lead 授权当前 artifact version，直接向已有 reviewer teammate 并行派发，全部角色快照完成后再统一合并。Lead 负责咨询 router、写 artifact/stage 状态和用户交互，不由 teammate 直接推进流程。
 
-teammate 行为准则（`devsphere-teammate-conduct` skill，frontmatter `skills:` 预加载给全部 agent）：需用户决策时按 humanGated 分支——true 记 `type=gated` + 停 + lead 代问；false（auto-design/非门禁）记 `type=autonomous`+assumption 自决。vague 需求按维度拆解出土 decision。
+设计团队逻辑成员为 `design-sa`、`design-se`、`design-mde`、`design-tse`、`design-dev`，`ciCdRisk=true` 时加 `design-cie`。Agent Teams 不可用时设计阶段阻断，不回退临时串行 Agent；Agent ID 不持久化，新会话按逻辑名称重新 bootstrap。
 
-守卫（唯一确定性兜底）：`check-decisions-resolved`（humanGated 阶段 gated pending>0 拒写主产物）、`check-decisions-format`（decisions 写入内容 schema 校验）、`check-decisions-bash`（禁 Bash 写 decisions/|artifacts/，CLI 豁免）、`check-teammate-decisions`（TeammateIdle 磁盘兜底）。
+teammate 行为准则（`devsphere-teammate-conduct` skill，frontmatter `skills:` 预加载给全部 agent）：需用户决策时按派发 prompt 的 `decisionPolicy`——`lead-confirm` 记 `type=gated` + 停 + Lead 代问；`agent-autonomy` 记 `type=autonomous` + assumption 自决。设计领域 Skill 不读取 workflow mode。vague 需求按维度拆解出土 decision。
+
+守卫（唯一确定性兜底）：`check-decisions-resolved`（人工门禁阶段 gated pending>0 拒写主产物）、`check-decisions-format`（decisions 写入内容 schema 校验）、`check-decisions-bash`（禁 Bash 写 decisions/|artifacts/，CLI 豁免）、`check-review-writes`/`check-review-bash`（禁止直接写共享 matrix 或角色评审 JSON）、`check-teammate-decisions`（TeammateIdle 磁盘兜底）。
 
 决策内容持久化在 `decisions/<slug>-decisions.json`（双用途：闸口 + 知识沉淀）。
 
@@ -97,7 +104,7 @@ Tasks live at `.devsphere/tasks/feature/<task-id>/` with:
 state.json              # status, workflowMode, stages with per-stage status
 inputs/                 # requirement.md
 artifacts/              # business-design.md, solution-design.md, etc.
-reviews/                # review-matrix.json, per-artifact review files
+reviews/                # review-matrix.json, per-artifact role snapshots and Markdown history
 approvals/              # design-final-approval.json
 implementation/         # implementation-plan.md, implementation-log.md
 verification/           # test-handoff.md
@@ -125,16 +132,18 @@ links/                  # repos.json
 - `kind: "human_confirm"` → present a confirmation gate to the user
 - `kind: "show_status"` / `"blocked"` / `"completed"` → terminal display states
 
-The `feature-design` skill acts as a **sub-orchestrator** — it reads stage statuses and returns which design sub-stage to advance next, then the workflow dispatches the corresponding agent.
+The `feature-design` skill acts as a **sub-orchestrator** — it reads stage statuses and executes the deterministic design action returned by `feature-design-router.js`. Actions include stable-team draft dispatch, `dispatch_reviews`, `wait_reviews`, `merge_reviews`, `ask_review`, revision, and human approval; the Lead performs each action and owns persisted state.
 
 ### AI cross-review system
 
-The review matrix (`reviews/review-matrix.json`) tracks per-artifact reviews with three issue types:
+Each required Reviewer writes only its current snapshot at `reviews/<artifact>/<role>.json` and appends narrative history to `reviews/<artifact>/<role>-review.md`. The snapshot is keyed by the artifact frontmatter `version`; a stale version cannot complete the current review. The Lead invokes `devsphere-review-state.js merge` after all required snapshots are complete, and only then updates `reviews/review-matrix.json`.
+
+The review matrix (`reviews/review-matrix.json`) tracks per-artifact merged conclusions with three issue types:
 - **blocking** — must be resolved before the artifact passes
 - **advisory** — recommendations, need human confirmation
 - **risk_candidate** — flagged risks for human awareness
 
-The review- revise loop: review → find issues → feedback blocking items to design agent → re-review → repeat until blocking count = 0 (max 3 rounds).
+The review-revise loop is: complete all role reviews → Lead merges → resolve pending advisory/risk decisions → send one unified `reviewItems` list (open blocking plus apply advisory/risk) to the design owner → increment artifact version → re-review. Reviewers record original issue closure decisions; Lead applies them during merge, preserving issue IDs. The task-level `state.json.designRevisionLimit` defaults to 25 and remains configurable.
 
 ## Key conventions
 
@@ -150,16 +159,17 @@ When presenting options to the user, **must use `AskUserQuestion`** — never pl
 - State reads/writes go through `devsphere-state.js` functions — never read/write JSON files directly in skill prompts unless you're the script itself.
 - After any agent produces an artifact, the `PostToolUse` hook on `Write|Edit` auto-syncs artifact existence to state.
 - State transitions must pass `devsphere-guard.js check-advance` validation.
-- `sync-stage-status` (in feature-workflow.js) syncs deterministic facts: artifact file exists → `drafted`, review blocking count = 0 → `ai_review_passed`.
+- `sync-stage-status` (in feature-workflow.js) syncs deterministic facts: artifact file exists → `drafted`; only a current-version, all-reviewers-complete matrix with no blocking/pending/apply issue → `ai_review_passed`.
 
 ### Agent invocation
 
-Agents are defined as markdown files in `agents/` with YAML frontmatter (`name`, `description`). Skills reference agents by name; the workflow router specifies which agents to spawn via the `agents` array in `nextAction`.
+Agents are defined as markdown files in `agents/` with YAML frontmatter (`name`, `description`). The design Lead bootstraps stable logical teammates by name; the router returns role/name/prompt data but never persists Agent IDs.
 
 ### Script cross-dependencies
 
 ```
 devsphere-state.js  ←  all other scripts (foundational I/O)
+devsphere-review-state.js  →  devsphere-review-matrix.js (Lead merge; matrix lazily imports review-state for the final gate)
 devsphere-review-matrix.js  ←  devsphere-approval.js, devsphere-workflow.js
 devsphere-approval.js  ←  devsphere-workflow.js
 devsphere-guard.js  ←  hooks (standalone, but imports state)

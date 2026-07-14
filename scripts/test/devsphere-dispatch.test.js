@@ -9,44 +9,49 @@ test('slugify: stage camelCase → kebab', () => {
   assert.strictEqual(slugify('testDesign'), 'test-design');
 });
 
-test('design + gated 渲染:含 gated 块、不含 non-gated 块', () => {
+test('design + Lead decision policy 渲染', () => {
   const out = renderDispatch({ kind: 'design', role: 'sa', stage: 'businessDesign',
-    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-business', humanGated: 'true', mode: 'strict-human-loop' });
+    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-business', decisionPolicy: 'lead-confirm' });
   assert.match(out, /sa teammate/);
   assert.match(out, /scc-dev-sphere:feature-design-business/);
-  assert.match(out, /type=gated/);
+  assert.match(out, /decisionPolicy=lead-confirm/);
   assert.match(out, /artifacts\/business-design\.md/);
-  assert.doesNotMatch(out, /type=autonomous/);
-  assert.doesNotMatch(out, /\{\{stage\}\}/); // 占位符已填
+  assert.doesNotMatch(out, /humanGated|workflow mode/);
+  assert.doesNotMatch(out, /\{\{stage\}\}/);
 });
 
-test('design + 非 gated 渲染:含 autonomous 块、不含 gated 块', () => {
+test('design + Agent autonomy policy 渲染', () => {
   const out = renderDispatch({ kind: 'design', role: 'mde', stage: 'implementationDesign',
-    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-implementation', humanGated: 'false', mode: 'auto-design' });
-  assert.match(out, /type=autonomous\+assumption/);
+    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-implementation', decisionPolicy: 'agent-autonomy' });
+  assert.match(out, /decisionPolicy=agent-autonomy/);
   assert.match(out, /artifacts\/implementation-design\.md/);
-  assert.doesNotMatch(out, /type=gated/);
+  assert.doesNotMatch(out, /humanGated|workflow mode/);
 });
 
-test('design 默认 humanGated=false(未传)', () => {
+test('design 默认 decisionPolicy=agent-autonomy', () => {
   const out = renderDispatch({ kind: 'design', role: 'se', stage: 'solutionDesign',
-    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-solution', mode: 'auto-design' });
-  assert.match(out, /type=autonomous/);
+    taskPath: '/t', skill: 'scc-dev-sphere:feature-design-solution' });
+  assert.match(out, /decisionPolicy=agent-autonomy/);
 });
 
-test('review 渲染:含 artifactPath、不含 design 任务体', () => {
+test('review 渲染:含 artifactPath/version、不含 design 任务体', () => {
   const out = renderDispatch({ kind: 'review', role: 'se', stage: 'businessDesign',
-    taskPath: '/t', skill: 'scc-dev-sphere:feature-review', artifactPath: '/t/artifacts/business-design.md' });
+    taskPath: '/t', skill: 'scc-dev-sphere:feature-review',
+    artifactPath: '/t/artifacts/business-design.md', artifactVersion: '0.2.0',
+    reviewStatePath: '/t/reviews/business-design/se.json',
+    reviewMarkdownPath: '/t/reviews/business-design/se-review.md' });
   assert.match(out, /评审 businessDesign 阶段产物/);
   assert.match(out, /\/t\/artifacts\/business-design\.md/);
+  assert.match(out, /0\.2\.0/);
   assert.match(out, /scc-dev-sphere:feature-review/);
-  assert.doesNotMatch(out, /type=gated|type=autonomous/); // review 无 gated 块
+  assert.match(out, /reviews\/business-design\/se\.json/);
+  assert.doesNotMatch(out, /type=gated|type=autonomous/);
 });
 
 test('通用约束段所有 kind 都有', () => {
   for (const kind of ['design', 'review']) {
     const out = renderDispatch({ kind, role: 'sa', stage: 'businessDesign', taskPath: '/t',
-      skill: 'x', humanGated: 'true', mode: 'm', artifactPath: '/a' });
+      skill: 'x', decisionPolicy: 'lead-confirm', artifactPath: '/a' });
     assert.match(out, /devsphere-teammate-conduct/);
     assert.match(out, /devsphere-decisions\.js CLI/);
   }
@@ -54,7 +59,7 @@ test('通用约束段所有 kind 都有', () => {
 
 test('占位符全部填充(无残留 {{ }})', () => {
   const out = renderDispatch({ kind: 'design', role: 'sa', stage: 'testDesign',
-    taskPath: '/t', skill: 'sk', humanGated: 'true', mode: 'strict-human-loop' });
+    taskPath: '/t', skill: 'sk', decisionPolicy: 'lead-confirm' });
   assert.doesNotMatch(out, /\{\{/);
 });
 
@@ -62,17 +67,24 @@ test('非法 kind 抛错', () => {
   assert.throws(() => renderDispatch({ kind: 'bogus', role: 'sa', stage: 'x', taskPath: '/t', skill: 's' }), /kind/);
 });
 
-test('CLI smoke: build design gated 输出 prompt', () => {
+test('CLI smoke: build design policy 输出 prompt', () => {
   const { execSync } = require('child_process');
-  const out = execSync('node scripts/devsphere-dispatch.js build design sa businessDesign /t scc-dev-sphere:feature-design-business true strict-human-loop', { encoding: 'utf-8' });
-  assert.match(out, /type=gated/);
+  const out = execSync('node scripts/devsphere-dispatch.js build design sa businessDesign /t scc-dev-sphere:feature-design-business lead-confirm', { encoding: 'utf-8' });
+  assert.match(out, /decisionPolicy=lead-confirm/);
   assert.match(out, /business-design\.md/);
 });
 
-test('CLI smoke: build review 输出含 artifactPath、无 gated 块', () => {
+test('CLI smoke: build review 输出含 artifactPath、version', () => {
   const { execSync } = require('child_process');
-  const out = execSync('node scripts/devsphere-dispatch.js build review se businessDesign /t scc-dev-sphere:feature-review /t/artifacts/business-design.md', { encoding: 'utf-8' });
+  const out = execSync('node scripts/devsphere-dispatch.js build review se businessDesign /t scc-dev-sphere:feature-review /t/artifacts/business-design.md 0.2.0', { encoding: 'utf-8' });
   assert.match(out, /\/t\/artifacts\/business-design\.md/);
   assert.match(out, /评审 businessDesign/);
-  assert.doesNotMatch(out, /type=gated|type=autonomous/);
+  assert.match(out, /0\.2\.0/);
+});
+
+test('bootstrap 渲染固定设计团队成员契约', () => {
+  const out = renderDispatch({ kind: 'bootstrap', role: 'se', stage: 'designTeam',
+    taskPath: '/t', skill: 'scc-dev-sphere:devsphere-teammate-conduct' });
+  assert.match(out, /design-se/);
+  assert.match(out, /不要创建嵌套团队/);
 });

@@ -26,7 +26,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 
 **读取：** 三类设计产物、各自 decisions、测试模板、`state.json`、历史缺陷/测试规范（`knowledge-query`）。
 **允许写入：** `artifacts/test-design.md`、`decisions/test-design-decisions.json`、`evidence/` 与 registry。
-**禁止写入：** 其他阶段产物、`state.json`、`reviews/`、`approvals/`。
+**禁止写入：** 其他阶段产物、`state.json`、`reviews/`、`approvals/`。评审任务由 `feature-review` Skill 负责写入角色评审快照。
 
 ## 执行步骤
 
@@ -52,7 +52,7 @@ description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风
 - 关键业务规则
 - 非功能需求(性能/安全/兼容)
 - 与下游(solution/test)的交接边界
-vague 需求 = 大量空白维度 = 必须明确(humanGated 时问用户;非 humanGated 时显式自决并记 assumption)。
+vague 需求 = 大量空白维度 = 必须明确；是否需要 Lead 决策由派发 prompt 的 decisionPolicy 决定。
 
 ## 专业方法与图示
 

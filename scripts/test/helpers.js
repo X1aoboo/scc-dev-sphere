@@ -16,4 +16,11 @@ function makeTask(opts = {}) {
   return { workspaceRoot, taskPath, taskId };
 }
 
-module.exports = { makeTask };
+function writeArtifact(taskPath, artifact, version = '0.1.0', body = '# draft') {
+  const filePath = path.join(taskPath, 'artifacts', `${artifact}.md`);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `---\nartifactId: ${artifact}\nversion: "${version}"\n---\n\n${body}\n`, 'utf-8');
+  return filePath;
+}
+
+module.exports = { makeTask, writeArtifact };

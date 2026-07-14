@@ -5,6 +5,7 @@ const fs = require('fs');
 const {
   readMatrix, getPendingHumanDecisions, getOpenApplyItems,
 } = require('../devsphere-review-matrix');
+const { readArtifactVersion, getReviewStatus } = require('../devsphere-review-state');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { readDecisions, countGatedPending } = require('../devsphere-decisions');
 const { stageToArtifact } = require('../feature-design-router');
@@ -127,6 +128,17 @@ function resolveDesigning(taskPath, state, stages, mode, humanGates) {
     [], []);
 }
 
+function isCurrentReviewComplete(taskPath, artifact, artifactMatrix) {
+  if (!artifactMatrix || artifactMatrix.status !== 'reviewed') return false;
+  try {
+    const artifactVersion = readArtifactVersion(taskPath, artifact);
+    if (artifactMatrix.reviewedVersion !== artifactVersion) return false;
+    return getReviewStatus(taskPath, artifact, artifactVersion).allCompleted;
+  } catch (error) {
+    return false;
+  }
+}
+
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
   return {
     kind,
@@ -195,7 +207,7 @@ function main() {
             ? getOpenApplyItems(matrix, artifactTarget) : [];
           if (artifactMatrix && artifactMatrix.issues
             && artifactMatrix.issues.blocking === 0
-            && artifactMatrix.status !== 'pending'
+            && isCurrentReviewComplete(taskPath, artifactTarget, artifactMatrix)
             && pendingReview.length === 0
             && openApply.length === 0) {
             stageData.status = 'ai_review_passed';
@@ -221,7 +233,7 @@ function main() {
       const matrix = readMatrix(taskPath);
       const artifactMatrix = matrix && matrix.artifacts ? matrix.artifacts[artifactTarget] : null;
       if (artifactMatrix && (newStatus === 'ai_review_passed' || newStatus === 'human_approved')) {
-        if (artifactMatrix.status !== 'reviewed') {
+        if (!isCurrentReviewComplete(taskPath, artifactTarget, artifactMatrix)) {
           process.stderr.write(`Cannot set stage '${stageName}': artifact review status is not reviewed\n`);
           process.exit(1);
         }

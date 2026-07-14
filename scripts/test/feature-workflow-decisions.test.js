@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { makeTask } = require('./helpers');
+const { makeTask, writeArtifact } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
 const { isHumanGated, DESIGN_STAGE_ORDER } = require('../feature-design-router');
 const { readState, writeState } = require('../devsphere-state');
@@ -92,6 +92,12 @@ test('sync-stage-status 不得绕过 open apply issue', () => {
 test('复评 Agent 关闭原 apply issue 后才能通过 artifact/stage 门禁', () => {
   const { workspaceRoot, taskPath } = makeTask();
   initMatrix(taskPath);
+  writeArtifact(taskPath, 'business-design');
+  const { authorizeReview, recordReviewResult } = require('../devsphere-review-state');
+  authorizeReview(taskPath, 'business-design', '0.1.0');
+  recordReviewResult(taskPath, 'business-design', 'se', {
+    artifactId: 'business-design', artifactVersion: '0.1.0', issueFindings: [],
+  });
   const issue = addIssue(taskPath, 'business-design', {
     type: 'advisory', reviewerAgent: 'se', humanDecision: 'apply',
   });

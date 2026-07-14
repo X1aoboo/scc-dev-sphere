@@ -50,7 +50,7 @@
 | QG-TR-004 | integrated | business->solution | BR/REQ 被方案承接 | 无关键缺口 | 次要缺口有 DEC | 关键缺口 | 回 solution | scope 决策 | SE/SA | design-integration-check | QG-IG-*.json |
 | QG-TR-005 | integrated | solution->implementation | API/data/module 被实现承接 | 无缺口 | 次要缺口说明 | 关键缺口 | 回 implementation | 实现不可行 | MDE/SE | design-integration-check | QG-IG-*.json |
 | QG-TR-006 | integrated | implementation->test | MOD/RISK 被测试承接 | 高风险覆盖 | 低风险未覆盖有理由 | 高风险孤儿 | 回 test | 测试成本 | TSE/MDE | design-integration-check | QG-IG-*.json |
-| QG-REV-001 | review | review closure | required reviewers 完成，blocking=0 | 全部完成 | advisory 待确认 | blocking 未关闭 | 回 owner revise | 冲突/建议项 | all | feature-review | reviews/review-matrix.json |
+| QG-REV-001 | review | review closure | 当前 artifactVersion 的 required role snapshots 全部完成，并由 Lead 合并；blocking=0、advisory/risk 已决策、apply issue 已关闭 | 全部完成 | advisory/risk 待确认 | blocking 或 apply issue 未关闭、快照版本过期 | 回 owner revise | 冲突/建议项 | all | feature-review + Lead | reviews/<artifact>/<role>.json + review-matrix.json |
 | QG-APP-001 | approval | final design approval | artifact hash、accepted risk、advisory 确认完整 | 可批准 | 有 warn 需说明 | hash/gate/review 缺失 | 展示缺口 | 批准/拒绝 | human | feature-approve | approvals/*.json |
 
 ## 4. 门禁执行顺序
@@ -62,9 +62,12 @@ flowchart LR
   TPL -->|fail| Revise["Owner revise"]
   QG -->|pass/warn| Review["feature-review"]
   QG -->|fail| Revise
-  QG -->|requires_human| Human["AskUserQuestion + decision"]
-  Review -->|blocking| Revise
-  Review -->|no blocking| Ready["ai_review_passed / next stage"]
+  QG -->|requires_human| GateHuman["AskUserQuestion + decision"]
+  Review -->|role snapshots| Merge["Lead merge current artifactVersion"]
+  Merge -->|pending advisory/risk| ReviewHuman["Lead AskUserQuestion"]
+  ReviewHuman -->|apply / blocking| Revise
+  Merge -->|open blocking or apply| Revise
+  Merge -->|all gates pass| Ready["ai_review_passed / next stage"]
 ```
 
 说明：
@@ -113,4 +116,3 @@ flowchart LR
 每个 `feature-design-*` Skill 在产物起草后按序触发：先 `design-template-check`，pass/warn 后 `design-quality-gate --target <artifact>`，再进入 `feature-review`（见各 Skill 的"质量门禁"章节）。
 
 > `design-integration-check`（QG-IG-* / 跨阶段一致性）与 integrated-design 刷新在 target-skill-model §9 定义，P0 暂由 `feature-review --target integrated-design` 承担跨阶段一致性评审；独立 Skill 列入后续任务。
-

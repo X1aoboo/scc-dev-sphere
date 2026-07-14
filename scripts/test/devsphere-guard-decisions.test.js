@@ -6,7 +6,14 @@ const os = require('os');
 const fs = require('fs');
 const { makeTask } = require('./helpers');
 const { initDecisions, addDecision, resolveDecision, readDecisions } = require('../devsphere-decisions');
-const { decideWrite, checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormatFromStdin } = require('../devsphere-guard');
+const {
+  decideWrite,
+  checkDecisionsResolvedFromStdin,
+  slugToStage,
+  checkDecisionsFormatFromStdin,
+  checkReviewWritesFromStdin,
+  checkReviewBashFromStdin,
+} = require('../devsphere-guard');
 const { readState, writeState } = require('../devsphere-state');
 
 function mainArtifactPath(taskPath, slug) {
@@ -523,4 +530,37 @@ test('bash: 无 tool_input 或 command → 放行（null）', () => {
 test('bash: decisions/ 出现在 CLI 的 JSON 参数里但命令含 devsphere-decisions.js → 放行（CLI 豁免）', () => {
   const cmd = 'node scripts/devsphere-decisions.js add tp business-design \'{"summary":"see decisions/foo"}\'';
   assert.strictEqual(checkDecisionsBashFromStdin(bashStdin(cmd)), null);
+});
+
+// === Review snapshot / matrix write guards ===
+
+test('review Write/Edit: 共享 matrix 和角色快照禁止直接写入', () => {
+  for (const filePath of [
+    '/tmp/task/reviews/review-matrix.json',
+    '/tmp/task/reviews/solution-design/se.json',
+  ]) {
+    const result = checkReviewWritesFromStdin({ tool_input: { file_path: filePath } });
+    assert.ok(result);
+    assert.strictEqual(result.hookSpecificOutput.permissionDecision, 'deny');
+  }
+});
+
+test('review Write/Edit: Markdown 评审历史允许直接追加', () => {
+  assert.strictEqual(checkReviewWritesFromStdin({
+    tool_input: { file_path: '/tmp/task/reviews/solution-design/se-review.md' },
+  }), null);
+});
+
+test('review Bash: 直接写评审 JSON 禁止，review-state/matrix CLI 放行', () => {
+  const denied = checkReviewBashFromStdin(bashStdin(
+    'node -e "require(\'fs\').writeFileSync(\'reviews/solution-design/se.json\', \'{}\')"',
+  ));
+  assert.ok(denied);
+  assert.strictEqual(denied.hookSpecificOutput.permissionDecision, 'deny');
+  assert.strictEqual(checkReviewBashFromStdin(bashStdin(
+    'node scripts/devsphere-review-state.js complete tp solution-design se \'{}\'',
+  )), null);
+  assert.strictEqual(checkReviewBashFromStdin(bashStdin(
+    'node scripts/devsphere-review-matrix.js add tp solution-design \'{}\'',
+  )), null);
 });
