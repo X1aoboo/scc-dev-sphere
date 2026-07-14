@@ -127,7 +127,7 @@ function setNested(obj, key, value) {
 
 function updateConfig(workspaceRoot, key, value) {
   if (!workspaceRoot || !key || value === undefined) {
-    throw new Error('Usage: update-config <workspaceRoot> <key> <value>');
+    throw new Error('Usage: update-config <key> <value>');
   }
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
@@ -142,7 +142,7 @@ function updateConfig(workspaceRoot, key, value) {
 
 function addConfigItem(workspaceRoot, field, item) {
   if (!workspaceRoot || !field || item === undefined) {
-    throw new Error('Usage: add-config-item <workspaceRoot> <field> <item>');
+    throw new Error('Usage: add-config-item <field> <item>');
   }
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
@@ -171,7 +171,7 @@ function addConfigItem(workspaceRoot, field, item) {
 
 function removeConfigItem(workspaceRoot, field, item) {
   if (!workspaceRoot || !field || item === undefined) {
-    throw new Error('Usage: remove-config-item <workspaceRoot> <field> <item>');
+    throw new Error('Usage: remove-config-item <field> <item>');
   }
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
@@ -242,7 +242,7 @@ function sanitizeDescription(desc) {
 function registerEvidence(workspaceRoot, description, sourceType, query) {
   const VALID_SOURCE_TYPES = ['skill', 'local', 'repo', 'mcp', 'web', 'user'];
   if (!workspaceRoot || !description || !sourceType) {
-    throw new Error('Usage: echo "<summary>" | register-evidence <workspaceRoot> <description> <sourceType> <query>');
+    throw new Error('Usage: echo "<summary>" | register-evidence <description> <sourceType> <query>');
   }
   if (!VALID_SOURCE_TYPES.includes(sourceType)) {
     throw new Error(`Invalid sourceType: ${sourceType}. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`);
@@ -284,7 +284,7 @@ ${summary}`;
 
 function readEvidence(workspaceRoot, evId) {
   if (!workspaceRoot || !evId) {
-    throw new Error('Usage: read-evidence <workspaceRoot> <evId>');
+    throw new Error('Usage: read-evidence <evId>');
   }
   const registry = readRegistry(workspaceRoot);
   const entry = registry.evidences.find(ev => ev.id === evId);
@@ -303,23 +303,23 @@ function readEvidence(workspaceRoot, evId) {
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-  const workspaceRoot = args[1] || process.cwd();
+  const workspaceRoot = process.cwd();
 
   if (!command) {
-    console.error('Usage: knowledge-query.js <command> <workspaceRoot> [args...]');
+    console.error('Usage: knowledge-query.js <command> [args...]');
     console.error('');
     console.error('Configuration commands:');
-    console.error('  read-config <workspaceRoot>');
-    console.error('  show-config <workspaceRoot>');
-    console.error('  update-config <workspaceRoot> <key> <value>');
-    console.error('  add-config-item <workspaceRoot> <field> <item>');
-    console.error('  remove-config-item <workspaceRoot> <field> <item>');
-    console.error('  reset-config <workspaceRoot>');
+    console.error('  read-config');
+    console.error('  show-config');
+    console.error('  update-config <key> <value>');
+    console.error('  add-config-item <field> <item>');
+    console.error('  remove-config-item <field> <item>');
+    console.error('  reset-config');
     console.error('');
     console.error('Evidence commands:');
-    console.error('  next-ev-id <workspaceRoot>');
-    console.error('  register-evidence <workspaceRoot> <description> <sourceType> <query>  (content from stdin)');
-    console.error('  read-evidence <workspaceRoot> <evId>');
+    console.error('  next-ev-id');
+    console.error('  register-evidence <description> <sourceType> <query>  (content from stdin)');
+    console.error('  read-evidence <evId>');
     process.exit(0);
   }
 
@@ -335,15 +335,15 @@ function main() {
         console.log(result);
         break;
       case 'update-config':
-        result = updateConfig(workspaceRoot, args[2], args[3]);
+        result = updateConfig(workspaceRoot, args[1], args[2]);
         console.log(JSON.stringify(result));
         break;
       case 'add-config-item':
-        result = addConfigItem(workspaceRoot, args[2], args[3]);
+        result = addConfigItem(workspaceRoot, args[1], args[2]);
         console.log(JSON.stringify(result));
         break;
       case 'remove-config-item':
-        result = removeConfigItem(workspaceRoot, args[2], args[3]);
+        result = removeConfigItem(workspaceRoot, args[1], args[2]);
         console.log(JSON.stringify(result));
         break;
       case 'reset-config':
@@ -355,11 +355,11 @@ function main() {
         console.log(JSON.stringify(result));
         break;
       case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[2], args[3], args[4]);
+        result = registerEvidence(workspaceRoot, args[1], args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
       case 'read-evidence':
-        result = readEvidence(workspaceRoot, args[2]);
+        result = readEvidence(workspaceRoot, args[1]);
         console.log(result);
         break;
       default:
