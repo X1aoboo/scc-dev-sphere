@@ -35,10 +35,13 @@ test('feature-clarify recovers from requirement.md and the evidence registry', (
   assert.match(skill, /inputs\/requirement\.md/i);
 });
 
-test('feature-clarify keeps functional requirements out of unrelated technical contracts', () => {
+test('feature-clarify internally judges requirement type without asking user', () => {
   const skill = readSkill('feature-clarify');
 
-  assert.match(skill, /functional.*MUST NOT.*API.*protocol/is);
+  // Agent internally judges functional/technical/mixed; user is not asked to choose
+  assert.match(skill, /不再要求用户选择需求类型/);
+  // Functional requirements should not be dragged into unrelated technical details
+  assert.match(skill, /Agent.*内部判断.*哪些属于需求.*哪些属于技术约束.*哪些应延后到设计阶段/is);
 });
 
 test('feature-init writes requirement.md and routes users to clarification', () => {
