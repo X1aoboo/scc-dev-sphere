@@ -1,0 +1,10 @@
+{
+  "sources": {
+    "mcp":   { "enabled": false },
+    "skill": { "enabled": true, "names": [] },
+    "local": { "enabled": true, "dirs": [] },
+    "repo":  { "enabled": true, "paths": [] },
+    "web":   { "enabled": false }
+  },
+  "priority": ["skill", "local", "repo", "mcp", "web"]
+}
