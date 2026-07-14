@@ -38,7 +38,7 @@ flowchart TD
 
 ## 配置工作流
 
-配置操作均通过 `node scripts/knowledge-query.js` 执行（`<workspaceRoot>` 为项目根目录，即 `"${CLAUDE_PLUGIN_ROOT}/.."`）。
+配置操作均通过 `node scripts/knowledge-query.js` 执行（`<workspaceRoot>` 为当前工作目录，即项目根目录）。
 
 默认数据源及优先级：skill → 本地目录 → 代码仓 → MCP → WebSearch。skill 和本地/代码仓默认启用（需配置具体名称/路径），MCP 和 WebSearch 默认关闭。配置采用两层 fallback（workspace config > skill default），脚本自动处理。
 
