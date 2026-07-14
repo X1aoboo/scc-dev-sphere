@@ -223,6 +223,53 @@ function checkReviewWritesFromStdin(stdinJson) {
   };
 }
 
+// --- Evidence guards ---
+
+function checkEvidenceWritesFromStdin(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti) return null;
+  const toolName = ti.tool_name;
+  if (toolName !== 'Write' && toolName !== 'Edit') return null;
+  const filePath = ti.file_path;
+  if (!filePath) return null;
+
+  const norm = (filePath || '').replace(/\\/g, '/');
+  const isEvidenceFile =
+    norm.includes('/evidence/knowledge/EV-') ||
+    norm.endsWith('/evidence/evidence-registry.json');
+
+  if (!isEvidenceFile) return null;
+
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'Evidence files must be modified through scripts/knowledge-query.js, not direct Write/Edit.',
+    },
+  };
+}
+
+function checkEvidenceBashFromStdin(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti || typeof ti.command !== 'string') return null;
+  const command = ti.command;
+
+  const targetsEvidence =
+    command.includes('evidence/knowledge/') ||
+    command.includes('evidence/evidence-registry.json');
+
+  if (!targetsEvidence) return null;
+  if (command.includes('knowledge-query.js')) return null; // 脚本豁免
+
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'Evidence files must be modified through scripts/knowledge-query.js.',
+    },
+  };
+}
+
 // TeammateIdle 质量门：活跃任务下所有 decisions/*.json 必须 schema 合法。
 // 返回 {ok:true} 或 {ok:false, file, reason}。CLI 据此 exit 2（回喂 stderr，teammate 继续）。
 function checkTeammateDecisions(workspaceRoot) {
@@ -416,6 +463,24 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-evidence-writes': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkEvidenceWritesFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
+      case 'check-evidence-bash': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkEvidenceBashFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -438,4 +503,6 @@ module.exports = {
   checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions,
   checkDecisionsBashFromStdin, reviewJSONPath, checkReviewWritesFromStdin,
   checkReviewBashFromStdin,
+  checkEvidenceWritesFromStdin,
+  checkEvidenceBashFromStdin,
 };
