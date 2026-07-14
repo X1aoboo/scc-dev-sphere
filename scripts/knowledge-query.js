@@ -303,7 +303,7 @@ function readEvidence(workspaceRoot, evId) {
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-  const workspaceRoot = args[1];
+  const workspaceRoot = args[1] || process.cwd();
 
   if (!command) {
     console.error('Usage: knowledge-query.js <command> <workspaceRoot> [args...]');
