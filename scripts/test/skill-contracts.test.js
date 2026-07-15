@@ -58,22 +58,12 @@ test('feature-assess accepts only clarified tasks', () => {
   assert.match(skill, /feature-clarify/i);
 });
 
-test('workflow binds feature-clarify itself to main-session execution and its query subagents', () => {
+test('workflow executes every no-Agent action in the main session', () => {
   const skill = readSkill('workflow');
-  const clarifySection = skill.match(/特别地，如果 `nextAction\.skill === 'feature-clarify'`([\s\S]*?)(?=\n#### )/);
+  const noAgentSection = skill.match(/#### 无 Agent 场景([\s\S]*?)(?=\n#### )/);
 
-  assert.ok(clarifySection, 'feature-clarify dispatch section');
-  assert.match(clarifySection[0], /main session/i);
-  assert.match(clarifySection[0], /knowledge-query.*subagents/is);
-  assert.match(clarifySection[0], /must not.*background teammate/i);
-});
-
-test('workflow binds feature-assess itself to main-session execution', () => {
-  const skill = readSkill('workflow');
-  const assessSection = skill.match(/特别地，如果 `nextAction\.skill === 'feature-assess'`([\s\S]*?)(?=\n特别地，如果|\n#### )/);
-
-  assert.ok(assessSection, 'feature-assess dispatch section');
-  assert.match(assessSection[0], /main session/i);
+  assert.ok(noAgentSection, 'no-Agent dispatch section');
+  assert.match(noAgentSection[0], /main 会话中直接执行 `nextAction\.skill`/i);
 });
 
 test('knowledge-query uses multi-source config and 4-step query flow', () => {

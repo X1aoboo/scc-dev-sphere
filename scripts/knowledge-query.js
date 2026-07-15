@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { getTaskPath } = require('./devsphere-state');
+
 const REPO_ROOT = path.join(__dirname, '..');
 const SKILL_DEFAULT_CONFIG = path.join(REPO_ROOT, 'skills', 'knowledge-query', 'knowledge-sources.json');
 
@@ -200,13 +202,23 @@ function resetConfig(workspaceRoot) {
 }
 
 // --- Evidence paths ---
+// evidence 是任务级数据：路径基于从 current-task.json 解析出的活跃任务目录，
+// 而非 workspaceRoot。config 操作仍基于 workspaceRoot（workspace 级配置）。
+
+function resolveTaskRoot(workspaceRoot) {
+  const taskPath = getTaskPath(workspaceRoot);
+  if (!taskPath) {
+    throw new Error('无活跃任务：无法定位 evidence 目录。请先通过 feature-init 创建任务。');
+  }
+  return taskPath;
+}
 
 function getRegistryPath(workspaceRoot) {
-  return path.join(workspaceRoot, 'evidence', 'evidence-registry.json');
+  return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'evidence-registry.json');
 }
 
 function getEvidenceDir(workspaceRoot) {
-  return path.join(workspaceRoot, 'evidence', 'knowledge');
+  return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'knowledge');
 }
 
 function readRegistry(workspaceRoot) {
@@ -248,6 +260,7 @@ function registerEvidence(workspaceRoot, description, sourceType, query) {
     throw new Error(`Invalid sourceType: ${sourceType}. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`);
   }
 
+  const taskRoot = resolveTaskRoot(workspaceRoot);
   const { nextId } = nextEvId(workspaceRoot);
   const safeDesc = sanitizeDescription(description);
   const snapshotName = `${nextId}-${safeDesc}.md`;
@@ -274,7 +287,7 @@ ${summary}`;
     description: description,
     sourceType: sourceType,
     query: query || '',
-    file: path.relative(workspaceRoot, snapshotPath),
+    file: path.relative(taskRoot, snapshotPath),
     retrievedAt: timestamp
   });
   writeJSON(getRegistryPath(workspaceRoot), registry);
@@ -291,7 +304,7 @@ function readEvidence(workspaceRoot, evId) {
   if (!entry) {
     throw new Error('Evidence not found: ' + evId);
   }
-  const snapshotPath = path.join(workspaceRoot, entry.file);
+  const snapshotPath = path.join(resolveTaskRoot(workspaceRoot), entry.file);
   if (!fs.existsSync(snapshotPath)) {
     throw new Error('Snapshot file not found: ' + snapshotPath);
   }

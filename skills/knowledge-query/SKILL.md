@@ -55,6 +55,8 @@ flowchart TD
 
 ## 查询工作流
 
+> **配置只读红线**：查询工作流期间，严禁修改`knowledge-sources.json` 数据源配置。修改配置只能发生在用户显式提出配置意图时（"配置工作流"）。
+
 ### 步骤1 — 解析意图 + 检索 registry
 
 读取 `evidence-registry.json` + 已有快照摘要（`knowledge/EV-xxx-*.md`）。registry 检索通过 `node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js next-ev-id ${CLAUDE_PROJECT_DIR}` 获取最新编号，通过 `node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js read-evidence ${CLAUDE_PROJECT_DIR} <evId>` 读取已有快照摘要。判断是否覆盖本次查询。
@@ -64,9 +66,9 @@ flowchart TD
 
 ### 步骤2 — 派发 subagent 多数据源搜索
 
-**派发**：通过 `Agent` 工具派发一次性 `general-purpose` Task，注入 `subagent-prompt.md` 行为契约 + 当前生效的数据源配置 + 查询主题。每次派发均为新 Task，不复用。
+**派发**：通过 `Agent` 工具派发一次性 `general-purpose` Task，注入 `subagent-prompt.md` 行为契约 + 查询主题。每次派发均为新 Task，不复用。
 
-**等待返回**：子 Agent 按配置优先级自动搜索多数据源，查到后通过 `echo "<Content Summary>" | node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence ${CLAUDE_PROJECT_DIR} "<描述>" <sourceType> "<query>"` 写入 evidence（分配 EV-ID + 快照 + registry），返回 EV-ID；未查到则返回空的 gap 报告。
+**等待返回**：子 Agent 自行读配置、按优先级查询可用源，查到后返回 EV-ID；未查到或无可用源则返回 gap 报告。
 
 **主线根据返回结果分流**：
 
