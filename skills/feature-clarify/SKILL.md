@@ -21,9 +21,31 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 ## 步骤1：建立初始需求理解
 
-分析原始需求（不写入文件），识别：明确提出了什么、Agent 的关键推断、当前缺口。此分析驱动步骤2。
+1. 分析原始需求（不写入文件），识别：明确提出了什么、Agent 的关键推断、当前缺口。
 
-需求涉及明显陌生领域时，必须执行一次轻量知识查询（单一查询，不超过 3 个子问题）；查询完成后，已能识别核心模糊点时直接进入步骤2。
+### 步骤1a: 按需知识查询
+
+```plantuml
+@startuml
+start
+:分析原始需求;
+if (理解需求是否依赖可查询的既有事实？) then (是)
+  :调用 knowledge-query Skill 查询依赖知识;
+  :纳入 EV；gap 作为候选模糊点;
+else (否)
+endif
+:进入步骤2;
+stop
+@enduml
+```
+
+可查询的既有事实包括：已有功能和系统行为、业务规则、历史术语定义，以及理解需求边界所必需的系统上下文。
+
+执行规则：
+- 只查询影响需求理解的知识，不在此处展开接口、数据模型或完整影响分析。
+- 将相关缺口合并为一次查询，避免逐项派发。
+- 查询结果纳入后续分析；未找到的 gap 在步骤2中判断是否形成模糊点。
+- 没有查询需求时直接进入步骤2。
 
 ## 步骤2：生成模糊点清单
 
@@ -57,59 +79,65 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 仅五个字段：`id`（`AMB-` 前缀 + 三位数字序号）、`issue`（一句话描述模糊点）、`impact`（为什么重要）、`status`（`open` | `resolved` | `deferred`）、`resolution`（status 非 open 时的最终结论）。
 
-六维度（businessGoal / usersAndScenarios / functionalScope / nonGoalsAndBoundaries / acceptanceCriteria / constraintsAndRisks）可用于**辅助检查遗漏**，但不能直接转化成固定问题列表。
+## 步骤3：动态澄清模糊点
 
-## 步骤3：动态处理模糊点
+按以下流程循环处理，直到不存在高影响 `open` 模糊点：
 
-**循环执行，直到核心模糊点全部解决：**
+```plantuml
+@startuml
+start
+while (是否还有高影响 open 项？) is (有)
+  :选择最高影响的 open 模糊点;
+  while (当前模糊点仍为 open？) is (是)
+    :分析已有需求、用户回答和 evidence;
+    if (能否形成明确结论？) then (能)
+      :向用户确认结论;
+    else (不能)
+      if (缺失信息能否通过知识查询获得？) then (能)
+        :调用 knowledge-query Skill;
+        if (是否查到？) then (查到)
+          :纳入新知识;
+          :基于新知识重新分析;
+          if (能否形成明确结论？) then (能)
+            :向用户确认结论;
+          else (仍不能)
+            :请求用户提供缺失信息;
+          endif
+        else (gap)
+          :请求用户提供缺失信息;
+        endif
+      else (不能：目标、偏好或业务取舍)
+        :请求用户提供缺失信息;
+      endif
+    endif
+    :处理用户回答;
+    :提取结论并追加 clarification-log;
+    :识别并追加新模糊点;
+    if (用户是否直接给出或确认了明确结论？) then (是)
+      :更新为 resolved 并写入 resolution;
+    else (否)
+      :保持 open;
+    endif
+  endwhile (否)
+endwhile (无)
+:进入步骤4;
+stop
+@enduml
+```
 
-### 3a. 选择当前最关键模糊点
+执行约束：
+- 模糊点优先级：影响核心目标、产品定位或主场景 → 阻塞多个后续判断 → 错判后返工范围大。
+- `knowledge-query` Skill 查到知识后必须重新分析，不得直接将模糊点标记为 resolved。
+- 只有用户直接给出明确结论，或确认 Agent 推导的结论后，才能标记为 resolved。
+- 用户回答仍不足时保持 open，围绕同一模糊点继续循环；不得直接切换到预设问题。
+- 每次用户回答后必须更新 backlog，并追加 `inputs/clarification-log.md`。
+- 低影响项可以标记为 deferred 并说明原因；影响用户可见行为、数据一致性或安全性的项不得 deferred。
+- 不再要求用户选择需求类型（functional / technical / mixed）；由 Agent 判断需求、技术约束及应延后到设计阶段的内容。
+- 每次回答后更新需求理解。评审循环（步骤6）返回时，从此处重新进入，仅处理 fail 项关联的模糊点。
 
-从 `status: "open"` 中选择。优先：影响核心目标、产品定位和主场景 → 阻塞多个后续判断 → 错判后大范围返工。暂不处理实现细节或低影响问题。
+**禁止未经用户回答将模糊点标记为 resolved**
 
-### 3b. 判断信息获取方式
-
-**情况一：已有信息足够形成高置信度推断**
-
-使用确认型问题，向用户确认理解是否正确。如：
-
-> 根据前面的信息，我理解你更关注最终稳定产出交付物，而不是展示多个 Agent 的讨论过程，这个理解是否正确？
-
-不得未经确认将关键推断写入需求事实。
-
-**情况二：缺少外部知识**
-
-通过 `Agent` 工具派发一次性子 Agent，加载 `scc-dev-sphere:knowledge-query` skill 进行查询，查询聚焦当前单一模糊点。每次均为新的 `general-purpose` Task。**MUST NOT directly query the knowledge base in the main session — MUST dispatch a one-shot `knowledge-query` subagent. MUST wait for the structured EV/gap result.**
-
-> 查询 Claude Code 和 Codex 是否支持运行时创建具有不同工具约束的 Agent，用于判断跨平台自定义 Agent 能力的需求边界。
-
-等待 EV/gap 返回后决定下一步。返回 gap 时判断用户是否可提供该信息，不能只写入 gap 跳过。
-
-**情况三：需要用户信息**
-
-直接向用户提问，每次一个。说明为什么问。
-
-| 模式 | 用途 | 示例 |
-|------|------|------|
-| 探索型 | 发现真实目标、痛点 | "目前如何完成？最耗时的步骤？" — 开放式，无预设选项 |
-| 决策型 | 明确取舍 | "更关注自由讨论还是收敛结果？前者适合探索，后者适合任务交付。" — 2-3 候选项 |
-| 确认型 | 确认推断 | "Skill 自进化是从成功任务中沉淀，发布前仍需人工审核，对吗？" — 有推荐时才展示 |
-
-不再要求用户选择需求类型（functional/technical/mixed）。Agent 内部判断哪些属于需求、哪些属于技术约束、哪些应延后到设计阶段。
-
-### 3c. 用户回答后处理
-
-每次回答后必须：① 提取结论 ② 更新当前 ambiguity 的 status 和 resolution ③ 识别是否产生新模糊点 ④ 追加写入 `inputs/clarification-log.md`（问答、结论、来源标注）⑤ 回到 3a 重新选择。禁止直接进入预设的下一个问题。
-
-示例：用户回答"Agent 自由讨论，但协调者收敛结论" → AMB-003 resolved + 生新模糊点 AMB-006「协调者由谁指定」。
-
-### 3d. 循环终止
-
-核心模糊点全部 resolved 且挖不出新的时退出循环，进入步骤5。低影响 open 项标 `deferred`（附延后原因）带至步骤6。凡影响用户可见行为、数据一致性、安全性者不得 deferred。
-
-每次回答后更新需求理解。评审循环（步骤7）返回时，从此处重新进入，仅处理 fail 项关联的模糊点。
-
-## 步骤5：核心场景完整性检查
+## 步骤4：核心场景完整性检查
 
 使用六维度作为结束前 checklist，逐一确认：
 
@@ -120,61 +148,68 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 - **acceptanceCriteria** — 验收条件是否可验证？
 - **constraintsAndRisks** — 关键业务规则和约束是否已识别？
 
-六维度**只用于完整性检查，不决定提问顺序**。发现遗漏时回到步骤3补充处理。
+发现高影响缺口时，将其加入 ambiguity backlog 并返回步骤3；没有高影响缺口时进入步骤5。
 
-### 完成判断原则
+六维度只用于发现遗漏，不决定步骤3中的处理顺序。
 
-澄清完成的判断标准：
-- 核心模糊点全部 resolved，无遗漏高影响 open 项
-- 能完整描述至少一条端到端核心用户旅程
-- 核心功能的验收标准可操作判断
-- 关键业务规则和边界条件已明确
-- 需求信息足够生成结构化需求文档（覆盖业务目标、核心场景、功能范围、验收标准）
-
-## 步骤6：按模板写入需求文档
+## 步骤5：按模板写入需求文档
 
 1. 读取 `skills/feature-clarify/requirement.md` 模板，按 11 章节结构组织需求汇总，写入 `inputs/requirement.md`（**追加**到原始需求下方，**永不覆盖原始需求**）。未明确项保留待补充标记，评审循环中逐步填充。
 
 2. 列出所有 `deferred` 模糊点及延后原因，请用户评审确认是否接受带入设计阶段。
 
-## 步骤7：评审循环
+## 步骤6：评审循环
 
-### 7a 前置：检查确认是否过期
+```plantuml
+@startuml
+start
+repeat
+  :检查最终确认是否过期;
+  :派发需求评审 SubAgent;
+  :评审 SubAgent 更新 checklist 和 reviewVersion;
+  if (非 reserved 项是否存在 fail？) then (是)
+    if (是否达到 designRevisionLimit？) then (是)
+      :列出剩余 fail，请用户裁决;
+      if (用户选择？) then (接受风险)
+        :将对应项更新为 waived;
+      else (继续澄清)
+        :返回步骤3，仅处理 fail 关联的模糊点;
+        :更新 requirement.md;
+      endif
+    else (否)
+      :返回步骤3，仅处理 fail 关联的模糊点;
+      :更新 requirement.md;
+    endif
+  endif
+repeat while (非 reserved 项仍存在 fail？) is (是) not (否)
+:进入步骤7;
+stop
+@enduml
+```
 
+进入每轮评审前执行：
 ```bash
 node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-stale-confirmation <taskPath>
 # 若返回 stale: true，表示 requirement.md 在确认后被修改，需重新确认
 ```
+若返回 `stale: true`，表示此前的最终确认已失效，步骤7必须重新请求用户确认。
 
-若 `stale: true`，标记用户需在步骤8重新确认。
+评审任务：
+- 通过 `Agent` 工具派发一次性 SubAgent（`general-purpose` Task），注入 `skills/feature-clarify/reviewer-prompt.md` 行为契约。
+- 评审 SubAgent 负责更新 checklist 和递增 reviewVersion。
 
-### 7b. 派发评审子 Agent
+返工约束：
+- 主会话只能针对 fail 项返回步骤3，不得自行修改 checklist。
+- `requirement.md` 更新后必须重新派发评审 SubAgent，不得沿用上一轮结果。
+- 达到 `state.designRevisionLimit` 后，只有用户可以决定继续澄清或接受风险。
+- 用户接受风险时执行：
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js waive-item <taskPath> '<json-payload>'
+```
 
-通过 `Agent` 工具派发一次性子 Agent（`general-purpose` Task，每次新 Agent），注入 `skills/feature-clarify/reviewer-prompt.md` 行为契约。
+## 步骤7：最终确认与状态推进
 
-### 7c. 处理评审结果
-
-轮次（reviewVersion）≤ `state.designRevisionLimit`（默认 25）：
-
-- **非 reserved 项无 fail** → 关闭循环，进入步骤8。
-
-- **有 fail** → 执行以下步骤，**不可合并或跳过**：
-  1. 回到步骤3，**仅**处理 fail 项关联的模糊点（逐项向用户澄清，不可自行推测后直接修改 checklist）
-  2. 澄清完成后，更新 `inputs/requirement.md`（**仅此文件**，将澄清结论写入对应章节）
-  3. **必须回到 7b**，重新派发评审子 Agent 对更新后的 requirement.md 进行复检
-  4. **禁止**自行修改 checklist 或进入步骤8
-
-- **达到上限仍有 fail** → 列出剩余 fail 项，询问用户裁决。用户可选择：
-  - 继续澄清 → 回到步骤3
-  - 接受风险 → 通过 CLI 将对应项设为 `waived`：
-    ```bash
-    node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js waive-item <taskPath> '<json-payload>'
-    ```
-    ，关闭循环进入步骤8
-
-## 步骤8：最终确认与状态推进
-
-若步骤7入口的 check-stale-confirmation 返回 stale: true，此处须先向用户说明 requirement.md 已过期变更，请求重新确认。
+若步骤6入口的 check-stale-confirmation 返回 `stale: true`，此处须先向用户说明 `requirement.md` 已过期变更，请求重新确认。
 
 1. 展示需求汇总，用 `confirm_gate` 请求最终确认：
 - 用户拒绝: 必须返回步骤3继续澄清
@@ -190,7 +225,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-stale-confirmati
 node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-complete <taskPath>
 # 返回 { complete: true }
 ```
-- 返回 false → 状态不满足，重新进入步骤7 进行评审循环（此时 checklist confirm-final 已 pass，仅剩真正的质量问题）
+- 返回 false → 状态不满足，重新进入步骤6 进行评审循环（此时 checklist confirm-final 已 pass，仅剩真正的质量问题）
 - 返回 true → 完整性检查通过，继续下一步
 
 3. 推进状态：

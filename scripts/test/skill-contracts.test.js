@@ -8,21 +8,21 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const readSkill = name => fs.readFileSync(path.join(root, 'skills', name, 'SKILL.md'), 'utf8');
 
-test('feature-clarify independently requires one-shot subagents, waiting, and a direct-query ban', () => {
+test('feature-clarify routes knowledge dependencies through knowledge-query and handles EV/gap', () => {
   const skill = readSkill('feature-clarify');
 
-  assert.match(skill, /MUST dispatch a one-shot `knowledge-query` subagent/i);
-  assert.match(skill, /MUST NOT directly query the knowledge base in the main session/i);
-  assert.match(skill, /MUST wait for the structured EV\/gap result/i);
+  assert.match(skill, /调用 knowledge-query Skill/i);
+  assert.match(skill, /纳入 EV/i);
+  assert.match(skill, /gap/i);
 
 });
 
-test('feature-clarify writes conclusions into requirement.md and self-judges completeness', () => {
+test('feature-clarify writes requirement.md after completeness precheck', () => {
   const skill = readSkill('feature-clarify');
 
-  // Conclusions live in requirement.md; the skill carries a written completion principle.
+  // High-impact gaps return to clarification before requirement.md is generated.
   assert.match(skill, /inputs\/requirement\.md/i);
-  assert.match(skill, /完成判断原则/);
+  assert.match(skill, /发现高影响缺口时.*返回步骤3/is);
   assert.match(skill, /set-task-status <workspaceRoot> clarified/i);
 });
 
@@ -40,7 +40,7 @@ test('feature-clarify internally judges requirement type without asking user', (
   // Agent internally judges functional/technical/mixed; user is not asked to choose
   assert.match(skill, /不再要求用户选择需求类型/);
   // Functional requirements should not be dragged into unrelated technical details
-  assert.match(skill, /Agent.*内部判断.*哪些属于需求.*哪些属于技术约束.*哪些应延后到设计阶段/is);
+  assert.match(skill, /Agent.*判断需求.*技术约束.*延后到设计阶段/is);
 });
 
 test('feature-init writes requirement.md and routes users to clarification', () => {
