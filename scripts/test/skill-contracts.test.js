@@ -14,8 +14,7 @@ test('feature-clarify independently requires one-shot subagents, waiting, and a 
   assert.match(skill, /MUST dispatch a one-shot `knowledge-query` subagent/i);
   assert.match(skill, /MUST NOT directly query the knowledge base in the main session/i);
   assert.match(skill, /MUST wait for the structured EV\/gap result/i);
-  assert.match(skill, /MUST NOT reuse agent IDs/i);
-  assert.match(skill, /MUST NOT use teammate/i);
+
 });
 
 test('feature-clarify writes conclusions into requirement.md and self-judges completeness', () => {

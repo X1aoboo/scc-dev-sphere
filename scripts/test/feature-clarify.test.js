@@ -54,7 +54,7 @@ test('checkComplete returns false when all items fail', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
   const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-003');
   fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# 原始需求\n\n## 11. 最终确认\n以上内容已经过用户确认。- **确认时间**：2026-07-14 10:00');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# 原始需求\n\n## 2. 需求概述\n\n### 2.1 业务目标\n\n测试业务目标');
   init(taskPath);
 
   const result = checkComplete(taskPath);
@@ -68,7 +68,7 @@ test('checkComplete returns true when all items pass and confirmed', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
   const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-004');
   fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# 原始需求\n\n## 11. 最终确认\n以上内容已经过用户确认。- **确认时间**：2026-07-14 10:00');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# 原始需求\n\n## 2. 需求概述\n\n### 2.1 业务目标\n\n测试业务目标');
 
   init(taskPath);
   const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
@@ -103,22 +103,36 @@ test('readChecklist returns counts', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test('confirmFinal sets item 7.8.8 to pass', () => {
+test('confirmFinal sets item 7.8.8 to pass without touching evidence', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
   const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-006');
   fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
   fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
   init(taskPath);
 
-  const result = confirmFinal(taskPath);
-  assert.deepStrictEqual(result, { confirmed: true });
-
-  const checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
+  // Set evidence to something existing to verify it is NOT overwritten
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
   for (const cat of checklist.categories) {
     for (const item of cat.items) {
       if (item.id === '7.8.8') {
+        item.evidence = 'preexisting-evidence';
+        item.note = 'preexisting-note';
+      }
+    }
+  }
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  const result = confirmFinal(taskPath);
+  assert.deepStrictEqual(result, { confirmed: true });
+
+  const updated = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  for (const cat of updated.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.8.8') {
         assert.strictEqual(item.result, 'pass');
-        assert.strictEqual(item.evidence, '§11 最终确认');
+        assert.strictEqual(item.evidence, 'preexisting-evidence', 'evidence NOT overwritten by confirmFinal');
+        assert.strictEqual(item.note, 'preexisting-note', 'note NOT overwritten by confirmFinal');
       }
     }
   }
