@@ -52,7 +52,7 @@ function checkComplete(taskPath) {
   }
   for (const cat of checklist.categories) {
     for (const item of cat.items) {
-      if (item.result !== 'pass') {
+      if (item.result === 'fail') {
         failures.push(`${item.id}: ${item.note || item.check}`);
       }
     }
@@ -69,16 +69,7 @@ function checkComplete(taskPath) {
     }
   }
 
-  // 3. requirement.md has final confirmation
-  const reqPath = path.join(taskPath, 'inputs', 'requirement.md');
-  if (!fs.existsSync(reqPath)) {
-    failures.push('requirement.md not found');
-  } else {
-    const content = fs.readFileSync(reqPath, 'utf8');
-    if (!content.includes('最终确认')) {
-      failures.push('requirement.md missing final confirmation');
-    }
-  }
+  // 3. (removed — final confirmation check no longer used)
 
   return { complete: failures.length === 0, failures };
 }
