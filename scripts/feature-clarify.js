@@ -201,6 +201,16 @@ function waiveItem(taskPath, payload) {
   const checklist = readJSON(checklistPath);
   if (!checklist) throw new Error('requirement-checklist.json not found');
 
+  // Reject waiving reserved items
+  for (const update of payload.items) {
+    for (const cat of checklist.categories) {
+      const item = cat.items.find(i => i.id === update.id);
+      if (item && item.reserved) {
+        throw new Error(`item ${update.id} is reserved — cannot waive`);
+      }
+    }
+  }
+
   if ((checklist.reviewVersion || 0) < designRevisionLimit) {
     throw new Error(
       `cannot waive: reviewVersion ${checklist.reviewVersion || 0} < designRevisionLimit ${designRevisionLimit}`

@@ -388,6 +388,26 @@ test('waiveItem throws when reviewVersion < designRevisionLimit', () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test('waiveItem throws when item is reserved', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-018b');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  checklist.reviewVersion = 25;
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  assert.throws(
+    () => waiveItem(taskPath, { items: [{ id: '7.8.8', reason: 'test' }] }),
+    /reserved/
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test('waiveItem throws when item is not fail', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
   const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-018');
