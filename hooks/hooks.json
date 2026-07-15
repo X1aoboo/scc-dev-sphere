@@ -83,6 +83,24 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-evidence-bash"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-clarify-checklist"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-guard.js\" check-clarify-checklist-bash"
+          }
+        ]
       }
     ],
     "TeammateIdle": [

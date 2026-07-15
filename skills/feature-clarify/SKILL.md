@@ -154,14 +154,13 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-stale-confirmati
 
 轮次（reviewVersion）≤ `state.designRevisionLimit`（默认 25）：
 
-- **非 reserved 项全部 pass**（`reserved: true` 的项如 7.8.8 不参与评审判定）→ 关闭循环，进入阶段8。
+- **非 reserved 项全部 pass** → 关闭循环，进入阶段8。
 
 - **有 fail** → 执行以下步骤，**不可合并或跳过**：
   1. 回到阶段3，**仅**处理 fail 项关联的模糊点（逐项向用户澄清，不可自行推测后直接修改 checklist）
   2. 澄清完成后，更新 `inputs/requirement.md`（**仅此文件**，将澄清结论写入对应章节）
-  3. 递增 `reviewVersion`
-  4. **必须回到 7b**，重新派发评审子 Agent 对更新后的 requirement.md 进行复检
-  5. **禁止**自行修改 checklist 或进入阶段8
+  3. **必须回到 7b**，重新派发评审子 Agent 对更新后的 requirement.md 进行复检
+  4. **禁止**自行修改 checklist 或进入阶段8
 
 - **达到上限仍有 fail** → 列出剩余 fail 项，询问用户裁决。用户可选择：
   - 继续澄清 → 回到阶段3
