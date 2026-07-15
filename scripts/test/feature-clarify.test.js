@@ -98,7 +98,37 @@ test('readChecklist returns counts', () => {
   assert.ok(result.total > 0, 'has total');
   assert.strictEqual(result.passed, 0, 'all fail by default');
   assert.strictEqual(result.failed, result.total, 'failed equals total');
+  assert.strictEqual(result.waived, 0, 'no waived by default');
   assert.ok(Array.isArray(result.categories), 'has categories array');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('readChecklist counts waived separately from failed', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-005b');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // Set two items to waived, one to pass, rest remain fail
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  let setCount = 0;
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.1') { item.result = 'waived'; item.note = 'ok'; setCount++; }
+      else if (item.id === '7.1.2') { item.result = 'pass'; setCount++; }
+      else if (item.id === '7.1.3') { item.result = 'waived'; item.note = 'ok'; setCount++; }
+    }
+  }
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  const result = readChecklist(taskPath);
+  assert.strictEqual(result.passed, 1);
+  assert.strictEqual(result.failed, result.total - 3);
+  assert.strictEqual(result.waived, 2);
+  assert.strictEqual(result.passed + result.failed + result.waived, result.total);
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });

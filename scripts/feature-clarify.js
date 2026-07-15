@@ -81,18 +81,20 @@ function readChecklist(taskPath) {
   const checklist = readJSON(checklistPath);
   if (!checklist) return null;
 
-  let total = 0, passed = 0;
+  let total = 0, passed = 0, failed = 0, waived = 0;
   const categories = checklist.categories.map(cat => {
-    let catPassed = 0;
+    let catPassed = 0, catFailed = 0, catWaived = 0;
     const items = cat.items.map(item => {
       total++;
       if (item.result === 'pass') { passed++; catPassed++; }
+      else if (item.result === 'fail') { failed++; catFailed++; }
+      else if (item.result === 'waived') { waived++; catWaived++; }
       return { ...item };
     });
-    return { id: cat.id, name: cat.name, passed: catPassed, total: cat.items.length, items };
+    return { id: cat.id, name: cat.name, passed: catPassed, failed: catFailed, waived: catWaived, total: cat.items.length, items };
   });
 
-  return { passed, failed: total - passed, total, categories };
+  return { passed, failed, waived, total, categories };
 }
 
 // --- confirmFinal ---
