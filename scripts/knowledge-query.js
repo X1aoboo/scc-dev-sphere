@@ -341,10 +341,10 @@ function guardBash(stdinJson) {
 function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-  const workspaceRoot = process.cwd();
+  const workspaceRoot = args[1] || process.cwd();
 
   if (!command) {
-    console.error('Usage: knowledge-query.js <command> [args...]');
+    console.error('Usage: knowledge-query.js <command> <workspaceRoot> [args...]');
     console.error('');
     console.error('Configuration commands:');
     console.error('  read-config');
@@ -373,15 +373,15 @@ function main() {
         console.log(result);
         break;
       case 'update-config':
-        result = updateConfig(workspaceRoot, args[1], args[2]);
+        result = updateConfig(workspaceRoot, args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
       case 'add-config-item':
-        result = addConfigItem(workspaceRoot, args[1], args[2]);
+        result = addConfigItem(workspaceRoot, args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
       case 'remove-config-item':
-        result = removeConfigItem(workspaceRoot, args[1], args[2]);
+        result = removeConfigItem(workspaceRoot, args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
       case 'reset-config':
@@ -393,11 +393,11 @@ function main() {
         console.log(JSON.stringify(result));
         break;
       case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[1], args[2], args[3]);
+        result = registerEvidence(workspaceRoot, args[2], args[3], args[4]);
         console.log(JSON.stringify(result));
         break;
       case 'read-evidence':
-        result = readEvidence(workspaceRoot, args[1]);
+        result = readEvidence(workspaceRoot, args[2]);
         console.log(result);
         break;
       case 'guard-write': {
