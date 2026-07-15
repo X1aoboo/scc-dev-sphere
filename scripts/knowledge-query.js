@@ -298,6 +298,44 @@ function readEvidence(workspaceRoot, evId) {
   return fs.readFileSync(snapshotPath, 'utf-8');
 }
 
+// --- Guard helpers ---
+
+function knowledgeSourcesPath(filePath) {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  if (/(?:^|\/)knowledge-sources\.json$/.test(norm)) return 'knowledge-sources.json';
+  return null;
+}
+
+function guardWrite(stdinJson) {
+  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  const target = knowledgeSourcesPath(filePath);
+  if (!target) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `${target} 禁止直接 Write/Edit。数据源配置须通过 knowledge-query.js CLI（update-config / add-config-item / remove-config-item / reset-config）修改。`,
+    },
+  };
+}
+
+function guardBash(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti || typeof ti.command !== 'string') return null;
+  const command = ti.command;
+  const targetsConfig = /knowledge-sources\.json/.test(command);
+  if (!targetsConfig) return null;
+  const isCLI = command.includes('knowledge-query.js');
+  if (isCLI) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'knowledge-sources.json 禁止通过 Bash 直接操作；数据源配置须通过 knowledge-query.js CLI 修改。',
+    },
+  };
+}
+
 // --- CLI ---
 
 function main() {
@@ -362,6 +400,24 @@ function main() {
         result = readEvidence(workspaceRoot, args[1]);
         console.log(result);
         break;
+      case 'guard-write': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = guardWrite(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
+      case 'guard-bash': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = guardBash(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
       default:
         console.error('Unknown command: ' + command);
         process.exit(1);
@@ -390,4 +446,6 @@ module.exports = {
   nextEvId,
   registerEvidence,
   readEvidence,
+  guardWrite,
+  guardBash,
 };
