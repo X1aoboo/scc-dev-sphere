@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { init, checkComplete, readChecklist } = require('../feature-clarify');
+const { init, checkComplete, readChecklist, confirmFinal, updateChecklist } = require('../feature-clarify');
 
 test('init creates reviews/ dir and copies checklist template', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
@@ -99,6 +99,107 @@ test('readChecklist returns counts', () => {
   assert.strictEqual(result.passed, 0, 'all fail by default');
   assert.strictEqual(result.failed, result.total, 'failed equals total');
   assert.ok(Array.isArray(result.categories), 'has categories array');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('confirmFinal sets item 7.8.8 to pass', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-006');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const result = confirmFinal(taskPath);
+  assert.deepStrictEqual(result, { confirmed: true });
+
+  const checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.8.8') {
+        assert.strictEqual(item.result, 'pass');
+        assert.strictEqual(item.evidence, '§11 最终确认');
+      }
+    }
+  }
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('confirmFinal throws on missing checklist', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-007');
+
+  assert.throws(() => confirmFinal(taskPath), /requirement-checklist\.json not found/);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist updates a single item', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-008');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const result = updateChecklist(taskPath, { items: [{ id: '7.1.1', result: 'pass', evidence: '§2.1', note: '' }] });
+  assert.deepStrictEqual(result, { updated: 1 });
+
+  const checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.1') {
+        assert.strictEqual(item.result, 'pass');
+        assert.strictEqual(item.evidence, '§2.1');
+      }
+    }
+  }
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist updates multiple items', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-009');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const result = updateChecklist(taskPath, {
+    items: [
+      { id: '7.1.1', result: 'pass', evidence: 'ok', note: '' },
+      { id: '7.1.2', result: 'fail', evidence: '', note: 'missing' },
+    ],
+  });
+  assert.deepStrictEqual(result, { updated: 2 });
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist rejects invalid payload', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-010');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  assert.throws(() => updateChecklist(taskPath, null), /payload\.items must be an array/);
+  assert.throws(() => updateChecklist(taskPath, { items: 'not-array' }), /payload\.items must be an array/);
+  assert.throws(() => updateChecklist(taskPath, { items: [{ result: 'pass' }] }), /missing id or result/);
+  assert.throws(() => updateChecklist(taskPath, { items: [{ id: '7.1.1' }] }), /missing id or result/);
+  assert.throws(() => updateChecklist(taskPath, { items: [{ id: '7.1.1', result: 'invalid' }] }), /invalid result/);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist rejects missing item id', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-011');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  assert.throws(() => updateChecklist(taskPath, { items: [{ id: '99.99.99', result: 'pass', evidence: '', note: '' }] }), /checklist item not found/);
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
