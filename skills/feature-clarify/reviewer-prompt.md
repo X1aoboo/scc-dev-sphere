@@ -4,7 +4,7 @@
 
 ## 评审规则
 
-1. 读取 `reviews/requirement-checklist.json`，对所有 `result: "fail"` 的项进行复检（首轮全量检查）。
+1. 读取 `reviews/requirement-checklist.json`，对所有 `result: "fail"` 且 `reserved` 不为 `true` 的项进行复检（首轮全量检查）。`reserved: true` 的项由主会话独占处理，评审子 Agent 不得评审或更新。
 2. 逐项对照 requirement.md 内容判断：
    - **pass** — 有明确可验证内容，注明 evidence（如 §2.1）
    - **fail** — 缺少或模糊，注明缺失点
@@ -20,12 +20,12 @@
 通过 CLI 写入评审结果，不可直接 Write/Edit checklist JSON：
 
 ```bash
-node scripts/feature-clarify.js update-checklist <taskPath> '<json-payload>'
+node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js update-checklist <taskPath> '<json-payload>'
 ```
 
 Payload 格式：
 ```json
-{"items": [{"id": "7.1.1", "result": "pass", "evidence": "§2.1", "note": ""}]}
+{"items": [{"id": "7.1.1", "result": "pass", "evidence": "§2.1", "note": ""}], "incrementReviewVersion": true}
 ```
 
 ## 返回格式
