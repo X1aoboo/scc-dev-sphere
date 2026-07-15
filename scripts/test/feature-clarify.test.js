@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const { init, checkComplete, readChecklist, confirmFinal, updateChecklist } = require('../feature-clarify');
+const { init, checkComplete, readChecklist, confirmFinal, updateChecklist, waiveItem, checkStaleConfirmation } = require('../feature-clarify');
 
 test('init creates reviews/ dir and copies checklist template', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
@@ -214,6 +214,224 @@ test('updateChecklist rejects missing item id', () => {
   init(taskPath);
 
   assert.throws(() => updateChecklist(taskPath, { items: [{ id: '99.99.99', result: 'pass', evidence: '', note: '' }] }), /checklist item not found/);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist rejects reserved items', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-012');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  assert.throws(
+    () => updateChecklist(taskPath, { items: [{ id: '7.8.8', result: 'pass', evidence: '', note: '' }] }),
+    /reserved/
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('updateChecklist increments reviewVersion when requested', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-013');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // First round
+  const r1 = updateChecklist(taskPath, { items: [{ id: '7.1.1', result: 'pass', evidence: 'ok', note: '' }], incrementReviewVersion: true });
+  assert.strictEqual(r1.reviewVersion, 1);
+
+  // Second round
+  const r2 = updateChecklist(taskPath, { items: [{ id: '7.1.2', result: 'pass', evidence: 'ok', note: '' }], incrementReviewVersion: true });
+  assert.strictEqual(r2.reviewVersion, 2);
+
+  // Without increment, version stays
+  const r3 = updateChecklist(taskPath, { items: [{ id: '7.1.3', result: 'pass', evidence: 'ok', note: '' }] });
+  assert.strictEqual(r3.reviewVersion, 2);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('checkComplete returns true when items are pass or waived (no fail)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-014');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.1' || item.id === '7.1.2') {
+        item.result = 'waived';
+        item.note = '用户接受风险';
+      } else {
+        item.result = 'pass';
+      }
+    }
+  }
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  const result = checkComplete(taskPath);
+  assert.strictEqual(result.complete, true, `expected complete=true, failures: ${JSON.stringify(result.failures)}`);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('checkComplete returns false when any item is still fail (waived ok)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-015');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.1') {
+        item.result = 'waived';
+        item.note = '用户接受风险';
+      } else if (item.id === '7.8.8') {
+        // leave as fail — reserved item, still blocks
+        item.result = 'fail';
+      } else {
+        item.result = 'pass';
+      }
+    }
+  }
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  const result = checkComplete(taskPath);
+  assert.strictEqual(result.complete, false);
+  assert.ok(result.failures.some(f => f.includes('7.8.8')), '7.8.8 still blocks when fail');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('waiveItem sets items to waived when reviewVersion >= limit', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-016');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // Set reviewVersion >= designRevisionLimit (default 25)
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  checklist.reviewVersion = 25;
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  const result = waiveItem(taskPath, { items: [{ id: '7.1.1', reason: '低风险' }] });
+  assert.deepStrictEqual(result, { waived: 1 });
+
+  const updated = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  for (const cat of updated.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.1') {
+        assert.strictEqual(item.result, 'waived');
+        assert.ok(item.note.includes('低风险'), `note contains reason: ${item.note}`);
+      }
+    }
+  }
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('waiveItem throws when reviewVersion < designRevisionLimit', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-017');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // reviewVersion is 0, limit is 25
+  assert.throws(
+    () => waiveItem(taskPath, { items: [{ id: '7.1.1', reason: '低风险' }] }),
+    /cannot waive/
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('waiveItem throws when item is not fail', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-018');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = JSON.parse(fs.readFileSync(checklistPath, 'utf8'));
+  checklist.reviewVersion = 25;
+  // 7.1.1 is fail by default, change 7.1.2 to pass
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.1.2') item.result = 'pass';
+    }
+  }
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+
+  assert.throws(
+    () => waiveItem(taskPath, { items: [{ id: '7.1.2', reason: 'test' }] }),
+    /not fail/
+  );
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('checkStaleConfirmation detects stale confirmation and resets 7.8.8', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-019');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // Set 7.8.8 to pass (simulate confirmed)
+  confirmFinal(taskPath);
+
+  // Verify it's pass
+  let checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
+  let item788 = null;
+  for (const cat of checklist.categories) {
+    const found = cat.items.find(i => i.id === '7.8.8');
+    if (found) { item788 = found; break; }
+  }
+  assert.strictEqual(item788.result, 'pass');
+
+  // Touch requirement.md to make it newer than checklist (use future time to guarantee mtime gap)
+  const futureDate = new Date(Date.now() + 2000);
+  fs.utimesSync(path.join(taskPath, 'inputs', 'requirement.md'), futureDate, futureDate);
+
+  // Check stale
+  const result = checkStaleConfirmation(taskPath);
+  assert.strictEqual(result.stale, true, `expected stale=true, got: ${JSON.stringify(result)}`);
+
+  // Verify 7.8.8 was reset to fail
+  checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
+  for (const cat of checklist.categories) {
+    const found = cat.items.find(i => i.id === '7.8.8');
+    if (found) { item788 = found; break; }
+  }
+  assert.strictEqual(item788.result, 'fail', '7.8.8 should be reset to fail');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('checkStaleConfirmation returns stale=false when not yet confirmed', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fc-test-'));
+  const taskPath = path.join(tmp, 'tasks', 'feature', 'TEST-020');
+  fs.mkdirSync(path.join(taskPath, 'inputs'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# test');
+  init(taskPath);
+
+  // No confirmFinal called, 7.8.8 is still fail
+  const result = checkStaleConfirmation(taskPath);
+  assert.strictEqual(result.stale, false);
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
