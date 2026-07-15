@@ -165,7 +165,11 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-stale-confirmati
 
 - **达到上限仍有 fail** → 列出剩余 fail 项，询问用户裁决。用户可选择：
   - 继续澄清 → 回到阶段3
-  - 接受风险 → 通过 CLI `waive-item` 将对应项设为 `waived`，关闭循环进入阶段8
+  - 接受风险 → 通过 CLI 将对应项设为 `waived`：
+    ```bash
+    node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js waive-item <taskPath> '<json-payload>'
+    ```
+    ，关闭循环进入阶段8
 
 ## 阶段8：最终确认与状态推进
 
