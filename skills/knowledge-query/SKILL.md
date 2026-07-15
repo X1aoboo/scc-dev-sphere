@@ -46,10 +46,10 @@ flowchart TD
 
 自然语言自动识别配置意图：
 
-- "当前数据源有哪些？" → `node scripts/knowledge-query.js show-config` 展示生效配置（标注来源：workspace config / skill default）
-- "把 data/docs/ 加到本地数据源" → 交互式修改 → `node scripts/knowledge-query.js add-config-item sources.local.dirs /data/docs` 写入 workspace config
-- "禁用 MCP 数据源" → `node scripts/knowledge-query.js update-config sources.mcp.enabled false`
-- "恢复默认数据源配置" → `node scripts/knowledge-query.js reset-config` 删除 workspace config
+- "当前数据源有哪些？" → `node scripts/knowledge-query.js show-config ${CLAUDE_PROJECT_DIR}` 展示生效配置（标注来源：workspace config / skill default）
+- "把 data/docs/ 加到本地数据源" → 交互式修改 → `node scripts/knowledge-query.js add-config-item ${CLAUDE_PROJECT_DIR} sources.local.dirs /data/docs` 写入 workspace config
+- "禁用 MCP 数据源" → `node scripts/knowledge-query.js update-config ${CLAUDE_PROJECT_DIR} sources.mcp.enabled false`
+- "恢复默认数据源配置" → `node scripts/knowledge-query.js reset-config ${CLAUDE_PROJECT_DIR}` 删除 workspace config
 
 交互式修改：展示当前配置 → 逐项询问启用/禁用/加路径/调优先级 → 确认 → 写入。
 
@@ -57,7 +57,7 @@ flowchart TD
 
 ### 步骤1 — 解析意图 + 检索 registry
 
-读取 `evidence-registry.json` + 已有快照摘要（`knowledge/EV-xxx-*.md`）。registry 检索通过 `node scripts/knowledge-query.js next-ev-id` 获取最新编号，通过 `node scripts/knowledge-query.js read-evidence <evId>` 读取已有快照摘要。判断是否覆盖本次查询。
+读取 `evidence-registry.json` + 已有快照摘要（`knowledge/EV-xxx-*.md`）。registry 检索通过 `node scripts/knowledge-query.js next-ev-id ${CLAUDE_PROJECT_DIR}` 获取最新编号，通过 `node scripts/knowledge-query.js read-evidence ${CLAUDE_PROJECT_DIR} <evId>` 读取已有快照摘要。判断是否覆盖本次查询。
 
 - 匹配 → EV-ID 列表 → 跳步骤4
 - 未匹配 → 进入步骤2
@@ -66,7 +66,7 @@ flowchart TD
 
 **派发**：通过 `Agent` 工具派发一次性 `general-purpose` Task，注入 `subagent-prompt.md` 行为契约 + 当前生效的数据源配置 + 查询主题。每次派发均为新 Task，不复用。
 
-**等待返回**：子 Agent 按配置优先级自动搜索多数据源，查到后通过 `echo "<Content Summary>" | node scripts/knowledge-query.js register-evidence "<描述>" <sourceType> "<query>"` 写入 evidence（分配 EV-ID + 快照 + registry），返回 EV-ID；未查到则返回空的 gap 报告。
+**等待返回**：子 Agent 按配置优先级自动搜索多数据源，查到后通过 `echo "<Content Summary>" | node scripts/knowledge-query.js register-evidence ${CLAUDE_PROJECT_DIR} "<描述>" <sourceType> "<query>"` 写入 evidence（分配 EV-ID + 快照 + registry），返回 EV-ID；未查到则返回空的 gap 报告。
 
 **主线根据返回结果分流**：
 
@@ -77,12 +77,12 @@ flowchart TD
 
 子 Agent 未找到时，向用户请求知识输入。
 
-- **可用 AskUserQuestion 时**：一次问一个 topic，选项覆盖常见答案 + "以上都不是，我来说明"，用户答复后通过 `echo "<知识详情>" | node scripts/knowledge-query.js register-evidence "<描述>" user "用户提供"` 写入 evidence，跳步骤4
+- **可用 AskUserQuestion 时**：一次问一个 topic，选项覆盖常见答案 + "以上都不是，我来说明"，用户答复后通过 `echo "<知识详情>" | node scripts/knowledge-query.js register-evidence ${CLAUDE_PROJECT_DIR} "<描述>" user "用户提供"` 写入 evidence，跳步骤4
 - **不可用 AskUserQuestion 时**（子 Agent 场景）：返回「未找到」+ gap 说明，不阻塞调用方
 
 ### 步骤4 — 读快照返回
 
-按 EV-ID 列表通过 `node scripts/knowledge-query.js read-evidence <evId>` 读取快照。按「返回格式」结构输出知识内容 + EV-ID（供引用追溯）。
+按 EV-ID 列表通过 `node scripts/knowledge-query.js read-evidence ${CLAUDE_PROJECT_DIR} <evId>` 读取快照。按「返回格式」结构输出知识内容 + EV-ID（供引用追溯）。
 
 ## 返回格式（subagent 调用场景的契约）
 
