@@ -223,6 +223,47 @@ function checkReviewWritesFromStdin(stdinJson) {
   };
 }
 
+// 需求澄清评审清单守卫：requirement-checklist.json 只能由评审子 Agent 更新，
+// 主会话禁止直接 Write/Edit。评审循环的可信度依赖于此边界。
+function clarifyChecklistPath(filePath) {
+  const norm = (filePath || '').replace(/\\/g, '/');
+  if (/(?:^|\/)reviews\/requirement-checklist\.json$/.test(norm)) return 'requirement-checklist.json';
+  return null;
+}
+
+function checkClarifyChecklistWritesFromStdin(stdinJson) {
+  const filePath = stdinJson && stdinJson.tool_input && stdinJson.tool_input.file_path;
+  const target = clarifyChecklistPath(filePath);
+  if (!target) return null;
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `${target} 禁止主会话直接 Write/Edit。需求评审清单只能由评审子 Agent（通过 Agent 工具派发）更新。评审失败后应回到阶段3 澄清 → 更新 requirement.md → 重新派发评审子 Agent（阶段7b），不可自行修改 checklist。`,
+    },
+  };
+}
+
+function checkClarifyChecklistBashFromStdin(stdinJson) {
+  const ti = stdinJson && stdinJson.tool_input;
+  if (!ti || typeof ti.command !== 'string') return null;
+  const command = ti.command;
+  const targetsChecklist = /reviews\/requirement-checklist\.json/.test(command);
+  if (!targetsChecklist) return null;
+  // CLI 调用豁免：confirm-final 和 update-checklist 通过 feature-clarify.js 安全写入
+  const isClarifyCLI = command.includes('feature-clarify.js update-checklist')
+    || command.includes('feature-clarify.js confirm-final');
+  if (isClarifyCLI) return null;
+  // 其他 Bash 操作 checklist 一律拒绝
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'requirement-checklist.json 禁止通过 Bash 直接操作；评审子 Agent 使用 feature-clarify.js update-checklist，主会话使用 feature-clarify.js confirm-final。',
+    },
+  };
+}
+
 // --- Evidence guards ---
 
 function checkEvidenceWritesFromStdin(stdinJson) {
@@ -481,6 +522,24 @@ function main() {
         process.exit(0);
         break;
       }
+      case 'check-clarify-checklist': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkClarifyChecklistWritesFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
+      case 'check-clarify-checklist-bash': {
+        let stdinJson = null;
+        try { stdinJson = JSON.parse(fs.readFileSync(0, 'utf-8')); }
+        catch (e) { process.exit(0); }
+        const decision = checkClarifyChecklistBashFromStdin(stdinJson);
+        if (decision) process.stdout.write(JSON.stringify(decision));
+        process.exit(0);
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -505,4 +564,7 @@ module.exports = {
   checkReviewBashFromStdin,
   checkEvidenceWritesFromStdin,
   checkEvidenceBashFromStdin,
+  clarifyChecklistPath,
+  checkClarifyChecklistWritesFromStdin,
+  checkClarifyChecklistBashFromStdin,
 };
