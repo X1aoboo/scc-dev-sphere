@@ -104,6 +104,74 @@ function readChecklist(taskPath) {
   return { passed, failed: total - passed, total, categories };
 }
 
+// --- confirmFinal ---
+
+function confirmFinal(taskPath) {
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = readJSON(checklistPath);
+  if (!checklist) throw new Error('requirement-checklist.json not found');
+
+  let found = false;
+  for (const cat of checklist.categories) {
+    for (const item of cat.items) {
+      if (item.id === '7.8.8') {
+        item.result = 'pass';
+        item.evidence = '§11 最终确认';
+        item.note = '';
+        found = true;
+        break;
+      }
+    }
+    if (found) break;
+  }
+
+  if (!found) throw new Error('checklist item 7.8.8 not found');
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+  return { confirmed: true };
+}
+
+// --- updateChecklist ---
+
+function updateChecklist(taskPath, payload) {
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error('payload.items must be an array');
+  }
+  for (const item of payload.items) {
+    if (!item.id || !item.result) {
+      throw new Error(`item missing id or result: ${JSON.stringify(item)}`);
+    }
+    if (!['pass', 'fail'].includes(item.result)) {
+      throw new Error(`invalid result for ${item.id}: ${item.result}`);
+    }
+  }
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = readJSON(checklistPath);
+  if (!checklist) throw new Error('requirement-checklist.json not found');
+
+  let updated = 0;
+  for (const update of payload.items) {
+    let found = false;
+    for (const cat of checklist.categories) {
+      for (const item of cat.items) {
+        if (item.id === update.id) {
+          item.result = update.result;
+          item.evidence = update.evidence || '';
+          item.note = update.note || '';
+          found = true;
+          updated++;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) throw new Error(`checklist item not found: ${update.id}`);
+  }
+
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+  return { updated };
+}
+
 // --- CLI ---
 
 if (require.main === module) {
@@ -122,10 +190,18 @@ if (require.main === module) {
     case 'read-checklist':
       console.log(JSON.stringify(readChecklist(taskPath)));
       break;
+    case 'confirm-final':
+      console.log(JSON.stringify(confirmFinal(taskPath)));
+      break;
+    case 'update-checklist': {
+      const payload = JSON.parse(args[1]);
+      console.log(JSON.stringify(updateChecklist(taskPath, payload)));
+      break;
+    }
     default:
       console.error(`Unknown command: ${cmd}`);
       process.exit(1);
   }
 }
 
-module.exports = { init, checkComplete, readChecklist };
+module.exports = { init, checkComplete, readChecklist, confirmFinal, updateChecklist };
