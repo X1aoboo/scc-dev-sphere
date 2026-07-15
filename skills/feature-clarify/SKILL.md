@@ -77,7 +77,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 **情况二：缺少外部知识**
 
-通过 `Agent` 工具派发一次性子 Agent，加载 `scc-dev-sphere:knowledge-query` skill 进行查询，查询聚焦当前单一模糊点。每次均为新的 `general-purpose` Task。**MUST NOT directly query the knowledge base in the main session — MUST dispatch a one-shot `knowledge-query` subagent. MUST NOT reuse agent IDs, MUST NOT use teammate. MUST wait for the structured EV/gap result.**
+通过 `Agent` 工具派发一次性子 Agent，加载 `scc-dev-sphere:knowledge-query` skill 进行查询，查询聚焦当前单一模糊点。每次均为新的 `general-purpose` Task。**MUST NOT directly query the knowledge base in the main session — MUST dispatch a one-shot `knowledge-query` subagent. MUST wait for the structured EV/gap result.**
 
 > 查询 Claude Code 和 Codex 是否支持运行时创建具有不同工具约束的 Agent，用于判断跨平台自定义 Agent 能力的需求边界。
 
@@ -120,14 +120,14 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 六维度**只用于完整性检查，不决定提问顺序**。发现遗漏时回到阶段3补充处理。
 
-## 完成判断原则
+### 完成判断原则
 
 澄清完成的判断标准：
 - 核心模糊点全部 resolved，无遗漏高影响 open 项
 - 能完整描述至少一条端到端核心用户旅程
 - 核心功能的验收标准可操作判断
 - 关键业务规则和边界条件已明确
-- 用户已确认需求汇总
+- 需求信息足够生成结构化需求文档（覆盖业务目标、核心场景、功能范围、验收标准）
 
 ## 阶段6：按模板写入需求文档
 
@@ -137,9 +137,14 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 ## 阶段7：评审循环
 
-### 7a. 初始化评审清单
+### 7a 前置：检查确认是否过期
 
-`reviews/requirement-checklist.json` 已在阶段0由脚本放置，评审子 Agent 直接读取并更新。
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-stale-confirmation <taskPath>
+# 若返回 stale: true，表示 requirement.md 在确认后被修改，需重新确认
+```
+
+若 `stale: true`，标记用户需在阶段8重新确认。
 
 ### 7b. 派发评审子 Agent
 
@@ -149,24 +154,28 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 轮次（reviewVersion）≤ `state.designRevisionLimit`（默认 25）：
 
-- **全部 pass** → 关闭循环，进入阶段8。
+- **非 reserved 项全部 pass**（`reserved: true` 的项如 7.8.8 不参与评审判定）→ 关闭循环，进入阶段8。
 
 - **有 fail** → 执行以下步骤，**不可合并或跳过**：
   1. 回到阶段3，**仅**处理 fail 项关联的模糊点（逐项向用户澄清，不可自行推测后直接修改 checklist）
   2. 澄清完成后，更新 `inputs/requirement.md`（**仅此文件**，将澄清结论写入对应章节）
   3. 递增 `reviewVersion`
   4. **必须回到 7b**，重新派发评审子 Agent 对更新后的 requirement.md 进行复检
-  5. **禁止**在未重新派发评审子 Agent 的情况下自行修改 checklist 或进入阶段8
+  5. **禁止**自行修改 checklist 或进入阶段8
 
-- **达到上限仍有 fail** → 剩余 fail 项带至阶段8，向用户说明后由用户裁决。
+- **达到上限仍有 fail** → 列出剩余 fail 项，询问用户裁决。用户可选择：
+  - 继续澄清 → 回到阶段3
+  - 接受风险 → 通过 CLI `waive-item` 将对应项设为 `waived`，关闭循环进入阶段8
 
 ## 阶段8：最终确认与状态推进
+
+若阶段7入口的 check-stale-confirmation 返回 stale: true，此处须先向用户说明 requirement.md 已过期变更，请求重新确认。
 
 1. 展示需求汇总，用 `confirm_gate` 请求最终确认。用户拒绝时返回阶段3继续澄清。
 
 2. 用户确认后执行：
    a. 将「最终确认」章节写入 `inputs/requirement.md`（追加确认时间戳和确认范围）
-   b. 更新 checklist item 7.8.8 为 pass：
+   b. 更新 checklist confirm-final 为 pass：
    ```bash
    node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js confirm-final <taskPath>
    ```
@@ -176,7 +185,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-complete <taskPath>
 # 返回 { complete: true }
 ```
-- 返回 false → 状态不满足，重新进入阶段7 进行评审循环（此时 checklist 7.8.8 已 pass，仅剩真正的质量问题）
+- 返回 false → 状态不满足，重新进入阶段7 进行评审循环（此时 checklist confirm-final 已 pass，仅剩真正的质量问题）
 - 返回 true → 完整性检查通过，继续下一步
 
 4. 推进状态：
