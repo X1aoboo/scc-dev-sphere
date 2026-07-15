@@ -143,7 +143,7 @@ test('updateChecklist updates a single item', () => {
   init(taskPath);
 
   const result = updateChecklist(taskPath, { items: [{ id: '7.1.1', result: 'pass', evidence: '§2.1', note: '' }] });
-  assert.deepStrictEqual(result, { updated: 1 });
+  assert.deepStrictEqual(result, { updated: 1, reviewVersion: 0 });
 
   const checklist = JSON.parse(fs.readFileSync(path.join(taskPath, 'reviews', 'requirement-checklist.json'), 'utf8'));
   for (const cat of checklist.categories) {
@@ -171,7 +171,7 @@ test('updateChecklist updates multiple items', () => {
       { id: '7.1.2', result: 'fail', evidence: '', note: 'missing' },
     ],
   });
-  assert.deepStrictEqual(result, { updated: 2 });
+  assert.deepStrictEqual(result, { updated: 2, reviewVersion: 0 });
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });

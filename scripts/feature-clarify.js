@@ -149,6 +149,16 @@ function updateChecklist(taskPath, payload) {
   const checklist = readJSON(checklistPath);
   if (!checklist) throw new Error('requirement-checklist.json not found');
 
+  // Reject updates to reserved items
+  for (const update of payload.items) {
+    for (const cat of checklist.categories) {
+      const item = cat.items.find(i => i.id === update.id);
+      if (item && item.reserved) {
+        throw new Error(`item ${update.id} is reserved — only main session can update`);
+      }
+    }
+  }
+
   let updated = 0;
   for (const update of payload.items) {
     let found = false;
@@ -168,8 +178,12 @@ function updateChecklist(taskPath, payload) {
     if (!found) throw new Error(`checklist item not found: ${update.id}`);
   }
 
+  if (payload.incrementReviewVersion) {
+    checklist.reviewVersion = (checklist.reviewVersion || 0) + 1;
+  }
+
   fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
-  return { updated };
+  return { updated, reviewVersion: checklist.reviewVersion };
 }
 
 // --- CLI ---
