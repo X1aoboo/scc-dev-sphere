@@ -21,7 +21,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 分析原始需求（不写入文件），识别：明确提出了什么、Agent 的关键推断、当前缺口。此分析驱动阶段2。
 
-需求涉及明显陌生领域时，可执行一次轻量知识查询（单一查询，不超过 2 个子问题）；已能识别核心模糊点时直接进入阶段2。
+需求涉及明显陌生领域时，必须执行一次轻量知识查询（单一查询，不超过 3 个子问题）；查询完成后，已能识别核心模糊点时直接进入阶段2。
 
 ## 阶段2：生成模糊点清单
 
@@ -120,6 +120,15 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 六维度**只用于完整性检查，不决定提问顺序**。发现遗漏时回到阶段3补充处理。
 
+## 完成判断原则
+
+澄清完成的判断标准：
+- 核心模糊点全部 resolved，无遗漏高影响 open 项
+- 能完整描述至少一条端到端核心用户旅程
+- 核心功能的验收标准可操作判断
+- 关键业务规则和边界条件已明确
+- 用户已确认需求汇总
+
 ## 阶段6：按模板写入需求文档
 
 1. 读取 `skills/feature-clarify/requirement.md` 模板，按 11 章节结构组织需求汇总，写入 `inputs/requirement.md`（**追加**到原始需求下方，**永不覆盖原始需求**）。未明确项保留待补充标记，评审循环中逐步填充。
@@ -134,31 +143,43 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js init <taskPath>
 
 ### 7b. 派发评审子 Agent
 
-通过 `Agent` 工具派发一次性子 Agent（`general-purpose` Task，每次新 Agent），携带以下 instruction：
-
-> 你是一位需求评审专家。请对照评审清单，逐项检查 `inputs/requirement.md` 的需求质量。
->
-> **评审规则：**
-> 1. 读取 `reviews/requirement-checklist.json`，对所有 `result: "fail"` 的项进行复检（首轮全量检查）。
-> 2. 逐项对照 requirement.md 内容判断：**pass** — 有明确可验证内容，注明 evidence（如 §2.1）；**fail** — 缺少或模糊，注明缺失点。
-> 3. 判断依据：只依据文档实际内容；核心功能必须有行为和结果描述；验收标准必须可操作判断；不得出现「友好、快速、待定、可能」等不可验证措辞；Agent 推断未获用户确认的不得视为需求事实。
-> 4. 更新 checklist JSON 后返回 `{passed, failed, summary}`。
->
-> **禁止：** 修改 requirement.md、根据自身知识补充需求内容。
+通过 `Agent` 工具派发一次性子 Agent（`general-purpose` Task，每次新 Agent），注入 `skills/feature-clarify/reviewer-prompt.md` 行为契约。
 
 ### 7c. 处理评审结果
 
 轮次（reviewVersion）≤ `state.designRevisionLimit`（默认 25）：
-- 全部 pass → 关闭循环，进入阶段8
-- 有 fail → 回到阶段3 补充澄清（仅处理 fail 项关联模糊点）→ 更新 `inputs/requirement.md` → `reviewVersion` 递增 → 回到 7b
 
-达到上限仍有 fail → 剩余 fail 项带至阶段8，向用户说明后由用户裁决。
+- **全部 pass** → 关闭循环，进入阶段8。
+
+- **有 fail** → 执行以下步骤，**不可合并或跳过**：
+  1. 回到阶段3，**仅**处理 fail 项关联的模糊点（逐项向用户澄清，不可自行推测后直接修改 checklist）
+  2. 澄清完成后，更新 `inputs/requirement.md`（**仅此文件**，将澄清结论写入对应章节）
+  3. 递增 `reviewVersion`
+  4. **必须回到 7b**，重新派发评审子 Agent 对更新后的 requirement.md 进行复检
+  5. **禁止**在未重新派发评审子 Agent 的情况下自行修改 checklist 或进入阶段8
+
+- **达到上限仍有 fail** → 剩余 fail 项带至阶段8，向用户说明后由用户裁决。
 
 ## 阶段8：最终确认与状态推进
 
-1. 展示需求汇总，用 `confirm_gate` 请求最终确认。
+1. 展示需求汇总，用 `confirm_gate` 请求最终确认。用户拒绝时返回阶段3继续澄清。
 
-2. 确认后执行状态推进：
+2. 用户确认后执行：
+   a. 将「最终确认」章节写入 `inputs/requirement.md`（追加确认时间戳和确认范围）
+   b. 更新 checklist item 7.8.8 为 pass：
+   ```bash
+   node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js confirm-final <taskPath>
+   ```
+
+3. 执行完整性检查：
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-complete <taskPath>
+# 返回 { complete: true }
+```
+- 返回 false → 状态不满足，重新进入阶段7 进行评审循环（此时 checklist 7.8.8 已 pass，仅剩真正的质量问题）
+- 返回 true → 完整性检查通过，继续下一步
+
+4. 推进状态：
 ```bash
 node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status <workspaceRoot> clarified
 ```
@@ -181,14 +202,3 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
 ## [时间戳] 下一个问题主题
 ...
 ```
-
-## 完成判断原则
-
-阶段8 前必须满足：
-
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/feature-clarify.js check-complete <taskPath>
-# 返回 { complete: true }
-```
-
-即：checklist 全部 pass、backlog 无 open 项、requirement.md 有最终确认标记。此外还需用户确认需求汇总符合真实意图。任一条件不满足则继续澄清。
