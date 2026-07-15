@@ -1,4 +1,5 @@
 {
+  "reviewVersion": 0,
   "categories": [
     {
       "id": "7.1",
@@ -91,7 +92,7 @@
         {"id": "7.8.5", "check": "没有大段复制澄清会话", "result": "fail", "evidence": "", "note": ""},
         {"id": "7.8.6", "check": "没有与需求无关的知识调研内容", "result": "fail", "evidence": "", "note": ""},
         {"id": "7.8.7", "check": "没有“待定、可能、视情况、后续再看”等无处理说明的模糊表达", "result": "fail", "evidence": "", "note": ""},
-        {"id": "7.8.8", "check": "用户已完成最终确认", "result": "fail", "evidence": "", "note": ""}
+        {"id": "7.8.8", "check": "用户已完成最终确认", "result": "fail", "reserved": true, "evidence": "", "note": ""}
       ]
     }
   ],
