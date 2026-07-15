@@ -32,7 +32,7 @@ After (fixed):
 8.5 checkComplete → 8.6 advance state
 ```
 
-Step 8.4 is critical: after writing the confirmation to requirement.md, the main session calls `feature-clarify.js update-checklist` to mark checklist item 7.8.8 ("用户已完成最终确认") as pass. Without this, checkComplete fails on the checklist check because the sub-agent last saw 7.8.8 as fail. Using the CLI here is consistent — item 7.8.8 is the one checklist item whose pass/fail is determined by the main session (user confirmation), not by sub-agent document review.
+Step 8.4 is critical: after writing the confirmation to requirement.md, the main session calls `feature-clarify.js confirm-final` to mark checklist item 7.8.8 ("用户已完成最终确认") as pass. This is a **narrow, purpose-built command** that only touches item 7.8.8 — the main session cannot use it to update arbitrary checklist items. Without this, checkComplete fails on the checklist check because the sub-agent last saw 7.8.8 as fail. Item 7.8.8 is the one checklist item whose pass/fail is determined by the main session (user confirmation), not by sub-agent document review.
 
 - `feature-clarify.js` checkComplete() — **no change**: the `最终确认` text check and checklist check are both retained. They now run AFTER confirmation text is written and 7.8.8 is marked pass, so both pass naturally.
 - If checkComplete fails after confirmation, the loop back to phase 7 is correct (genuine quality issues remain).
@@ -45,11 +45,30 @@ Step 8.4 is critical: after writing the confirmation to requirement.md, the main
 
 **Fix:** Introduce a CLI command as the sole write path for `requirement-checklist.json`. Sub-agents call the CLI via Bash; hooks exempt the CLI but continue blocking direct Write/Edit.
 
-#### 2a. New CLI command in `feature-clarify.js`
+#### 2a. Two new CLI commands in `feature-clarify.js`
+
+Two separate commands with distinct callers and scopes:
+
+**Command A: `confirm-final` — main session only**
+
+```
+node scripts/feature-clarify.js confirm-final <taskPath>
+```
+
+- **Caller:** Main session (phase 8, after user confirms)
+- **Scope:** Updates checklist item 7.8.8 ONLY (`result: "pass"`, `evidence: "§11 最终确认"`)
+- **No JSON payload** — the command is narrowly scoped; it cannot update any other item
+- Returns `{ confirmed: true }` on success
+- Errors if checklist not found or item 7.8.8 doesn't exist
+
+**Command B: `update-checklist` — review sub-agent only**
 
 ```
 node scripts/feature-clarify.js update-checklist <taskPath> '<json-payload>'
 ```
+
+- **Caller:** Review sub-agent (phase 7b, via Agent tool → Bash)
+- **Scope:** Updates arbitrary checklist items by id
 
 Payload format:
 ```json
@@ -69,12 +88,15 @@ Script logic:
 5. Write updated checklist back
 6. Return `{ updated: N }` on success
 
+**Separation rationale:** Although the Bash hook cannot distinguish callers, the narrow interface of `confirm-final` (single item, no payload) means the main session's SKILL.md can only instruct it to mark 7.8.8. The sub-agent's `reviewer-prompt.md` only instructs it to use `update-checklist`. The separation is enforced by prompt design, not by the hook.
+
 #### 2b. Bash hook exemption
 
 In `checkClarifyChecklistBashFromStdin` (`devsphere-guard.js`), add a CLI check:
 
 ```javascript
-const isClarifyCLI = command.includes('feature-clarify.js update-checklist');
+const isClarifyCLI = command.includes('feature-clarify.js update-checklist')
+  || command.includes('feature-clarify.js confirm-final');
 if (targetsChecklist && !isClarifyCLI) { /* deny */ }
 ```
 
@@ -98,12 +120,12 @@ node scripts/feature-clarify.js update-checklist <taskPath> '<json>'
 **SKILL.md phase 7b** changed to reference the file instead of inlining the instruction. This decouples the main session flow from review rules.
 
 **Files:**
-- `scripts/feature-clarify.js` — new `update-checklist` command (+ module export)
-- `scripts/devsphere-guard.js` — `checkClarifyChecklistBashFromStdin` add CLI exemption
-- `skills/feature-clarify/SKILL.md` — phase 7b reference external prompt + CLI instruction
-- `skills/feature-clarify/reviewer-prompt.md` — **new file**, extracted reviewer prompt
+- `scripts/feature-clarify.js` — new `confirm-final` and `update-checklist` commands (+ module exports)
+- `scripts/devsphere-guard.js` — `checkClarifyChecklistBashFromStdin` add CLI exemption (both commands)
+- `skills/feature-clarify/SKILL.md` — phase 7b reference external prompt + CLI instruction; phase 8 uses `confirm-final`
+- `skills/feature-clarify/reviewer-prompt.md` — **new file**, extracted reviewer prompt (uses `update-checklist`)
 - `hooks/hooks.json` — no change (Write/Edit hook remains, Bash hook updated via guard.js)
-- `scripts/test/feature-clarify.test.js` — new test cases for `update-checklist`
+- `scripts/test/feature-clarify.test.js` — new test cases for `update-checklist` and `confirm-final`
 
 ### 3. Contract Test Fixes
 
@@ -138,10 +160,10 @@ Add a brief reference in the overview section (after the mermaid flowchart), not
 | `skills/feature-clarify/SKILL.md` | Phase 7b: reference external reviewer-prompt.md + CLI instruction | #2 |
 | `skills/feature-clarify/SKILL.md` | New `完成判断原则` section after phase 5 | #3 |
 | `skills/feature-clarify/reviewer-prompt.md` | **New** — extracted reviewer sub-agent prompt | #2 |
-| `scripts/feature-clarify.js` | New `update-checklist` command + export | #2 |
-| `scripts/devsphere-guard.js` | `checkClarifyChecklistBashFromStdin`: add CLI exemption | #2 |
+| `scripts/feature-clarify.js` | New `confirm-final` + `update-checklist` commands (+ exports) | #2 |
+| `scripts/devsphere-guard.js` | `checkClarifyChecklistBashFromStdin`: add CLI exemption (both commands) | #2 |
 | `skills/knowledge-query/SKILL.md` | Add `knowledge-sources.json` reference in overview | #3 |
-| `scripts/test/feature-clarify.test.js` | New test: `update-checklist` (apply updates, reject invalid, missing id) | #2 |
+| `scripts/test/feature-clarify.test.js` | New tests: `update-checklist` + `confirm-final` | #2 |
 
 ## Non-Changes
 
@@ -155,4 +177,5 @@ Add a brief reference in the overview section (after the mermaid flowchart), not
 1. `node --test scripts/test/feature-clarify.test.js` — all pass
 2. `node --test scripts/test/skill-contracts.test.js` — all 12 pass
 3. `node --test scripts/test/` — full test suite passes
-4. Manual: `node scripts/feature-clarify.js update-checklist <taskPath> '{"items":[{"id":"7.1.1","result":"pass","evidence":"test"}]}'` — checklist updated
+4. Manual: `node scripts/feature-clarify.js confirm-final <taskPath>` — item 7.8.8 set to pass
+5. Manual: `node scripts/feature-clarify.js update-checklist <taskPath> '{"items":[{"id":"7.1.1","result":"pass","evidence":"test"}]}'` — checklist updated
