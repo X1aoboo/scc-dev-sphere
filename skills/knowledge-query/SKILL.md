@@ -36,9 +36,11 @@ flowchart TD
     Q4 --> DONE[返回: 知识内容 + EV-ID]
 ```
 
+多数据源默认配置存储在 skill 根目录的 `knowledge-sources.json`，由 `scripts/knowledge-query.js` 管理。
+
 ## 配置工作流
 
-配置操作均通过 `node scripts/knowledge-query.js` 执行（自动定位当前项目根目录）。
+配置操作均通过 `node scripts/knowledge-query.js` 执行。
 
 默认数据源及优先级：skill → 本地目录 → 代码仓 → MCP → WebSearch。skill 和本地/代码仓默认启用（需配置具体名称/路径），MCP 和 WebSearch 默认关闭。配置采用两层 fallback（workspace config > skill default），脚本自动处理。
 
@@ -55,7 +57,7 @@ flowchart TD
 
 ### 步骤1 — 解析意图 + 检索 registry
 
-读取 `evidence-registry.json` + 已有快照摘要。registry 检索通过 `node scripts/knowledge-query.js next-ev-id` 获取最新编号，通过 `node scripts/knowledge-query.js read-evidence <evId>` 读取已有快照摘要。判断是否覆盖本次查询。
+读取 `evidence-registry.json` + 已有快照摘要（`knowledge/EV-xxx-*.md`）。registry 检索通过 `node scripts/knowledge-query.js next-ev-id` 获取最新编号，通过 `node scripts/knowledge-query.js read-evidence <evId>` 读取已有快照摘要。判断是否覆盖本次查询。
 
 - 匹配 → EV-ID 列表 → 跳步骤4
 - 未匹配 → 进入步骤2
