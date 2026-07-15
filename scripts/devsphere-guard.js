@@ -252,7 +252,9 @@ function checkClarifyChecklistBashFromStdin(stdinJson) {
   if (!targetsChecklist) return null;
   // CLI 调用豁免：confirm-final 和 update-checklist 通过 feature-clarify.js 安全写入
   const isClarifyCLI = command.includes('feature-clarify.js update-checklist')
-    || command.includes('feature-clarify.js confirm-final');
+    || command.includes('feature-clarify.js confirm-final')
+    || command.includes('feature-clarify.js waive-item')
+    || command.includes('feature-clarify.js check-stale-confirmation');
   if (isClarifyCLI) return null;
   // 其他 Bash 操作 checklist 一律拒绝
   return {
