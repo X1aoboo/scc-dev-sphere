@@ -239,7 +239,7 @@ function checkClarifyChecklistWritesFromStdin(stdinJson) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${target} 禁止主会话直接 Write/Edit。需求评审清单只能由评审子 Agent（通过 Agent 工具派发）更新。评审失败后应回到阶段3 澄清 → 更新 requirement.md → 重新派发评审子 Agent（阶段7b），不可自行修改 checklist。`,
+      permissionDecisionReason: `${target} 禁止直接 Write/Edit。checklist 变更须通过 feature-clarify.js CLI（update-checklist / confirm-final / waive-item）操作。`,
     },
   };
 }
@@ -259,7 +259,7 @@ function checkClarifyChecklistBashFromStdin(stdinJson) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'requirement-checklist.json 禁止通过 Bash 直接操作；评审子 Agent 使用 feature-clarify.js update-checklist，主会话使用 feature-clarify.js confirm-final。',
+      permissionDecisionReason: 'requirement-checklist.json 禁止通过 Bash 直接操作；checklist 变更须通过 feature-clarify.js CLI。',
     },
   };
 }
