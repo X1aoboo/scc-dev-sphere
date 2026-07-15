@@ -175,6 +175,61 @@ function updateChecklist(taskPath, payload) {
   return { updated, reviewVersion: checklist.reviewVersion };
 }
 
+// --- waiveItem ---
+
+function waiveItem(taskPath, payload) {
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error('payload.items must be an array');
+  }
+  for (const item of payload.items) {
+    if (!item.id || !item.reason) {
+      throw new Error(`waive item missing id or reason: ${JSON.stringify(item)}`);
+    }
+  }
+
+  // Read designRevisionLimit from state.json
+  const statePath = path.join(taskPath, 'state.json');
+  let designRevisionLimit = 25;
+  if (fs.existsSync(statePath)) {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    designRevisionLimit = state.designRevisionLimit || 25;
+  }
+
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const checklist = readJSON(checklistPath);
+  if (!checklist) throw new Error('requirement-checklist.json not found');
+
+  if ((checklist.reviewVersion || 0) < designRevisionLimit) {
+    throw new Error(
+      `cannot waive: reviewVersion ${checklist.reviewVersion || 0} < designRevisionLimit ${designRevisionLimit}`
+    );
+  }
+
+  let waived = 0;
+  for (const update of payload.items) {
+    let found = false;
+    for (const cat of checklist.categories) {
+      for (const item of cat.items) {
+        if (item.id === update.id) {
+          if (item.result !== 'fail') {
+            throw new Error(`item ${update.id} is not fail, cannot waive`);
+          }
+          item.result = 'waived';
+          item.note = `用户接受风险: ${update.reason}`;
+          found = true;
+          waived++;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) throw new Error(`checklist item not found: ${update.id}`);
+  }
+
+  fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+  return { waived };
+}
+
 // --- CLI ---
 
 if (require.main === module) {
@@ -201,10 +256,15 @@ if (require.main === module) {
       console.log(JSON.stringify(updateChecklist(taskPath, payload)));
       break;
     }
+    case 'waive-item': {
+      const payload = JSON.parse(args[1]);
+      console.log(JSON.stringify(waiveItem(taskPath, payload)));
+      break;
+    }
     default:
       console.error(`Unknown command: ${cmd}`);
       process.exit(1);
   }
 }
 
-module.exports = { init, checkComplete, readChecklist, confirmFinal, updateChecklist };
+module.exports = { init, checkComplete, readChecklist, confirmFinal, updateChecklist, waiveItem };
