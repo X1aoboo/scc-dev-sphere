@@ -116,8 +116,6 @@ function confirmFinal(taskPath) {
     for (const item of cat.items) {
       if (item.id === '7.8.8') {
         item.result = 'pass';
-        item.evidence = '§11 最终确认';
-        item.note = '';
         found = true;
         break;
       }
