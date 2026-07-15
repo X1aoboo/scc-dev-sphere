@@ -31,7 +31,7 @@ start
 :分析原始需求;
 if (理解需求是否依赖可查询的既有事实？) then (是)
   :调用 knowledge-query Skill 查询依赖知识;
-  :纳入 EV；gap 作为候选模糊点;
+  :等待查询任务完成，纳入 EV；gap 作为候选模糊点;
 else (否)
 endif
 :进入步骤2;
