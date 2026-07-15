@@ -230,6 +230,44 @@ function waiveItem(taskPath, payload) {
   return { waived };
 }
 
+// --- checkStaleConfirmation ---
+
+function checkStaleConfirmation(taskPath) {
+  const checklistPath = path.join(taskPath, 'reviews', 'requirement-checklist.json');
+  const reqPath = path.join(taskPath, 'inputs', 'requirement.md');
+
+  if (!fs.existsSync(checklistPath)) {
+    return { stale: false, reason: 'checklist not found' };
+  }
+  if (!fs.existsSync(reqPath)) {
+    return { stale: false, reason: 'requirement.md not found' };
+  }
+
+  const checklist = readJSON(checklistPath);
+
+  // Find 7.8.8
+  let item788 = null;
+  for (const cat of checklist.categories) {
+    const found = cat.items.find(i => i.id === '7.8.8');
+    if (found) { item788 = found; break; }
+  }
+  if (!item788) return { stale: false, reason: '7.8.8 not found' };
+  if (item788.result !== 'pass') return { stale: false, reason: 'not yet confirmed' };
+
+  // Compare mtimes
+  const checklistMtime = fs.statSync(checklistPath).mtimeMs;
+  const reqMtime = fs.statSync(reqPath).mtimeMs;
+
+  if (reqMtime > checklistMtime) {
+    // Stale: reset 7.8.8 to fail
+    item788.result = 'fail';
+    fs.writeFileSync(checklistPath, JSON.stringify(checklist, null, 2));
+    return { stale: true, reason: 'requirement.md modified after confirmation, 7.8.8 reset to fail' };
+  }
+
+  return { stale: false };
+}
+
 // --- CLI ---
 
 if (require.main === module) {
@@ -261,10 +299,13 @@ if (require.main === module) {
       console.log(JSON.stringify(waiveItem(taskPath, payload)));
       break;
     }
+    case 'check-stale-confirmation':
+      console.log(JSON.stringify(checkStaleConfirmation(taskPath)));
+      break;
     default:
       console.error(`Unknown command: ${cmd}`);
       process.exit(1);
   }
 }
 
-module.exports = { init, checkComplete, readChecklist, confirmFinal, updateChecklist, waiveItem };
+module.exports = { init, checkComplete, readChecklist, confirmFinal, updateChecklist, waiveItem, checkStaleConfirmation };
