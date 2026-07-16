@@ -1,0 +1,10 @@
+{
+  "approvalId": "APP-xxx",
+  "type": "design-final-approval",
+  "taskId": "FEAT-xxx",
+  "approvedArtifacts": [],
+  "approvedScope": [],
+  "limitations": [],
+  "approvedBy": "human",
+  "approvedAt": ""
+}
