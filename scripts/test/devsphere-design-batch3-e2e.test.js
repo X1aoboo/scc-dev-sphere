@@ -8,7 +8,7 @@ const {
   draftPath, currentStage, STAGE_SLUG,
 } = require('../devsphere-design');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
-const { initMatrix, readMatrix, writeMatrix } = require('../devsphere-review-matrix');
+const { initMatrix, readMatrix } = require('../devsphere-review-matrix');
 const { readState } = require('../devsphere-state');
 
 function writeDraft(taskPath, stage, ver, body = '# d') {
@@ -33,7 +33,7 @@ function baselineClean(taskPath, stage, ver, reviewer, findings = []) {
   publish(taskPath, stage);
 }
 
-test('E2E: business baseline → design_change → reopen → revise 关 blocking → 重 baseline → design_ready', () => {
+test('E2E: business baseline → design_change → reopen → close design-change blocking via closureDecisions → 重 baseline → design_ready', () => {
   const { taskPath, taskId } = makeTask();
 
   // Fix #4：任务级 matrix 初始化一次（含全部 5 个 artifact entry）。

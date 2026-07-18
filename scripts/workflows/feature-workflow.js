@@ -15,9 +15,6 @@ const { STAGE_SLUG } = require('../devsphere-design');
  */
 function resolveNextAction(taskPath, state) {
   const status = state.status;
-  const stages = state.stages || {};
-  const mode = state.workflowMode || 'auto-design';
-  const humanGates = state.humanGateStages || [];
 
   // --- No active task edge case (handled by router) ---
 
