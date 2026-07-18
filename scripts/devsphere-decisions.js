@@ -11,7 +11,7 @@ const SLUG_PREFIX = {
   'implementation-design': 'ID',
   'test-design': 'TD',
 };
-const VALID_TYPES = ['gated', 'autonomous'];
+const VALID_TYPES = ['gated', 'autonomous', 'assumption'];
 const VALID_CATEGORIES = ['feature_scope', 'assumption', 'open_question', 'business_rule', 'tradeoff'];
 const VALID_ASK_MODES = ['single_select', 'multi_select', 'confirm_gate'];
 

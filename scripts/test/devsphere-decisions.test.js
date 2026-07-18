@@ -324,3 +324,15 @@ test('validateDecisionsFile: 元素缺 type → 抛（堵自创 schema）', () =
     decisions: [{ id: 'X', topic: 't', question: 'q', options: [] }],  // 无 type
   }), /type/);
 });
+
+// === Plan D7: assumption decision type ===
+
+test('addDecision 支持 type=assumption（D7）', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  const d = addDecision(taskPath, 'business-design', {
+    type: 'assumption', category: 'assumption', summary: '假设用户量 < 1000',
+  });
+  assert.strictEqual(d.type, 'assumption');
+  assert.strictEqual(d.status, 'pending');
+});
