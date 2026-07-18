@@ -58,3 +58,65 @@ test('current-stage: 含 integrated baseline → complete', () => {
   assert.strictEqual(currentStage(taskPath).stage, null);
   assert.strictEqual(currentStage(taskPath).complete, true);
 });
+
+// --- Task 3: inspect 的 integrated 分支 ---
+const { inspect, recordGate, readDraftRef } = require('../devsphere-design');
+const { initMatrix, readMatrix, writeMatrix } = require('../devsphere-review-matrix');
+
+function writeIntegratedDraft(taskPath, id, ver, body = '# integrated') {
+  const dp = path.join(taskPath, 'work', 'integrated-design', 'draft.md');
+  fs.writeFileSync(dp, `---\nartifactId: "${id}"\nversion: "${ver}"\n---\n\n${body}\n`, 'utf-8');
+}
+
+test('inspect(integrated): 无 draft → run_stage/assemble', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'run_stage', activity: 'assemble' });
+});
+
+test('inspect(integrated): draft 存在无 gate → run_gate', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  writeIntegratedDraft(taskPath, 'INT-1', '0.1.0');
+  assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'run_gate' });
+});
+
+test('inspect(integrated): gate pass 无 review → run_review', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  writeIntegratedDraft(taskPath, 'INT-1', '0.1.0');
+  recordGate(taskPath, 'integratedDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'run_review' });
+});
+
+test('inspect(integrated): reviewed 无 baseline → baseline', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  writeIntegratedDraft(taskPath, 'INT-1', '0.1.0');
+  recordGate(taskPath, 'integratedDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath); // 含 integrated-design entry（BASE_REVIEWERS 已含）
+  const draftRef = readDraftRef(taskPath, 'integratedDesign');
+  const m = readMatrix(taskPath);
+  m.artifacts['integrated-design'].draftRef = draftRef;
+  m.artifacts['integrated-design'].status = 'reviewed';
+  writeMatrix(taskPath, m);
+  assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'baseline' });
+});
+
+test('inspect(integrated): baselined → complete', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  writeIntegratedDraft(taskPath, 'INT-1', '0.1.0');
+  recordGate(taskPath, 'integratedDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  // 模拟 publish 已写 baseline
+  const state = readState(taskPath);
+  state.stages.integratedDesign = state.stages.integratedDesign || {};
+  state.stages.integratedDesign.baseline = { version: '0.1.0', hash: readDraftRef(taskPath, 'integratedDesign').hash, inputVersions: {}, approvedAt: 't' };
+  writeState(taskPath, state);
+  initMatrix(taskPath);
+  const m = readMatrix(taskPath);
+  m.artifacts['integrated-design'].draftRef = state.stages.integratedDesign.baseline;
+  m.artifacts['integrated-design'].status = 'reviewed';
+  writeMatrix(taskPath, m);
+  assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'complete' });
+});

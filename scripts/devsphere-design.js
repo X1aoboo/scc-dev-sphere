@@ -180,6 +180,32 @@ function inspect(taskPath, stage) {
   const slug = STAGE_SLUG[stage];
   if (!slug) return { stage, nextAction: { kind: 'blocked', reason: `Unknown stage: ${stage}` } };
 
+  if (stage === 'integratedDesign') {
+    const draftRef = readDraftRef(taskPath, stage);
+    if (!draftRef) return { stage, milestone: 'not_started', nextAction: { kind: 'run_stage', activity: 'assemble' } };
+    const gate = readGate(taskPath, stage);
+    if (gate && gate.draftRef && gate.draftRef.hash === draftRef.hash && gate.status === 'fail') {
+      return { stage, milestone: 'drafted', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'gate fail' } };
+    }
+    if (!gateAcceptable(gate, draftRef)) {
+      return { stage, milestone: 'drafted', draftRef, nextAction: { kind: 'run_gate' } };
+    }
+    const matrix = readMatrix(taskPath);
+    const rev = reviewAcceptable(matrix, slug, draftRef);
+    if (rev.hasOpenRevision) {
+      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'open review items' } };
+    }
+    if (!rev.complete) {
+      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
+    }
+    const state = readState(taskPath) || {};
+    const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
+    if (!baseline || baseline.hash !== draftRef.hash) {
+      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'baseline' } };
+    }
+    return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'complete' } };
+  }
+
   const pp = progressPath(taskPath, stage);
   const prog = fs.existsSync(pp) ? readJSON(pp) : null;
 
