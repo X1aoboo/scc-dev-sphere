@@ -11,7 +11,7 @@ const SLUG_PREFIX = {
   'implementation-design': 'ID',
   'test-design': 'TD',
 };
-const VALID_TYPES = ['gated', 'autonomous', 'assumption'];
+const VALID_TYPES = ['gated', 'autonomous', 'assumption', 'design_change'];
 const VALID_CATEGORIES = ['feature_scope', 'assumption', 'open_question', 'business_rule', 'tradeoff'];
 const VALID_ASK_MODES = ['single_select', 'multi_select', 'confirm_gate'];
 
@@ -40,6 +40,14 @@ function validateDecisionElement(d) {
     if (!VALID_ASK_MODES.includes(d.askMode)) throw new Error(`gated decision askMode 非法: ${d.askMode}`);
     if (typeof d.rationale !== 'string' || !d.rationale.trim()) {
       throw new Error('gated decision rationale 必填');
+    }
+  }
+  if (d.type === 'design_change') {
+    if (typeof d.reason !== 'string' || !d.reason.trim()) {
+      throw new Error('design_change decision reason 必填');
+    }
+    if (typeof d.impact !== 'string' || !d.impact.trim()) {
+      throw new Error('design_change decision impact 必填');
     }
   }
 }
@@ -116,6 +124,14 @@ function addDecision(taskPath, slug, input) {
       throw new Error('rationale is required for gated decisions');
     }
   }
+  if (input.type === 'design_change') {
+    if (typeof input.reason !== 'string' || !input.reason.trim()) {
+      throw new Error('design_change requires reason');
+    }
+    if (typeof input.impact !== 'string' || !input.impact.trim()) {
+      throw new Error('design_change requires impact');
+    }
+  }
   const data = readDecisions(taskPath, slug);
   if (!data) throw new Error(`Decisions file not initialized for ${slug}`);
   const decision = {
@@ -124,6 +140,7 @@ function addDecision(taskPath, slug, input) {
     category: input.category,
     summary: input.summary,
     rationale: input.rationale || '',
+    reason: input.type === 'design_change' ? input.reason : (input.reason || ''),
     options: input.type === 'gated' ? input.options : [],
     recommendation: input.recommendation || '',
     askMode: input.type === 'gated' ? input.askMode : null,
