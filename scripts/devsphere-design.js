@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
+const { listGatedPending } = require('./devsphere-decisions');
+const { readMatrix, getRevisionItems } = require('./devsphere-review-matrix');
 
 const STAGE_SLUG = {
   businessDesign: 'business-design',
@@ -72,7 +74,9 @@ function defaultDraftFrontmatter(taskPath, stage) {
   const state = readState(taskPath) || {};
   const taskId = state.taskId || 'UNKNOWN';
   const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD' }[STAGE_SLUG[stage]] || 'X';
-  return `---\nartifactId: "${idPrefix}-${taskId}"\nversion: "0.1.0"\n---\n\n# 待填充 Draft\n`;
+  // 占位骨架：不带 frontmatter，避免 readDraftRef 误判为有效 draft。
+  // design activity 会用真实 artifactId/version 覆盖此文件。
+  return `<!-- placeholder draft; artifactId: ${idPrefix}-${taskId}; run design activity to produce a real draft -->\n\n# 待填充 Draft\n`;
 }
 
 function initStage(taskPath, stage) {
@@ -132,6 +136,81 @@ function recordGate(taskPath, stage, status, checks) {
   return result;
 }
 
+// gate 通过判定：存在、绑定当前 draft hash、status 为 pass|warn。
+function gateAcceptable(gate, draftRef) {
+  if (!gate || !gate.draftRef) return false;
+  return gate.draftRef.hash === draftRef.hash && (gate.status === 'pass' || gate.status === 'warn');
+}
+
+// review 状态判定：返回 {complete, hasOpenRevision}。
+function reviewAcceptable(matrix, slug, draftRef) {
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) return { complete: false, hasOpenRevision: false };
+  const entry = matrix.artifacts[slug];
+  const reviewedAtHash = entry.draftRef && entry.draftRef.hash;
+  const revisionItems = getRevisionItems(matrix, slug);
+  return {
+    complete: reviewedAtHash === draftRef.hash && entry.status === 'reviewed' && revisionItems.length === 0,
+    hasOpenRevision: reviewedAtHash === draftRef.hash && revisionItems.length > 0,
+  };
+}
+
+// 确定性 Router：读取 stage work 状态，返回 milestone + nextAction。
+// 优先级：blocked > ask_decision > gate-fail revise > gate-missing > review-revision revise > review-missing > baseline > stage_complete。
+function inspect(taskPath, stage) {
+  const slug = STAGE_SLUG[stage];
+  if (!slug) return { stage, nextAction: { kind: 'blocked', reason: `Unknown stage: ${stage}` } };
+
+  const pp = progressPath(taskPath, stage);
+  const prog = fs.existsSync(pp) ? readJSON(pp) : null;
+
+  // 无 work → analyze
+  if (!prog) return { stage, milestone: 'not_started', nextAction: { kind: 'run_stage', activity: 'analyze' } };
+
+  if (!prog.ready || !prog.ready.analysis) {
+    return { stage, milestone: 'analysis_ready', nextAction: { kind: 'run_stage', activity: 'analyze' } };
+  }
+  if (!prog.ready.discovery) {
+    return { stage, milestone: 'discovery_ready', nextAction: { kind: 'run_stage', activity: 'discover' } };
+  }
+
+  // discovery ready：先看 pending gated decision
+  const pendingGated = listGatedPending(taskPath, slug);
+  if (pendingGated.length > 0) {
+    return { stage, milestone: 'discovery_ready', pendingGated, nextAction: { kind: 'ask_decision', decisions: pendingGated } };
+  }
+
+  const draftRef = readDraftRef(taskPath, stage);
+  if (!draftRef) {
+    return { stage, milestone: 'discovery_ready', nextAction: { kind: 'run_stage', activity: 'design' } };
+  }
+
+  const gate = readGate(taskPath, stage);
+  // gate fail（且绑定当前 hash）→ revise
+  if (gate && gate.draftRef && gate.draftRef.hash === draftRef.hash && gate.status === 'fail') {
+    return { stage, milestone: 'drafted', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'gate fail' } };
+  }
+  if (!gateAcceptable(gate, draftRef)) {
+    return { stage, milestone: 'drafted', draftRef, nextAction: { kind: 'run_gate' } };
+  }
+
+  const matrix = readMatrix(taskPath);
+  const rev = reviewAcceptable(matrix, slug, draftRef);
+  if (rev.hasOpenRevision) {
+    return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'open review items' } };
+  }
+  if (!rev.complete) {
+    return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
+  }
+
+  // review 通过且无 open revision → baseline
+  const state = readState(taskPath) || {};
+  const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
+  if (!baseline || baseline.hash !== draftRef.hash) {
+    return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'baseline' } };
+  }
+  return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'stage_complete' } };
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -153,6 +232,11 @@ function main() {
         process.stdout.write(JSON.stringify(recordGate(taskPath, stage, status, checks)));
         break;
       }
+      case 'inspect': {
+        const [taskPath, stage] = args;
+        process.stdout.write(JSON.stringify(inspect(taskPath, stage), null, 2));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -169,4 +253,5 @@ module.exports = {
   STAGE_SLUG, stageDir, progressPath, draftPath, artifactPath, gatePath,
   sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
   VALID_GATE_STATUS, readGate, recordGate,
+  gateAcceptable, reviewAcceptable, inspect,
 };

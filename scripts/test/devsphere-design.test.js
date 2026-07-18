@@ -98,3 +98,88 @@ test('recordGate 拒绝非法 status', () => {
   writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
   assert.throws(() => recordGate(taskPath, 'businessDesign', 'requires_human', { templateChecks: [], qualityChecks: [] }), /status/);
 });
+
+const { inspect } = require('../devsphere-design');
+const { initDecisions, addDecision } = require('../devsphere-decisions');
+const { initMatrix, addIssue, setArtifactStatus } = require('../devsphere-review-matrix');
+
+test('inspect: 无 work → run_stage/analyze', () => {
+  const { taskPath } = makeTask();
+  // 不调 initStage
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_stage', activity: 'analyze' });
+});
+
+test('inspect: analysis 未 ready → run_stage/analyze', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_stage', activity: 'analyze' });
+});
+
+test('inspect: analysis ready, discovery 未 ready → run_stage/discover', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_stage', activity: 'discover' });
+});
+
+test('inspect: discovery ready, 存在 pending gated → ask_decision', () => {
+  const { taskPath, taskId } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
+  addDecision(taskPath, 'business-design', { type: 'gated', category: 'feature_scope', summary: 'q', options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select', rationale: 'r' });
+  const na = inspect(taskPath, 'businessDesign').nextAction;
+  assert.strictEqual(na.kind, 'ask_decision');
+  assert.strictEqual(na.decisions.length, 1);
+});
+
+test('inspect: discovery ready, 无 draft → run_stage/design', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_stage', activity: 'design' });
+});
+
+test('inspect: draft 存在无 gate → run_gate', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_gate' });
+});
+
+test('inspect: gate fail → run_stage/revise', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'fail', { templateChecks: [], qualityChecks: [] });
+  const na = inspect(taskPath, 'businessDesign').nextAction;
+  assert.strictEqual(na.kind, 'run_stage');
+  assert.strictEqual(na.activity, 'revise');
+});
+
+test('inspect: gate pass 无 review → run_review', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_review' });
+});
+
+test('inspect: draft hash 改变后旧 gate 失效 → run_gate', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0', '# changed body'); // hash 变
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_gate' });
+});
