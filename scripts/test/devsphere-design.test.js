@@ -183,3 +183,57 @@ test('inspect: draft hash 改变后旧 gate 失效 → run_gate', () => {
   writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0', '# changed body'); // hash 变
   assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'run_gate' });
 });
+
+const { publish, artifactPath, draftPath } = require('../devsphere-design');
+const { readState } = require('../devsphere-state');
+const { readMatrix, writeMatrix } = require('../devsphere-review-matrix');
+
+function gateAndReviewPass(taskPath, stage) {
+  recordGate(taskPath, stage, 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  // Batch 1 matrix 不自动绑定 draftRef，这里手动写入通过态。
+  const draftRef = readDraftRef(taskPath, stage);
+  const m = readMatrix(taskPath);
+  m.artifacts[STAGE_SLUG[stage]].draftRef = draftRef;
+  m.artifacts[STAGE_SLUG[stage]].status = 'reviewed';
+  writeMatrix(taskPath, m);
+}
+
+test('publish: 原样复制 draft 到 artifact，hash 一致，写 baseline', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0', '# final body');
+  gateAndReviewPass(taskPath, 'businessDesign');
+  const res = publish(taskPath, 'businessDesign');
+  assert.strictEqual(res.hash, sha256File(artifactPath(taskPath, 'businessDesign')));
+  assert.strictEqual(res.hash, sha256File(draftPath(taskPath, 'businessDesign')));
+  const state = readState(taskPath);
+  // readState 来自 devsphere-state
+  assert.strictEqual(state.stages.businessDesign.baseline.version, '0.1.0');
+  assert.strictEqual(state.stages.businessDesign.baseline.hash, res.hash);
+});
+
+test('publish: gate hash 不匹配 → 拒绝', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0', 'v1');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0', 'v2'); // hash 变，gate 失效
+  assert.throws(() => publish(taskPath, 'businessDesign'), /gate/);
+});
+
+test('publish: 存在 open blocking → 拒绝', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  addIssue(taskPath, 'business-design', { type: 'blocking', reviewerAgent: 'se', round: 1, description: 'x' });
+  assert.throws(() => publish(taskPath, 'businessDesign'), /blocking|review/i);
+});

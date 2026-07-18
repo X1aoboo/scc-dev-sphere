@@ -211,6 +211,56 @@ function inspect(taskPath, stage) {
   return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'stage_complete' } };
 }
 
+function requirementHash(taskPath) {
+  const reqPath = path.join(taskPath, 'inputs', 'requirement.md');
+  if (!fs.existsSync(reqPath)) return null;
+  return sha256File(reqPath);
+}
+
+function publish(taskPath, stage) {
+  const slug = STAGE_SLUG[stage];
+  if (!slug) throw new Error(`Unknown stage: ${stage}`);
+  const draftRef = readDraftRef(taskPath, stage);
+  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
+
+  const gate = readGate(taskPath, stage);
+  if (!gateAcceptable(gate, draftRef)) {
+    throw new Error(`gate 不通过或 hash 不匹配当前 draft（stage=${stage}）`);
+  }
+
+  const matrix = readMatrix(taskPath);
+  const rev = reviewAcceptable(matrix, slug, draftRef);
+  if (!rev.complete || rev.hasOpenRevision) {
+    throw new Error(`review 未完成或存在 open revision（stage=${stage}）`);
+  }
+
+  const dp = draftPath(taskPath, stage);
+  const ap = artifactPath(taskPath, stage);
+  fs.mkdirSync(path.dirname(ap), { recursive: true });
+  fs.copyFileSync(dp, ap);
+  if (sha256File(ap) !== draftRef.hash) {
+    throw new Error('artifact hash 与 draft hash 不一致（复制异常）');
+  }
+
+  const state = readState(taskPath);
+  if (!state) throw new Error('state.json 不存在');
+  state.stages = state.stages || {};
+  state.stages[stage] = state.stages[stage] || {};
+  const baseline = {
+    version: draftRef.version,
+    hash: draftRef.hash,
+    inputVersions: {},
+    approvedAt: new Date().toISOString(),
+  };
+  const reqHash = requirementHash(taskPath);
+  if (reqHash) baseline.inputVersions.requirement = reqHash;
+  state.stages[stage].baseline = baseline;
+  state.stages[stage].artifact = `artifacts/${slug}.md`;
+  writeState(taskPath, state);
+
+  return { artifactPath: ap, hash: draftRef.hash, baseline };
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -237,6 +287,11 @@ function main() {
         process.stdout.write(JSON.stringify(inspect(taskPath, stage), null, 2));
         break;
       }
+      case 'publish': {
+        const [taskPath, stage] = args;
+        process.stdout.write(JSON.stringify(publish(taskPath, stage)));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -254,4 +309,5 @@ module.exports = {
   sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
   VALID_GATE_STATUS, readGate, recordGate,
   gateAcceptable, reviewAcceptable, inspect,
+  requirementHash, publish,
 };
