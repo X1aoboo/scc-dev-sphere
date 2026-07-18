@@ -6,14 +6,27 @@ const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
 const { listGatedPending } = require('./devsphere-decisions');
-const { readMatrix, getRevisionItems } = require('./devsphere-review-matrix');
+const { readMatrix, writeMatrix, getRevisionItems, applyReviewResults, getPendingHumanDecisions } = require('./devsphere-review-matrix');
 
 const STAGE_SLUG = {
   businessDesign: 'business-design',
   solutionDesign: 'solution-design',
   implementationDesign: 'implementation-design',
   testDesign: 'test-design',
+  integratedDesign: 'integrated-design',
 };
+
+const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign', 'integratedDesign'];
+
+function currentStage(taskPath) {
+  const state = readState(taskPath);
+  if (!state || !state.stages) return { stage: null, complete: false };
+  for (const stage of DESIGN_STAGE_ORDER) {
+    const sd = state.stages[stage];
+    if (!sd || !sd.baseline) return { stage, complete: false };
+  }
+  return { stage: null, complete: true };
+}
 
 function stageDir(taskPath, stage) {
   return path.join(taskPath, 'work', STAGE_SLUG[stage] || stage);
@@ -73,7 +86,7 @@ const WORK_TEMPLATES = {
 function defaultDraftFrontmatter(taskPath, stage) {
   const state = readState(taskPath) || {};
   const taskId = state.taskId || 'UNKNOWN';
-  const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD' }[STAGE_SLUG[stage]] || 'X';
+  const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD', 'integrated-design': 'INT' }[STAGE_SLUG[stage]] || 'X';
   // 占位骨架：不带 frontmatter，避免 readDraftRef 误判为有效 draft。
   // design activity 会用真实 artifactId/version 覆盖此文件。
   return `<!-- placeholder draft; artifactId: ${idPrefix}-${taskId}; run design activity to produce a real draft -->\n\n# 待填充 Draft\n`;
@@ -83,6 +96,13 @@ function initStage(taskPath, stage) {
   if (!STAGE_SLUG[stage]) throw new Error(`Unknown stage: ${stage}`);
   const dir = stageDir(taskPath, stage);
   fs.mkdirSync(dir, { recursive: true });
+
+  if (stage === 'integratedDesign') {
+    const dp = path.join(dir, 'draft.md');
+    if (!fs.existsSync(dp)) fs.writeFileSync(dp, defaultDraftFrontmatter(taskPath, stage), 'utf-8');
+    return { dir };
+  }
+
   for (const [name, rel] of Object.entries(WORK_TEMPLATES)) {
     const dest = path.join(dir, name);
     if (!fs.existsSync(dest)) {
@@ -160,6 +180,39 @@ function inspect(taskPath, stage) {
   const slug = STAGE_SLUG[stage];
   if (!slug) return { stage, nextAction: { kind: 'blocked', reason: `Unknown stage: ${stage}` } };
 
+  if (stage === 'integratedDesign') {
+    const draftRef = readDraftRef(taskPath, stage);
+    if (!draftRef) return { stage, milestone: 'not_started', nextAction: { kind: 'run_stage', activity: 'assemble' } };
+    const gate = readGate(taskPath, stage);
+    if (gate && gate.draftRef && gate.draftRef.hash === draftRef.hash && gate.status === 'fail') {
+      return { stage, milestone: 'drafted', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'gate fail' } };
+    }
+    if (!gateAcceptable(gate, draftRef)) {
+      return { stage, milestone: 'drafted', draftRef, nextAction: { kind: 'run_gate' } };
+    }
+    const matrix = readMatrix(taskPath);
+    const rev = reviewAcceptable(matrix, slug, draftRef);
+    if (rev.hasOpenRevision) {
+      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'open review items' } };
+    }
+    if (!rev.complete) {
+      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
+    }
+    // Pending advisory/risk decisions gate baseline — spec requires a human decision
+    // before baseline. `getPendingHumanDecisions` is filtered to this artifact's slug,
+    // so pending items raised against other artifacts don't block this baseline.
+    const pendingHuman = getPendingHumanDecisions(matrix, slug);
+    if (pendingHuman.length > 0) {
+      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
+    }
+    const state = readState(taskPath) || {};
+    const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
+    if (!baseline || baseline.hash !== draftRef.hash) {
+      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'baseline' } };
+    }
+    return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'complete' } };
+  }
+
   const pp = progressPath(taskPath, stage);
   const prog = fs.existsSync(pp) ? readJSON(pp) : null;
 
@@ -200,6 +253,13 @@ function inspect(taskPath, stage) {
   }
   if (!rev.complete) {
     return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
+  }
+
+  // Pending advisory/risk decisions gate baseline — spec requires a human decision
+  // before baseline. Same logic as the integratedDesign branch above.
+  const pendingHuman = getPendingHumanDecisions(matrix, slug);
+  if (pendingHuman.length > 0) {
+    return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
   }
 
   // review 通过且无 open revision → baseline
@@ -261,6 +321,23 @@ function publish(taskPath, stage) {
   return { artifactPath: ap, hash: draftRef.hash, baseline };
 }
 
+function recordReview(taskPath, stage, snapshots) {
+  const slug = STAGE_SLUG[stage];
+  if (!slug) throw new Error(`Unknown stage: ${stage}`);
+  const draftRef = readDraftRef(taskPath, stage);
+  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
+  const result = applyReviewResults(taskPath, slug, draftRef.version, snapshots);
+  const matrix = readMatrix(taskPath);
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) {
+    throw new Error(`Matrix entry missing for ${slug}`);
+  }
+  matrix.artifacts[slug].draftRef = draftRef;
+  matrix.artifacts[slug].status = 'reviewed';
+  matrix.artifacts[slug].reviewedVersion = draftRef.version;
+  writeMatrix(taskPath, matrix);
+  return result;
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -292,6 +369,18 @@ function main() {
         process.stdout.write(JSON.stringify(publish(taskPath, stage)));
         break;
       }
+      case 'current-stage': {
+        const [taskPath] = args;
+        process.stdout.write(JSON.stringify(currentStage(taskPath)));
+        break;
+      }
+      case 'record-review': {
+        const [taskPath, stage, snapshotsJson] = args;
+        let snapshots;
+        try { snapshots = JSON.parse(snapshotsJson); } catch (e) { throw new Error(`Invalid snapshots JSON: ${e.message}`); }
+        process.stdout.write(JSON.stringify(recordReview(taskPath, stage, snapshots)));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -305,9 +394,10 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
-  STAGE_SLUG, stageDir, progressPath, draftPath, artifactPath, gatePath,
+  STAGE_SLUG, DESIGN_STAGE_ORDER, stageDir, progressPath, draftPath, artifactPath, gatePath,
   sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
   VALID_GATE_STATUS, readGate, recordGate,
   gateAcceptable, reviewAcceptable, inspect,
-  requirementHash, publish,
+  requirementHash, publish, currentStage,
+  recordReview,
 };
