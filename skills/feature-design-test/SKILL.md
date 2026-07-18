@@ -1,108 +1,123 @@
 ---
 name: feature-design-test
-description: 风险驱动测试设计。TSE Agent 综合三类设计，建立风险→测试追溯，产出含测试金字塔、契约测试、回归范围、不可测项与转测准入的 test-design.md。
+description: 测试设计阶段的专业方法论。主会话按 inspect 的 run_stage.activity 调用 analyze/discover/design/revise，产出到 work/test-design/。不写 artifacts（由 publish 发布）、不写 state/reviews、不自行询问用户。
 ---
 
 # Feature Design — 测试设计
 
-风险驱动测试设计 Skill。TSE Agent 产出 `artifacts/test-design.md`，对 verification/test-handoff 生成交接契约。
+风险驱动测试设计阶段的领域方法论 Skill。主会话按 `inspect` 返回的 `run_stage.activity` 调用本 skill 的对应活动，产出写入 `work/test-design/`，最终 draft 经 Gate/Review/Baseline 发布为 `artifacts/test-design.md`。
+
+本 skill 不携带 TSE Agent 身份，不读取 workflow mode，不调用 `devsphere-teammate-conduct`，不自行 `AskUserQuestion`——发现需用户判断的事项时写 pending decision。
 
 ## 集成契约
 
-- **入口:** `/scc-dev-sphere:feature-design-test [--mode revise]`
-- **模式:** 本 skill 是纯领域方法论。team-lead 派发你执行时,按 skill 全流程做设计;需用户决策时按你的 teammate 行为准则(devsphere-teammate-conduct)处理。不关心外部编排流程。
-- **入参:** `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`、测试规范查询、`templates/artifacts/test-design.md`
-- **输出:** `artifacts/test-design.md`、evidence、`decisions/test-design-decisions.json`、交接契约
-- **完成标准:** 见文末
+- **入口:** 由 `feature-design` skill 在 `run_stage`（stage=`testDesign`）动作中加载，按 activity 执行。
+- **activity 入参:** `analyze | discover | design | revise`（revise 附 revision items 来源）。
+- **读取:** `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`（三者均已 Baseline）、各阶段 decisions、`templates/artifacts/test-design.md`、`evidence/`、`decisions/test-design-decisions.json`。
+- **允许写入:** `work/test-design/{analysis,discovery,design,draft}.md`、`evidence/`、`decisions/test-design-decisions.json`。
+- **禁止写入:** `artifacts/`、`state.json`、`reviews/`、`approvals/`、`quality-gates/`、其他阶段 work 目录。
+- **用户决策:** 发现需用户判断时写 pending decision（`node scripts/devsphere-decisions.js add <taskPath> test-design <json>`），不自行 `AskUserQuestion`。主会话在 `ask_decision` 动作统一询问。
+- **完成信号:** 每个 activity 完成后由主会话调 `mark-ready <taskPath> testDesign <analysis|discovery|design>`。
 
-## 前置条件
+## Analyze（产出 `work/test-design/analysis.md`）
 
-- 存在 active feature task。
-- business/solution/implementation 设计存在且已 `ai_review_passed`/`human_approved`。
-- `testDesign` 状态为 `not_started`/`drafted`，或修订模式。
-- 已 `human_approved` 则必须 `--mode revise`。
+目标：理解三类上游设计的风险面，形成调查计划。
 
-## 输入与写入范围
+关注点：
 
-**读取：** 三类设计产物、各自 decisions、测试模板、`state.json`、历史缺陷/测试规范（`knowledge-query`）。
-**允许写入：** `artifacts/test-design.md`、`decisions/test-design-decisions.json`、`evidence/` 与 registry。
-**禁止写入：** 其他阶段产物、`state.json`、`reviews/`、`approvals/`。评审任务由 `feature-review` Skill 负责写入角色评审快照。
+1. 解析 business（业务规则 / 验收标准）、solution（接口契约 / 质量属性 / 风险）、implementation（状态机 / 错误路径 / 测试钩子 / 风险）。
+2. 识别测试目标、范围（测什么 / 不测什么）。
+3. 识别信息缺口（历史缺陷、测试规范、测试环境约束）。
+4. 分类「可调查事实」与「必须用户确认」（如接受不可测项、缩减范围）。
+5. 形成调查清单（历史缺陷、回归基线、测试规范、环境约束）。
 
-## 执行步骤
+`analysis.md` 包含：阶段目标、上游输入摘要、初步理解、范围/边界、待调查问题、待用户确认事项、调查计划。
 
-> 以下步骤描述完整设计。scope 模式只执行到「出土 decisions」即停（不写主产物）；draft 模式基于已 resolved 的 decisions 执行完整步骤产出主产物。
+完成后由主会话调 `mark-ready <taskPath> testDesign analysis`。
 
-1. 解析 business（业务规则/验收标准）、solution（接口契约/质量属性/风险）、implementation（状态机/错误路径/测试钩子/风险）。
-2. 建立**风险驱动追溯**：业务规则、架构风险、实现风险 → TEST，明确每类测试在防什么风险。
-3. 定义测试目标、范围（测什么/不测什么）、策略与**测试金字塔映射**（unit/contract/integration/e2e 比例与理由）。
-4. 设计 unit、**接口契约测试**（request/error/auth/compat）、integration、e2e、regression 测试。
-5. 设计 boundary、negative、permission/security、performance、compatibility 测试。
-6. 明确测试数据、测试环境、Mock/Stub、自动化建议（测试类型/命令/owner，可进入 DEV plan）。
-7. 定义**回归范围**（引用 evidence/缺陷历史），避免只靠 E2E。
-8. 标记**不可测项**（原因、影响、缓解、owner）与风险接受候选（不得自动变 accepted_risk）。
-9. 定义**转测准入标准**（可检查 checklist）。
-10. 触发质量门禁。
+## Discover（产出 `work/test-design/discovery.md` + evidence + decisions）
 
-## vague 需求拆解框架
+目标：收集历史缺陷、测试规范、环境约束，综合为测试设计输入。
 
-面对一句话/信息不足的需求,不要自填假设。按维度逐项判断,每个需求未提及的维度出土一条 decision:
-- 用户角色与权限
-- 核心实体与生命周期
-- 功能范围(In/Out Scope)
-- 关键业务规则
-- 非功能需求(性能/安全/兼容)
-- 与下游(solution/test)的交接边界
-vague 需求 = 大量空白维度 = 必须明确；是否需要 Lead 决策由派发 prompt 的 decisionPolicy 决定。
+调查项：
 
-## 专业方法与图示
+1. 经 `knowledge-query` 查询历史缺陷、回归基线、测试规范、测试环境约束；将实际采用的事实保存为 `evidence/knowledge/EV-*` 并登记到 registry。
+2. 识别证据冲突 / 缺失——不可确认的回归范围标 ASM。
+3. 将需要取舍的问题（接受不可测项、缩减范围、接受 risk_candidate）记 pending decision。
+4. 综合为正式测试设计输入摘要。
 
-- 需求/风险 → 测试追溯矩阵（表格，REQ/BR/API/MOD/RISK → TEST）。
-- 测试金字塔（表格或图，标注层级比例与理由）。
-- 测试场景表（ID/前置/步骤/预期）。
+`discovery.md` 包含：调查项与查询范围、关键发现、evidence 引用、现状约束、冲突/未知项、对设计的影响。
 
-## Evidence / Decision / Assumption
+完成后由主会话调 `mark-ready <taskPath> testDesign discovery`。
+
+## Design（产出 `work/test-design/design.md` + `work/test-design/draft.md`）
+
+### design.md（设计推演）
+
+保存测试策略推演、金字塔比例取舍、被拒绝方案、与 evidence/decision 关联。
+
+### draft.md（正式候选）
+
+完整符合 `templates/artifacts/test-design.md`，frontmatter 含 `artifactId` + `version`（本轮修订不递增，由 hash 使旧 Gate/Review 失效）。
+
+专业方法论（迁入此处）：
+
+- **风险驱动追溯：** 业务规则、架构风险、实现风险 → TEST，明确每类测试在防什么风险；表格 `REQ/BR/API/MOD/RISK → TEST`，无关键孤儿。
+- **测试目标与范围：** 测什么 / 不测什么，对齐三类上游。
+- **测试金字塔：** unit / contract / integration / e2e 比例与理由；非仅 E2E/人工；表格或图标注。
+- **测试类型设计：**
+  - unit
+  - 接口契约测试（request / error / auth / compat）
+  - integration
+  - e2e
+  - regression
+  - boundary / negative / permission / security / performance / compatibility
+- **测试场景表：** ID / 前置 / 步骤 / 预期。
+- **测试数据 / 测试环境 / Mock / Stub：** 明确来源与约束。
+- **回归范围：** 引用 `evidence/` 或缺陷 ID，避免只靠 E2E。
+- **自动化建议：** 测试类型 / 命令 / owner，可进入 DEV plan。
+- **不可测项：** 原因、影响、缓解、owner；高风险不可测项转 gated pending decision（**不得自动变 accepted_risk**）。
+- **风险接受候选：** 不得自动变为 accepted_risk，必须经用户决定。
+- **转测准入标准：** 可检查 checklist，可执行。
+
+Evidence/Decision/Assumption 使用要求：
 
 - 回归范围、缺陷引用必须有 EV 或缺陷 ID。
 - 测试策略取舍（如缩减范围）写 DEC。
-- 不可测项必须有原因 + 缓解；高风险不可测项发起人工确认。
+- 不可测项必须有原因 + 缓解；高风险不可测项转 gated pending decision。
 
-## 质量门禁
+Draft 完成后由主会话触发 Gate；本 skill 不自行调用 Gate 或推进 Review。
 
-对应 `docs/governance/design-quality-gates.md`：
-- `QG-TPL-001/002`（design-template-check）
-- `QG-TD-002/003/004/007`、`QG-TR-003`、`QG-RISK-003`（design-quality-gate --target test-design）
+## Revise（更新 `design.md` + `draft.md`）
 
-> 由 `design-template-check` 与 `design-quality-gate --target test-design` 执行；产出 `quality-gates/TPL-*.json` 与 `QG-*.json`。
+修订触发由主会话 `inspect` 返回：Gate fail、Review blocking、advisory apply、risk_candidate 需修改、用户拒绝、上游任一 Baseline 变更重开。
 
-## 失败处理
+修订活动：
 
-- 上游设计缺关键字段 → 退回对应阶段或标缺口并确认。
-- 历史 defect 数据不可用 → 回归范围标 assumption，不臆造范围。
-- 不可测项属高风险且无缓解 → 发起人工确认，记录 risk_candidate。
-- 测试环境不可用 → 记录到测试环境需求，不阻断设计起草。
+1. 读取全部 revision items。
+2. 必要时回 Analyze/Discover 补充（如新缺陷证据）。
+3. 在 `design.md` 记录推演；在 `decisions/test-design-decisions.json` 记录关键修订 decision。
+4. 更新 `draft.md`——不跳 Gate；本轮不递增 version；draft hash 改变使旧 Gate/Review 失效。
+5. 重新进入 Validate。
 
-## 修订模式（`--mode revise`）
+测试设计修订时应重查的内容：
 
-1. 在 test decisions 记录原因。
-2. 分析对 verification/test-handoff 的影响。
-3. 递增 version，标记重新评审。
-
-## 下游交接契约
-
-- **给 feature-review**：ready-for-review + artifactId / version。
-- **给 verification（test-handoff）**：转测准入 checklist、测试场景、测试数据/环境需求、自动化建议。
-- **给 DEV**：自动化测试任务（类型/命令/owner，可入 plan）。
+- 风险驱动追溯矩阵是否仍无关键孤儿（上游风险可能新增）。
+- 测试金字塔比例是否仍合理。
+- 不可测项 / risk_candidate 是否仍有效。
+- 回归范围引用是否仍成立。
+- 转测准入 checklist 是否仍可执行。
 
 ## 完成标准
 
-- 关键业务规则和高风险项在追溯矩阵中无孤儿。
-- 测试金字塔层级明确，非仅 E2E/人工。
-- 不可测项有原因 + 缓解；高风险项经人工确认。
-- 回归范围引用 evidence/缺陷。
-- 转测准入标准可执行（checklist）。
+- `analysis.md`：测试目标、范围、待调查问题、待用户确认事项明确。
+- `discovery.md`：历史缺陷/测试规范调查项有 EV 引用；不可确认的回归范围标 ASM；关键取舍转 pending decision 或 DEC。
+- `design.md`：测试策略推演可追溯。
+- `draft.md`：完整符合 Artifact 模板，无占位符；关键业务规则和高风险项在追溯矩阵中无孤儿；测试金字塔层级明确，非仅 E2E/人工；不可测项有原因 + 缓解，高风险项经人工确认；回归范围引用 evidence/缺陷；转测准入标准可执行（checklist）。
 
-## 禁止事项
+## Context pointers
 
-- 不自动把不可测项/风险候选变为 accepted_risk（必须人工确认）。
-- 不臆造缺陷或回归范围。
-- 不改其他阶段产物与 `state.json`。
+- Artifact 模板: `templates/artifacts/test-design.md`
+- Gate catalog: `docs/governance/design-quality-gates.md`（`QG-TPL-001/002`、`QG-TD-002/003/004/007`、`QG-TR-003`、`QG-RISK-003`）
+- 上游 artifact: `artifacts/business-design.md`、`artifacts/solution-design.md`、`artifacts/implementation-design.md`
+- 下游消费者: `feature-verify`（test-handoff：转测准入 checklist、测试场景、测试数据/环境需求、自动化建议）、DEV `feature-plan-implementation`（自动化测试任务：类型/命令/owner）。
