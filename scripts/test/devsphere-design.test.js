@@ -73,3 +73,28 @@ test('markReady 拒绝非法 which', () => {
   initStage(taskPath, 'businessDesign');
   assert.throws(() => markReady(taskPath, 'businessDesign', 'design'), /which/);
 });
+
+const { recordGate, readGate } = require('../devsphere-design');
+
+function writeDraft(taskPath, stage, artifactId, version, body = '# draft') {
+  const dp = path.join(taskPath, 'work', STAGE_SLUG[stage], 'draft.md');
+  fs.writeFileSync(dp, `---\nartifactId: "${artifactId}"\nversion: "${version}"\n---\n\n${body}\n`, 'utf-8');
+}
+
+test('recordGate 写入绑定 draft hash 的结果', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  const g = readGate(taskPath, 'businessDesign');
+  assert.strictEqual(g.status, 'pass');
+  assert.strictEqual(g.draftRef.version, '0.1.0');
+  assert.ok(g.draftRef.hash.startsWith('sha256:'));
+});
+
+test('recordGate 拒绝非法 status', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  writeDraft(taskPath, 'businessDesign', 'BD-1', '0.1.0');
+  assert.throws(() => recordGate(taskPath, 'businessDesign', 'requires_human', { templateChecks: [], qualityChecks: [] }), /status/);
+});

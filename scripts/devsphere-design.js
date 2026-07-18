@@ -109,6 +109,29 @@ function markReady(taskPath, stage, which) {
   return prog;
 }
 
+const VALID_GATE_STATUS = ['pass', 'warn', 'fail'];
+
+function readGate(taskPath, stage) {
+  return readJSON(gatePath(taskPath, stage));
+}
+
+function recordGate(taskPath, stage, status, checks) {
+  if (!VALID_GATE_STATUS.includes(status)) {
+    throw new Error(`gate status must be pass|warn|fail, got: ${status}`);
+  }
+  const draftRef = readDraftRef(taskPath, stage);
+  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
+  const result = {
+    draftRef,
+    templateChecks: (checks && checks.templateChecks) || [],
+    qualityChecks: (checks && checks.qualityChecks) || [],
+    status,
+    recordedAt: new Date().toISOString(),
+  };
+  writeJSON(gatePath(taskPath, stage), result);
+  return result;
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -121,6 +144,13 @@ function main() {
       case 'mark-ready': {
         const [taskPath, stage, which] = args;
         process.stdout.write(JSON.stringify(markReady(taskPath, stage, which)));
+        break;
+      }
+      case 'record-gate': {
+        const [taskPath, stage, status, checksJson] = args;
+        let checks;
+        try { checks = JSON.parse(checksJson); } catch (e) { throw new Error(`Invalid checks JSON: ${e.message}`); }
+        process.stdout.write(JSON.stringify(recordGate(taskPath, stage, status, checks)));
         break;
       }
       default:
@@ -138,4 +168,5 @@ if (require.main === module) main();
 module.exports = {
   STAGE_SLUG, stageDir, progressPath, draftPath, artifactPath, gatePath,
   sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
+  VALID_GATE_STATUS, readGate, recordGate,
 };
