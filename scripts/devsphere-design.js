@@ -13,6 +13,7 @@ const STAGE_SLUG = {
   solutionDesign: 'solution-design',
   implementationDesign: 'implementation-design',
   testDesign: 'test-design',
+  integratedDesign: 'integrated-design',
 };
 
 function stageDir(taskPath, stage) {
@@ -73,7 +74,7 @@ const WORK_TEMPLATES = {
 function defaultDraftFrontmatter(taskPath, stage) {
   const state = readState(taskPath) || {};
   const taskId = state.taskId || 'UNKNOWN';
-  const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD' }[STAGE_SLUG[stage]] || 'X';
+  const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD', 'integrated-design': 'INT' }[STAGE_SLUG[stage]] || 'X';
   // 占位骨架：不带 frontmatter，避免 readDraftRef 误判为有效 draft。
   // design activity 会用真实 artifactId/version 覆盖此文件。
   return `<!-- placeholder draft; artifactId: ${idPrefix}-${taskId}; run design activity to produce a real draft -->\n\n# 待填充 Draft\n`;
@@ -83,6 +84,13 @@ function initStage(taskPath, stage) {
   if (!STAGE_SLUG[stage]) throw new Error(`Unknown stage: ${stage}`);
   const dir = stageDir(taskPath, stage);
   fs.mkdirSync(dir, { recursive: true });
+
+  if (stage === 'integratedDesign') {
+    const dp = path.join(dir, 'draft.md');
+    if (!fs.existsSync(dp)) fs.writeFileSync(dp, defaultDraftFrontmatter(taskPath, stage), 'utf-8');
+    return { dir };
+  }
+
   for (const [name, rel] of Object.entries(WORK_TEMPLATES)) {
     const dest = path.join(dir, name);
     if (!fs.existsSync(dest)) {
