@@ -33,3 +33,18 @@ test('parseDraftFrontmatter 读取 artifactId 与 version', () => {
 test('STAGE_SLUG 映射 businessDesign → business-design', () => {
   assert.strictEqual(STAGE_SLUG.businessDesign, 'business-design');
 });
+
+const { initStage } = require('../devsphere-design');
+
+test('initStage 创建四份 work 文件 + progress.json，幂等', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  const dir = path.join(taskPath, 'work', 'business-design');
+  for (const f of ['analysis.md', 'discovery.md', 'design.md', 'draft.md']) {
+    assert.ok(fs.existsSync(path.join(dir, f)), `missing ${f}`);
+  }
+  const prog = JSON.parse(fs.readFileSync(path.join(dir, 'progress.json'), 'utf-8'));
+  assert.deepStrictEqual(prog, { step: 'analyze', ready: { analysis: false, discovery: false } });
+  // 幂等
+  assert.doesNotThrow(() => initStage(taskPath, 'businessDesign'));
+});
