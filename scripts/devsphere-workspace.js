@@ -16,6 +16,7 @@ const DIRS = [
   'verification',
   'links',
   'decisions',
+  'work',
   'evidence/knowledge',
   'evidence/repository',
 ];
