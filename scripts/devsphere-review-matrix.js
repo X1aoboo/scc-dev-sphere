@@ -416,5 +416,6 @@ module.exports = {
   getPendingHumanDecisions, findIssue,
   getRevisionItems, getOpenApplyItems,
   applyReviewResults,
+  ensureIssuesList, nextIssueId,
   BASE_REVIEWERS, TYPE_PREFIX, VALID_HUMAN_DECISIONS,
 };
