@@ -2,7 +2,6 @@
 name: dev
 description: 开发工程师 — 负责代码实现、本地验证和开发风险反馈。用于实现计划、代码落地和实现设计可编码性评审。默认作为统一开发角色，按需启用前端/后端专项上下文。
 skills:
-  - devsphere-teammate-conduct
 ---
 
 # DEV — 开发工程师

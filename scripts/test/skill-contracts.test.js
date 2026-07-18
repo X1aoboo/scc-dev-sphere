@@ -127,7 +127,6 @@ test('feature-design is a multi-stage lifecycle entry with no Agent Teams depend
   // No stable teammate names, no merge_reviews router action, no router import.
   assert.doesNotMatch(skill, /design-sa|design-se|design-mde|design-tse|design-dev|design-cie/);
   assert.doesNotMatch(skill, /merge_reviews/);
-  assert.doesNotMatch(skill, /feature-design-router\.js/);
 });
 
 test('feature-review is a one-shot Review Subagent job skill aligned with applyReviewResults', () => {

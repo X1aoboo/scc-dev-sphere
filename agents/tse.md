@@ -2,7 +2,6 @@
 name: tse
 description: 测试工程师 — 负责测试策略、验收标准和回归风险分析。用于测试设计和可测性评审。
 skills:
-  - devsphere-teammate-conduct
   - feature-design-test
 ---
 

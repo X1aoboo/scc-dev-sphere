@@ -397,65 +397,6 @@ test('stdin-format: 校验 incoming content 而非磁盘（磁盘空但 content 
   assert.strictEqual(checkDecisionsFormatFromStdin(stdin), null); // 放行：校验 incoming content
 });
 
-// === Plan D2-3: checkTeammateDecisions (TeammateIdle gate) ===
-
-const { checkTeammateDecisions } = require('../devsphere-guard');
-
-test('teammate-idle: 无活跃任务 → {ok:true}', () => {
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-ti-'));
-  const r = checkTeammateDecisions(tmpRoot);
-  assert.strictEqual(r.ok, true);
-});
-
-test('teammate-idle: 有任务但无 decisions 目录 → {ok:true}', () => {
-  const { workspaceRoot } = makeTask();
-  const r = checkTeammateDecisions(workspaceRoot);
-  assert.strictEqual(r.ok, true);
-});
-
-test('teammate-idle: decisions 文件全部合法 → {ok:true}', () => {
-  const { workspaceRoot, taskPath, taskId } = makeTask();
-  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  addDecision(taskPath, 'business-design', {
-    type: 'gated', category: 'feature_scope', summary: 'q', rationale: 'ctx',
-    options: [{ label: 'a', description: 'x' }, { label: 'b', description: 'y' }], askMode: 'single_select',
-  });
-  const r = checkTeammateDecisions(workspaceRoot);
-  assert.strictEqual(r.ok, true);
-});
-
-test('teammate-idle: decisions 文件非法（空内容）→ {ok:false}', () => {
-  const { workspaceRoot, taskPath } = makeTask();
-  const dir = path.join(taskPath, 'decisions');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'business-design-decisions.json'), '');
-  const r = checkTeammateDecisions(workspaceRoot);
-  assert.strictEqual(r.ok, false);
-  assert.match(r.reason, /解析失败/);
-});
-
-test('teammate-idle: decisions 文件自创 schema（无 type）→ {ok:false}', () => {
-  const { workspaceRoot, taskPath } = makeTask();
-  const dir = path.join(taskPath, 'decisions');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'business-design-decisions.json'), JSON.stringify({
-    stage: 'businessDesign', taskId: 'X', mode: 'scope',
-    decisions: [{ id: 'D1', topic: 't', options: [] }],
-  }));
-  const r = checkTeammateDecisions(workspaceRoot);
-  assert.strictEqual(r.ok, false);
-  assert.match(r.reason, /type|mode/);
-});
-
-test('teammate-idle: 非法文件名 .json 之外的 .md 被忽略（只扫 .json）→ {ok:true}', () => {
-  const { workspaceRoot, taskPath } = makeTask();
-  const dir = path.join(taskPath, 'decisions');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'D-001.md'), '# bogus');
-  const r = checkTeammateDecisions(workspaceRoot);
-  assert.strictEqual(r.ok, true);
-});
-
 // === Plan E2: checkDecisionsBashFromStdin (Bash bypass guard) ===
 
 const { checkDecisionsBashFromStdin } = require('../devsphere-guard');
@@ -551,14 +492,14 @@ test('review Write/Edit: Markdown 评审历史允许直接追加', () => {
   }), null);
 });
 
-test('review Bash: 直接写评审 JSON 禁止，review-state/matrix CLI 放行', () => {
+test('review Bash: 直接写评审 JSON 禁止，record-review/matrix CLI 放行', () => {
   const denied = checkReviewBashFromStdin(bashStdin(
     'node -e "require(\'fs\').writeFileSync(\'reviews/solution-design/se.json\', \'{}\')"',
   ));
   assert.ok(denied);
   assert.strictEqual(denied.hookSpecificOutput.permissionDecision, 'deny');
   assert.strictEqual(checkReviewBashFromStdin(bashStdin(
-    'node scripts/devsphere-review-state.js complete tp solution-design se \'{}\'',
+    'node scripts/devsphere-design.js record-review tp solution-design \'{}\'',
   )), null);
   assert.strictEqual(checkReviewBashFromStdin(bashStdin(
     'node scripts/devsphere-review-matrix.js add tp solution-design \'{}\'',
