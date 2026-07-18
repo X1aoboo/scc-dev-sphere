@@ -5,10 +5,9 @@ const fs = require('fs');
 const {
   readMatrix, getPendingHumanDecisions, getOpenApplyItems,
 } = require('../devsphere-review-matrix');
-const { readArtifactVersion, getReviewStatus } = require('../devsphere-review-state');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { readDecisions, countGatedPending } = require('../devsphere-decisions');
-const { stageToArtifact } = require('../feature-design-router');
+const { STAGE_SLUG } = require('../devsphere-design');
 
 /**
  * Feature workflow decision table (spec section 8).
@@ -53,7 +52,10 @@ function resolveNextAction(taskPath, state) {
 
   // --- designing ---
   if (status === 'designing') {
-    return resolveDesigning(taskPath, state, stages, mode, humanGates);
+    return makeAction('run_skill', state, 'design', null,
+      'feature-design', {}, [],
+      '设计阶段：由 feature-design skill（生命周期入口）驱动。',
+      [], []);
   }
 
   // --- design_ready ---
@@ -119,24 +121,11 @@ function resolveNextAction(taskPath, state) {
     [], []);
 }
 
-function resolveDesigning(taskPath, state, stages, mode, humanGates) {
-  // All design sub-stage routing delegated to feature-design skill.
-  // resolver only decides the top-level entry point.
-  return makeAction('run_skill', state, 'design', null,
-    'feature-design', {}, [],
-    'Task is in designing phase. Delegate to feature-design for sub-stage routing.',
-    [], []);
-}
-
+// New-flow check: an artifact's review is complete when the matrix entry has
+// been stamped 'reviewed' (record-review does this directly when all required
+// reviewers complete for the current version). No review-state lookup needed.
 function isCurrentReviewComplete(taskPath, artifact, artifactMatrix) {
-  if (!artifactMatrix || artifactMatrix.status !== 'reviewed') return false;
-  try {
-    const artifactVersion = readArtifactVersion(taskPath, artifact);
-    if (artifactMatrix.reviewedVersion !== artifactVersion) return false;
-    return getReviewStatus(taskPath, artifact, artifactVersion).allCompleted;
-  } catch (error) {
-    return false;
-  }
+  return Boolean(artifactMatrix && artifactMatrix.status === 'reviewed');
 }
 
 function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
@@ -183,7 +172,7 @@ function main() {
 
         // 确定性事实：artifact 存在 + not_started + gated 决策已 resolved → drafted
         if (fs.existsSync(artifactPath) && stageData.status === 'not_started') {
-          const slug = stageToArtifact(stageName);
+          const slug = STAGE_SLUG[stageName];
           // 仅对四个设计阶段做决策门校验（integrated 等无 decisions）
           if (readDecisions(taskPath, slug) && countGatedPending(taskPath, slug) > 0) {
             // gated 未 resolved，禁止升 drafted（防错）
@@ -199,7 +188,7 @@ function main() {
       if (matrix && matrix.artifacts) {
         for (const [stageName, stageData] of Object.entries(state.stages)) {
           if (stageData.status !== 'drafted') continue;
-          const artifactTarget = stageToArtifact(stageName);
+          const artifactTarget = STAGE_SLUG[stageName];
           const artifactMatrix = matrix.artifacts[artifactTarget];
           const pendingReview = artifactMatrix
             ? getPendingHumanDecisions(matrix, artifactTarget) : [];
@@ -229,7 +218,7 @@ function main() {
         process.stderr.write(`Invalid stage status: ${newStatus}. Valid: ${VALID_STAGE_STATUSES.join(', ')}\n`);
         process.exit(1);
       }
-      const artifactTarget = stageToArtifact(stageName);
+      const artifactTarget = STAGE_SLUG[stageName];
       const matrix = readMatrix(taskPath);
       const artifactMatrix = matrix && matrix.artifacts ? matrix.artifacts[artifactTarget] : null;
       if (artifactMatrix && (newStatus === 'ai_review_passed' || newStatus === 'human_approved')) {
