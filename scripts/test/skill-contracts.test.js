@@ -108,15 +108,28 @@ test('feature-design is a lifecycle entry with no Agent Teams dependency', () =>
   assert.doesNotMatch(skill, /feature-design-router\.js/);
 });
 
-test('feature-review delegates human decisions and closes only after re-review', () => {
+test('feature-review is a one-shot Review Subagent job skill aligned with applyReviewResults', () => {
   const skill = readSkill('feature-review');
-  const conduct = readSkill('devsphere-teammate-conduct');
 
-  assert.match(skill, /Reviewer 不调用 `AskUserQuestion`/);
+  // Job-skill contract: receives frozen draft + reviewProfile, outputs findings shape.
+  assert.match(skill, /一次性评审 Subagent/);
+  assert.match(skill, /draftPath.*draftHash.*version/);
+  assert.match(skill, /reviewProfile/);
+  assert.match(skill, /allowedReads/);
+
+  // Output shape aligned with applyReviewResults (each finding: findingId/type/reviewerAgent/round).
+  assert.match(skill, /issueFindings/);
   assert.match(skill, /closureDecisions/);
-  assert.match(skill, /review-state\.js complete/);
-  assert.match(skill, /review-matrix/);
-  assert.match(skill, /Lead.*ask_review/);
-  assert.match(conduct, /保持 advisory\/risk pending/);
-  assert.match(conduct, /review-state\.js/);
+  assert.match(skill, /findingId.*type.*reviewerAgent.*round/s);
+  assert.match(skill, /blocking \| advisory \| risk_candidate/);
+
+  // artifactId MUST be the slug (not the frontmatter id) — applyReviewResults validates snapshot.artifactId === slug.
+  assert.match(skill, /artifactSlug/);
+  assert.match(skill, /不是.*Draft frontmatter/);
+
+  // Does not write Work/Artifact/matrix; does not ask the user.
+  assert.match(skill, /不修改 Draft \/ Work \/ Artifact \/ matrix/);
+  assert.match(skill, /不询问用户/);
+  assert.doesNotMatch(skill, /review-state\.js complete/);
+  assert.doesNotMatch(skill, /devsphere-review-matrix\.js add|review-matrix\.json/);
 });
