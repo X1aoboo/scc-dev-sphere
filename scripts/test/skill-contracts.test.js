@@ -92,15 +92,37 @@ test('knowledge-query dispatches subagent, may ask user, and returns markdown fo
   assert.match(skill, /未找到/i);
 });
 
-test('feature-design is a lifecycle entry with no Agent Teams dependency', () => {
+test('feature-design is a multi-stage lifecycle entry with no Agent Teams dependency', () => {
   const skill = readSkill('feature-design');
 
-  // Lifecycle entry consumes deterministic inspect/publish/init-stage/mark-ready/record-gate CLI.
+  // Lifecycle entry consumes deterministic current-stage + inspect/publish/init-stage/mark-ready/record-gate CLI.
+  assert.match(skill, /devsphere-design\.js current-stage/);
   assert.match(skill, /devsphere-design\.js inspect/);
   assert.match(skill, /devsphere-design\.js publish/);
   assert.match(skill, /devsphere-design\.js init-stage/);
   assert.match(skill, /mark-ready/);
   assert.match(skill, /devsphere-design\.js record-gate/);
+
+  // Multi-perspective review: dispatches N Review Subagents in parallel + merges via record-review.
+  assert.match(skill, /devsphere-design\.js record-review/);
+  assert.match(skill, /并行派发/);
+  assert.match(skill, /artifactSlug/);
+  // Per-artifact reviewer roster.
+  assert.match(skill, /business-design → SE/);
+  assert.match(skill, /solution-design → SA、MDE、TSE/);
+  assert.match(skill, /implementation-design → SE、DEV、TSE/);
+  assert.match(skill, /test-design → SA、SE、MDE/);
+
+  // Integrated assemble activity + 4 承接 dimensions (not agents/*.md).
+  assert.match(skill, /activity = analyze \| discover \| design \| revise \| assemble/);
+  assert.match(skill, /assemble/);
+  assert.match(skill, /business-traceability/);
+  assert.match(skill, /implementation-traceability/);
+  assert.match(skill, /test-traceability/);
+  assert.match(skill, /baseline-consistency/);
+
+  // complete -> design_ready wiring.
+  assert.match(skill, /set-task-status \${CLAUDE_PROJECT_DIR} design_ready/);
 
   // No stable teammate names, no merge_reviews router action, no router import.
   assert.doesNotMatch(skill, /design-sa|design-se|design-mde|design-tse|design-dev|design-cie/);
