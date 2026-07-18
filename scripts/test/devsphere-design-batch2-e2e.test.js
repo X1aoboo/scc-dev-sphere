@@ -2,13 +2,12 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
-const path = require('path');
 const { makeTask } = require('./helpers');
 const {
   initStage, markReady, inspect, recordGate, publish, recordReview,
   currentStage, draftPath, artifactPath, sha256File, STAGE_SLUG,
 } = require('../devsphere-design');
-const { initMatrix, readMatrix, writeMatrix, closeIssue } = require('../devsphere-review-matrix');
+const { initMatrix, readMatrix, closeIssue } = require('../devsphere-review-matrix');
 const { readState } = require('../devsphere-state');
 
 // 写一个带有效 frontmatter 的 draft.md。注意：frontmatter 里的 artifactId 只用于
@@ -68,10 +67,25 @@ test('E2E: 四阶段顺序 + 多视角 + integrated + design_ready', () => {
   // recordReview 持久化、并被 re-review 的 closureDecisions 关闭（Fix #2）。
   initMatrix(taskPath);
 
-  // --- business（单视角 SE，advisory） ---
-  runStageToBaseline(taskPath, 'businessDesign', '0.1.0', {
+  // --- business（单视角 SE，advisory） — advisory 触发 ask_review gate ---
+  // 不走 runStageToBaseline：先证明 pending advisory 阻断 baseline，再 close 后 baseline。
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeDraft(taskPath, 'businessDesign', stageId('businessDesign'), '0.1.0');
+  const businessReview = gatePassReviewPass(taskPath, 'businessDesign', '0.1.0', {
     se: [{ findingId: 'F1', type: 'advisory', reviewerAgent: 'se', round: 1 }],
   });
+  // pending advisory → ask_review (非 baseline)
+  const businessInspect = inspect(taskPath, 'businessDesign');
+  assert.strictEqual(businessInspect.nextAction.kind, 'ask_review');
+  assert.strictEqual(businessInspect.nextAction.slug, 'business-design');
+  assert.ok(businessInspect.nextAction.issues.length >= 1);
+  // 关闭 advisory (no_change) 模拟 Lead ask_review 用户决策
+  const businessAdv = businessReview.assignedIssueIds[0].issueId;
+  closeIssue(taskPath, businessAdv, { humanDecision: 'no_change', closureEvidence: 'accepted as-is' });
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'baseline' });
+  publish(taskPath, 'businessDesign');
   assert.strictEqual(currentStage(taskPath).stage, 'solutionDesign');
 
   // --- solution（3 视角 SA+MDE+TSE），先 blocking → revise → hash 失效 → 重 gate + 重 review ---
@@ -80,6 +94,8 @@ test('E2E: 四阶段顺序 + 多视角 + integrated + design_ready', () => {
   markReady(taskPath, 'solutionDesign', 'discovery');
   writeDraft(taskPath, 'solutionDesign', 'SD-1', '0.1.0');
   recordGate(taskPath, 'solutionDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  // run_review checkpoint: gate pass 后、recordReview 前 → run_review
+  assert.deepStrictEqual(inspect(taskPath, 'solutionDesign').nextAction, { kind: 'run_review' });
 
   // 首轮 review：SA 提 blocking，其余 2 视角无 finding。
   // 注意：Fix #1 — artifactId 必须是 slug 'solution-design'，而非 frontmatter id 'SD-1'。

@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
 const { listGatedPending } = require('./devsphere-decisions');
-const { readMatrix, writeMatrix, getRevisionItems, applyReviewResults } = require('./devsphere-review-matrix');
+const { readMatrix, writeMatrix, getRevisionItems, applyReviewResults, getPendingHumanDecisions } = require('./devsphere-review-matrix');
 
 const STAGE_SLUG = {
   businessDesign: 'business-design',
@@ -198,6 +198,13 @@ function inspect(taskPath, stage) {
     if (!rev.complete) {
       return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
     }
+    // Pending advisory/risk decisions gate baseline — spec requires a human decision
+    // before baseline. `getPendingHumanDecisions` is filtered to this artifact's slug,
+    // so pending items raised against other artifacts don't block this baseline.
+    const pendingHuman = getPendingHumanDecisions(matrix, slug);
+    if (pendingHuman.length > 0) {
+      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
+    }
     const state = readState(taskPath) || {};
     const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
     if (!baseline || baseline.hash !== draftRef.hash) {
@@ -246,6 +253,13 @@ function inspect(taskPath, stage) {
   }
   if (!rev.complete) {
     return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
+  }
+
+  // Pending advisory/risk decisions gate baseline — spec requires a human decision
+  // before baseline. Same logic as the integratedDesign branch above.
+  const pendingHuman = getPendingHumanDecisions(matrix, slug);
+  if (pendingHuman.length > 0) {
+    return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
   }
 
   // review 通过且无 open revision → baseline

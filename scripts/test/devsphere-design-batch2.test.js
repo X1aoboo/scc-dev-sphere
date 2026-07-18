@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 const { makeTask } = require('./helpers');
-const { initStage, STAGE_SLUG, stageDir, currentStage } = require('../devsphere-design');
+const { initStage, STAGE_SLUG, stageDir, currentStage, markReady } = require('../devsphere-design');
 const { readState, writeState } = require('../devsphere-state');
 
 function baselineStage(taskPath, stage, hash) {
@@ -168,4 +168,78 @@ test('record-review: 无 draft → 抛错', () => {
   initStage(taskPath, 'solutionDesign');
   initMatrix(taskPath);
   assert.throws(() => recordReview(taskPath, 'solutionDesign', []), /draft/);
+});
+
+// --- Task 5: ask_review gate — pending advisory/risk blocks baseline ---
+
+function writeBusinessDraft(taskPath, id, ver, body = '# business') {
+  const dp = path.join(taskPath, 'work', 'business-design', 'draft.md');
+  fs.mkdirSync(path.dirname(dp), { recursive: true });
+  fs.writeFileSync(dp, `---\nartifactId: "${id}"\nversion: "${ver}"\n---\n\n${body}\n`, 'utf-8');
+}
+
+test('ask_review gate: pending advisory → inspect 返回 ask_review (非 baseline)', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeBusinessDraft(taskPath, 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  recordReview(taskPath, 'businessDesign', [
+    { reviewer: 'se', artifactId: 'business-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'advisory', reviewerAgent: 'se', round: 1 }], closureDecisions: [] },
+  ]);
+  const result = inspect(taskPath, 'businessDesign');
+  assert.strictEqual(result.nextAction.kind, 'ask_review');
+  assert.strictEqual(result.nextAction.slug, 'business-design');
+  assert.strictEqual(result.nextAction.stage, 'businessDesign');
+  assert.ok(Array.isArray(result.nextAction.issues) && result.nextAction.issues.length === 1);
+});
+
+test('ask_review gate: 关闭 pending advisory (no_change) 后 → inspect 返回 baseline', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeBusinessDraft(taskPath, 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  const result = recordReview(taskPath, 'businessDesign', [
+    { reviewer: 'se', artifactId: 'business-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'advisory', reviewerAgent: 'se', round: 1 }], closureDecisions: [] },
+  ]);
+  const advId = result.assignedIssueIds[0].issueId;
+  const { closeIssue } = require('../devsphere-review-matrix');
+  closeIssue(taskPath, advId, { humanDecision: 'no_change', closureEvidence: 'accepted as-is' });
+  assert.deepStrictEqual(inspect(taskPath, 'businessDesign').nextAction, { kind: 'baseline' });
+});
+
+test('ask_review gate: pending risk_candidate → ask_review (非 baseline)', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  writeBusinessDraft(taskPath, 'BD-1', '0.1.0');
+  recordGate(taskPath, 'businessDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  recordReview(taskPath, 'businessDesign', [
+    { reviewer: 'se', artifactId: 'business-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'risk_candidate', reviewerAgent: 'se', round: 1 }], closureDecisions: [] },
+  ]);
+  assert.strictEqual(inspect(taskPath, 'businessDesign').nextAction.kind, 'ask_review');
+});
+
+test('ask_review gate (integrated): pending advisory → ask_review (非 baseline)', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'integratedDesign');
+  writeIntegratedDraft(taskPath, 'INT-1', '0.1.0');
+  recordGate(taskPath, 'integratedDesign', 'pass', { templateChecks: [], qualityChecks: [] });
+  initMatrix(taskPath);
+  recordReview(taskPath, 'integratedDesign', [
+    { reviewer: 'baseline-consistency', artifactId: 'integrated-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'advisory', reviewerAgent: 'baseline-consistency', round: 1 }], closureDecisions: [] },
+  ]);
+  assert.strictEqual(inspect(taskPath, 'integratedDesign').nextAction.kind, 'ask_review');
+  assert.strictEqual(inspect(taskPath, 'integratedDesign').nextAction.slug, 'integrated-design');
 });

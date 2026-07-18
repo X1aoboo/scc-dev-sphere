@@ -108,8 +108,22 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <s
   结束（下次 `/workflow` 路由到 feature-approve）。
 - 否则（`stage_complete`）重读 inspect，由 `current-stage` 推进到下一阶段。
 
+### `ask_review`
+- 对 `action.issues` 中的 pending advisory / risk_candidate **逐项** AskUserQuestion（遵循 `references/interaction-guidelines.md`）：
+  - advisory → single_select：`apply`（纳入本轮修订）/ `no_change`（维持现状）。
+  - risk_candidate → single_select：`apply`（纳入本轮修订）/ `accepted_risk`（已知并接受）/ `mitigated`（已缓解）/ `rejected`（不成立）。
+- 每项决策落盘（与 `record-review` 一致，仅 Lead 写 matrix）：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js close <taskPath> <issue.id> --decision <decision> --closure "<一句话决策依据>"
+  ```
+- 全部 resolve 后重读 inspect：apply → `run_stage/revise`（纳入 `getRevisionItems`）；no_change/accepted_risk/mitigated/rejected → `baseline`。
+
 ### `complete`
-- integrated 已 baseline。推进 `design_ready`（见上文 baseline 段末尾的 `set-task-status design_ready`），结束。
+- integrated 已 baseline。推进 `design_ready`：
+  ```bash
+  node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} design_ready
+  ```
+  结束（下次 `/workflow` 路由到 feature-approve）。
 
 ### `stage_complete` / `blocked`
 - `stage_complete`：当前阶段已 baseline 且非终态；重读 `current-stage` 自动进入下一阶段。
