@@ -2,11 +2,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
-const path = require('path');
 const { makeTask } = require('./helpers');
 const {
   initStage, markReady, inspect, recordGate, publish,
-  draftPath, artifactPath, sha256File, STAGE_SLUG,
+  draftPath, artifactPath, sha256File,
 } = require('../devsphere-design');
 const { initDecisions, addDecision, resolveDecision } = require('../devsphere-decisions');
 const { initMatrix, addIssue, closeIssue, readMatrix, writeMatrix } = require('../devsphere-review-matrix');
