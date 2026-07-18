@@ -96,6 +96,19 @@ function initStage(taskPath, stage) {
   return { dir, progress: pp };
 }
 
+function markReady(taskPath, stage, which) {
+  if (which !== 'analysis' && which !== 'discovery') {
+    throw new Error(`which must be analysis|discovery, got: ${which}`);
+  }
+  const pp = progressPath(taskPath, stage);
+  const prog = readJSON(pp) || { step: 'analyze', ready: { analysis: false, discovery: false } };
+  prog.ready = prog.ready || { analysis: false, discovery: false };
+  prog.ready[which] = true;
+  if (which === 'analysis' && prog.step === 'analyze') prog.step = 'discover';
+  writeJSON(pp, prog);
+  return prog;
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -103,6 +116,11 @@ function main() {
       case 'init-stage': {
         const [taskPath, stage] = args;
         process.stdout.write(JSON.stringify(initStage(taskPath, stage)));
+        break;
+      }
+      case 'mark-ready': {
+        const [taskPath, stage, which] = args;
+        process.stdout.write(JSON.stringify(markReady(taskPath, stage, which)));
         break;
       }
       default:
@@ -119,5 +137,5 @@ if (require.main === module) main();
 
 module.exports = {
   STAGE_SLUG, stageDir, progressPath, draftPath, artifactPath, gatePath,
-  sha256File, parseDraftFrontmatter, readDraftRef, initStage,
+  sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
 };

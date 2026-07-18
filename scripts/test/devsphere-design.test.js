@@ -48,3 +48,28 @@ test('initStage 创建四份 work 文件 + progress.json，幂等', () => {
   // 幂等
   assert.doesNotThrow(() => initStage(taskPath, 'businessDesign'));
 });
+
+const { markReady } = require('../devsphere-design');
+
+test('markReady analysis 置位并推进 step', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'analysis');
+  const prog = JSON.parse(fs.readFileSync(progressPath(taskPath, 'businessDesign'), 'utf-8'));
+  assert.strictEqual(prog.ready.analysis, true);
+  assert.strictEqual(prog.step, 'discover');
+});
+
+test('markReady discovery 置位', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  markReady(taskPath, 'businessDesign', 'discovery');
+  const prog = JSON.parse(fs.readFileSync(progressPath(taskPath, 'businessDesign'), 'utf-8'));
+  assert.strictEqual(prog.ready.discovery, true);
+});
+
+test('markReady 拒绝非法 which', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'businessDesign');
+  assert.throws(() => markReady(taskPath, 'businessDesign', 'design'), /which/);
+});
