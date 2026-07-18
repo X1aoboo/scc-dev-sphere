@@ -204,6 +204,8 @@ function getOpenApplyItems(matrix, artifact) {
 
 // Deterministic gate: a non-pending (passed) status requires blocking=0 and all
 // advisory/risk decided. This is what enforces "advisory/risk can't pass without human decision".
+// New flow: reviewer completion is stamped directly by record-review, so this
+// gate only enforces the blocking/pending/apply guards.
 function setArtifactStatus(taskPath, artifact, status) {
   const matrix = readMatrix(taskPath);
   if (!matrix || !matrix.artifacts || !matrix.artifacts[artifact]) {
@@ -211,20 +213,6 @@ function setArtifactStatus(taskPath, artifact, status) {
   }
   const entry = matrix.artifacts[artifact];
   if (status !== 'pending') {
-    // A reviewed artifact must have a complete reviewer snapshot for its
-    // current version. The require is intentionally lazy to avoid a module
-    // cycle: review-state uses this module to merge conclusions.
-    const {
-      readArtifactVersion,
-      getReviewStatus,
-    } = require('./devsphere-review-state');
-    const artifactVersion = readArtifactVersion(taskPath, artifact);
-    const reviewStatus = getReviewStatus(taskPath, artifact, artifactVersion);
-    if (!reviewStatus.allCompleted) {
-      throw new Error(
-        `Cannot set status '${status}': required reviewer(s) incomplete for artifactVersion ${artifactVersion}: ${reviewStatus.missingReviewers.join(', ') || 'pending result'}`,
-      );
-    }
     recomputeCounts(entry);
     const pending = getPendingHumanDecisions(matrix, artifact);
     if (entry.issues.blocking > 0) {
@@ -240,8 +228,10 @@ function setArtifactStatus(taskPath, artifact, status) {
   }
   entry.status = status;
   if (status === 'reviewed') {
-    const { readArtifactVersion } = require('./devsphere-review-state');
-    entry.reviewedVersion = readArtifactVersion(taskPath, artifact);
+    const { parseDraftFrontmatter } = require('./devsphere-design');
+    const ap = path.join(taskPath, 'artifacts', `${artifact}.md`);
+    const fm = parseDraftFrontmatter(ap);
+    entry.reviewedVersion = fm ? fm.version : null;
   } else if (status === 'pending') {
     entry.reviewedVersion = null;
   }
@@ -416,5 +406,6 @@ module.exports = {
   getPendingHumanDecisions, findIssue,
   getRevisionItems, getOpenApplyItems,
   applyReviewResults,
+  ensureIssuesList, nextIssueId,
   BASE_REVIEWERS, TYPE_PREFIX, VALID_HUMAN_DECISIONS,
 };

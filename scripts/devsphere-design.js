@@ -5,8 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
-const { listGatedPending } = require('./devsphere-decisions');
-const { readMatrix, writeMatrix, getRevisionItems, applyReviewResults, getPendingHumanDecisions } = require('./devsphere-review-matrix');
+const { listGatedPending, readDecisions } = require('./devsphere-decisions');
+const {
+  readMatrix, writeMatrix, getRevisionItems, applyReviewResults, getPendingHumanDecisions,
+  ensureIssuesList, nextIssueId, recomputeCounts,
+} = require('./devsphere-review-matrix');
 
 const STAGE_SLUG = {
   businessDesign: 'business-design',
@@ -338,6 +341,88 @@ function recordReview(taskPath, stage, snapshots) {
   return result;
 }
 
+const REOPEN_SCOPE = {
+  businessDesign: ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'],
+  solutionDesign: ['solutionDesign', 'implementationDesign', 'testDesign'],
+  implementationDesign: ['implementationDesign', 'testDesign'],
+  testDesign: ['testDesign'],
+};
+
+// bump draft frontmatter version minor+1, patch=0; write back; return new version string.
+function bumpVersionMinor(draftFilePath) {
+  let raw = fs.readFileSync(draftFilePath, 'utf-8');
+  const m = raw.match(/^version:\s*"?(\d+)\.(\d+)\.(\d+)"?/m);
+  if (!m) throw new Error(`无法从 ${draftFilePath} 读取 version`);
+  const major = parseInt(m[1], 10);
+  const minor = parseInt(m[2], 10) + 1;
+  const newVer = `${major}.${minor}.0`;
+  raw = raw.replace(/^version:\s*"?[0-9.]+"?/m, `version: "${newVer}"`);
+  fs.writeFileSync(draftFilePath, raw, 'utf-8');
+  return newVer;
+}
+
+// design_change 重开：bump 版本、清 baseline、重置 progress，并在目标 stage 的 matrix entry
+// 写入一条 design-change blocking（绑定新 draft hash）。仅目标 stage 写 blocking；
+// 其余 scope stage 仅版本/状态重置，由各自后续 review 流程处理。
+function reopen(taskPath, stage, decisionId) {
+  const slug = STAGE_SLUG[stage];
+  if (!slug) throw new Error(`Unknown stage: ${stage}`);
+  const scope = REOPEN_SCOPE[stage];
+  if (!scope) throw new Error(`Stage not reopenable: ${stage}`);
+
+  // 校验 design_change decision 已批准
+  const decisionsFile = readDecisions(taskPath, slug);
+  if (!decisionsFile) throw new Error(`decisions 文件未初始化: ${slug}`);
+  const decision = (decisionsFile.decisions || []).find(d => d.id === decisionId);
+  if (!decision) throw new Error(`decision 未找到: ${decisionId}`);
+  if (decision.type !== 'design_change') throw new Error(`decision 非 design_change: ${decisionId}`);
+  if (decision.status !== 'decided' || !(decision.resolution && decision.resolution.chosen === 'apply')) {
+    throw new Error(`design_change 未批准(需 status=decided, resolution.chosen=apply): ${decisionId}`);
+  }
+
+  const newVersions = {};
+  for (const s of scope) {
+    const dp = draftPath(taskPath, s);
+    if (!fs.existsSync(dp)) throw new Error(`draft 不存在: ${s}`);
+    newVersions[s] = bumpVersionMinor(dp);
+    // 清 baseline
+    const state = readState(taskPath);
+    if (state.stages && state.stages[s]) delete state.stages[s].baseline;
+    writeState(taskPath, state);
+    // 重置 progress（integratedDesign 无 progress，跳过）
+    if (s !== 'integratedDesign') {
+      writeJSON(progressPath(taskPath, s), { step: 'analyze', ready: { analysis: false, discovery: false } });
+    }
+  }
+
+  // 目标阶段写 design-change blocking
+  const matrix = readMatrix(taskPath);
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) {
+    throw new Error(`matrix entry 缺失: ${slug}`);
+  }
+  const entry = matrix.artifacts[slug];
+  const draftRef = readDraftRef(taskPath, stage);
+  entry.draftRef = draftRef;
+  entry.status = 'pending';
+  const list = ensureIssuesList(entry);
+  const maxRound = list.reduce((mx, i) => Math.max(mx, i.round || 1), 0);
+  list.push({
+    id: nextIssueId(entry, 'blocking'),
+    type: 'blocking',
+    reviewerAgent: 'design-change',
+    status: 'open',
+    round: maxRound + 1,
+    humanDecision: 'pending',
+    closureEvidence: '',
+    source: `${slug}@${newVersions[stage]}:design-change:${decisionId}`,
+    note: decision.summary,
+  });
+  recomputeCounts(entry);
+  writeMatrix(taskPath, matrix);
+
+  return { reopenedStages: scope, newVersions };
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -381,6 +466,11 @@ function main() {
         process.stdout.write(JSON.stringify(recordReview(taskPath, stage, snapshots)));
         break;
       }
+      case 'reopen': {
+        const [taskPath, stage, decisionId] = args;
+        process.stdout.write(JSON.stringify(reopen(taskPath, stage, decisionId)));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -400,4 +490,5 @@ module.exports = {
   gateAcceptable, reviewAcceptable, inspect,
   requirementHash, publish, currentStage,
   recordReview,
+  REOPEN_SCOPE, bumpVersionMinor, reopen,
 };

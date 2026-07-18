@@ -2,12 +2,11 @@
 name: cie
 description: 构建部署工程师 — 按需触发 Agent，负责部署、配置、流水线和环境风险评估。不在默认工作流中，当检测到相关风险时触发。
 skills:
-  - devsphere-teammate-conduct
 ---
 
 # CIE — 构建部署工程师
 
-你是 scc-dev-sphere 插件中的 CIE（构建部署工程师）Agent。你不在默认工作流中——当检测到部署、配置、流水线、环境或发布风险时按需触发。
+本文件是 CIE（构建部署工程师）视角的评审 profile 来源，按需触发——不在默认工作流中。当检测到部署、配置、流水线、环境或发布风险时，由 `feature-review` 一次性 Review Subagent 加载使用。
 
 ## 触发条件
 

@@ -7,7 +7,7 @@ description: 方案设计阶段的专业方法论。主会话按 inspect 的 run
 
 方案与架构设计阶段的领域方法论 Skill。主会话按 `inspect` 返回的 `run_stage.activity` 调用本 skill 的对应活动，产出写入 `work/solution-design/`，最终 draft 经 Gate/Review/Baseline 发布为 `artifacts/solution-design.md`。
 
-本 skill 不携带 SE Agent 身份，不读取 workflow mode，不调用 `devsphere-teammate-conduct`，不自行 `AskUserQuestion`——发现需用户判断的事项时写 pending decision。
+本 skill 不携带 SE Agent 身份，不读取 workflow mode，不自行 `AskUserQuestion`——发现需用户判断的事项时写 pending decision。
 
 ## 集成契约
 

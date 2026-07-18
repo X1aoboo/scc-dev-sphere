@@ -144,7 +144,7 @@ function validateDecisionsContent(content) {
   return { allow: true };
 }
 
-// 校验 decisions/ 目录下某磁盘文件（用于 TeammateIdle 路径）。
+// 校验 decisions/ 目录下某磁盘文件。
 function checkDecisionsFormat(filePath) {
   const norm = (filePath || '').replace(/\\/g, '/');
   if (!/\/decisions\//.test(norm)) return { allow: true };
@@ -218,7 +218,7 @@ function checkReviewWritesFromStdin(stdinJson) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${target} 禁止通过 Write/Edit 直接修改；使用 Lead 的 review merge 或 devsphere-review-state.js complete 命令。`,
+      permissionDecisionReason: `${target} 禁止通过 Write/Edit 直接修改；使用 record-review CLI 合并评审结果。`,
     },
   };
 }
@@ -313,29 +313,6 @@ function checkEvidenceBashFromStdin(stdinJson) {
   };
 }
 
-// TeammateIdle 质量门：活跃任务下所有 decisions/*.json 必须 schema 合法。
-// 返回 {ok:true} 或 {ok:false, file, reason}。CLI 据此 exit 2（回喂 stderr，teammate 继续）。
-function checkTeammateDecisions(workspaceRoot) {
-  const taskPath = getTaskPath(workspaceRoot);
-  if (!taskPath) return { ok: true };
-  const decisionsDir = path.join(taskPath, 'decisions');
-  if (!fs.existsSync(decisionsDir)) return { ok: true };
-  let files;
-  try { files = fs.readdirSync(decisionsDir).filter(f => f.endsWith('.json')); }
-  catch (e) { return { ok: true }; }
-  for (const f of files) {
-    const full = path.join(decisionsDir, f);
-    let content;
-    try { content = fs.readFileSync(full, 'utf-8'); }
-    catch (e) { continue; }
-    const r = validateDecisionsContent(content);
-    if (!r.allow) {
-      return { ok: false, file: f, reason: r.reason };
-    }
-  }
-  return { ok: true };
-}
-
 // PreToolUse Bash 守卫：禁止用 Bash 直接写 design-critical 文件（decisions/、artifacts/）。
 // CLI（devsphere-decisions.js）走 Node fs，命令行不含 decisions/ 路径，且含脚本名 → 豁免。
 function checkDecisionsBashFromStdin(stdinJson) {
@@ -364,14 +341,14 @@ function checkReviewBashFromStdin(stdinJson) {
   if (!ti || typeof ti.command !== 'string') return null;
   const command = ti.command;
   const targetsReviewJSON = /reviews\/(?:review-matrix\.json|[^/]+\/(?:sa|se|mde|tse|dev|cie)\.json)/.test(command);
-  const isReviewCLI = command.includes('devsphere-review-state.js')
+  const isReviewCLI = command.includes('devsphere-design.js record-review')
     || command.includes('devsphere-review-matrix.js');
   if (targetsReviewJSON && !isReviewCLI) {
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
         permissionDecision: 'deny',
-        permissionDecisionReason: '评审 JSON 禁止通过 Bash 直接写入；Reviewer 使用 devsphere-review-state.js complete，Lead 使用 review-state merge 或 review-matrix 门禁命令。',
+        permissionDecisionReason: '评审 JSON 禁止通过 Bash 直接写入；使用 record-review CLI 合并评审结果，review-matrix CLI 维护 issue。',
       },
     };
   }
@@ -473,15 +450,6 @@ function main() {
         process.exit(0);
         break;
       }
-      case 'check-teammate-decisions': {
-        const r = checkTeammateDecisions(workspaceRoot);
-        if (!r.ok) {
-          process.stderr.write(`decisions 校验失败（${r.file}）: ${r.reason}\n`);
-          process.exit(2);
-        }
-        process.exit(0);
-        break;
-      }
       case 'check-decisions-bash': {
         let stdinJson = null;
         try {
@@ -561,7 +529,7 @@ if (require.main === module) {
 module.exports = {
   checkImplementEntry, checkApproveEntry, checkStateAdvance, hasActiveTask, decideWrite,
   checkDecisionsResolvedFromStdin, slugToStage, checkDecisionsFormat,
-  checkDecisionsFormatFromStdin, validateDecisionsContent, checkTeammateDecisions,
+  checkDecisionsFormatFromStdin, validateDecisionsContent,
   checkDecisionsBashFromStdin, reviewJSONPath, checkReviewWritesFromStdin,
   checkReviewBashFromStdin,
   checkEvidenceWritesFromStdin,
