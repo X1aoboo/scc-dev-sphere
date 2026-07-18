@@ -92,14 +92,20 @@ test('knowledge-query dispatches subagent, may ask user, and returns markdown fo
   assert.match(skill, /未找到/i);
 });
 
-test('feature-design uses one unified reviewItems revise contract', () => {
+test('feature-design is a lifecycle entry with no Agent Teams dependency', () => {
   const skill = readSkill('feature-design');
 
-  assert.match(skill, /payload\.reviewItems/);
-  assert.match(skill, /blocking\/advisory\/risk_candidate/);
-  assert.match(skill, /requiresReReview/);
-  assert.match(skill, /ask_review/);
-  assert.doesNotMatch(skill, /payload\.blockingItems/);
+  // Lifecycle entry consumes deterministic inspect/publish/init-stage/mark-ready/record-gate CLI.
+  assert.match(skill, /devsphere-design\.js inspect/);
+  assert.match(skill, /devsphere-design\.js publish/);
+  assert.match(skill, /devsphere-design\.js init-stage/);
+  assert.match(skill, /mark-ready/);
+  assert.match(skill, /devsphere-design\.js record-gate/);
+
+  // No stable teammate names, no merge_reviews router action, no router import.
+  assert.doesNotMatch(skill, /design-sa|design-se|design-mde|design-tse|design-dev|design-cie/);
+  assert.doesNotMatch(skill, /merge_reviews/);
+  assert.doesNotMatch(skill, /feature-design-router\.js/);
 });
 
 test('feature-review delegates human decisions and closes only after re-review', () => {
