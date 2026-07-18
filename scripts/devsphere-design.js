@@ -16,6 +16,18 @@ const STAGE_SLUG = {
   integratedDesign: 'integrated-design',
 };
 
+const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign', 'integratedDesign'];
+
+function currentStage(taskPath) {
+  const state = readState(taskPath);
+  if (!state || !state.stages) return { stage: null, complete: false };
+  for (const stage of DESIGN_STAGE_ORDER) {
+    const sd = state.stages[stage];
+    if (!sd || !sd.baseline) return { stage, complete: false };
+  }
+  return { stage: null, complete: true };
+}
+
 function stageDir(taskPath, stage) {
   return path.join(taskPath, 'work', STAGE_SLUG[stage] || stage);
 }
@@ -300,6 +312,11 @@ function main() {
         process.stdout.write(JSON.stringify(publish(taskPath, stage)));
         break;
       }
+      case 'current-stage': {
+        const [taskPath] = args;
+        process.stdout.write(JSON.stringify(currentStage(taskPath)));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -313,9 +330,9 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
-  STAGE_SLUG, stageDir, progressPath, draftPath, artifactPath, gatePath,
+  STAGE_SLUG, DESIGN_STAGE_ORDER, stageDir, progressPath, draftPath, artifactPath, gatePath,
   sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
   VALID_GATE_STATUS, readGate, recordGate,
   gateAcceptable, reviewAcceptable, inspect,
-  requirementHash, publish,
+  requirementHash, publish, currentStage,
 };
