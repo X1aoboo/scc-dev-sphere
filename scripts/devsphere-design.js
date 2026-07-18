@@ -6,7 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
 const { listGatedPending } = require('./devsphere-decisions');
-const { readMatrix, getRevisionItems } = require('./devsphere-review-matrix');
+const { readMatrix, writeMatrix, getRevisionItems, applyReviewResults } = require('./devsphere-review-matrix');
 
 const STAGE_SLUG = {
   businessDesign: 'business-design',
@@ -307,6 +307,23 @@ function publish(taskPath, stage) {
   return { artifactPath: ap, hash: draftRef.hash, baseline };
 }
 
+function recordReview(taskPath, stage, snapshots) {
+  const slug = STAGE_SLUG[stage];
+  if (!slug) throw new Error(`Unknown stage: ${stage}`);
+  const draftRef = readDraftRef(taskPath, stage);
+  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
+  const result = applyReviewResults(taskPath, slug, draftRef.version, snapshots);
+  const matrix = readMatrix(taskPath);
+  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) {
+    throw new Error(`Matrix entry missing for ${slug}`);
+  }
+  matrix.artifacts[slug].draftRef = draftRef;
+  matrix.artifacts[slug].status = 'reviewed';
+  matrix.artifacts[slug].reviewedVersion = draftRef.version;
+  writeMatrix(taskPath, matrix);
+  return result;
+}
+
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
@@ -343,6 +360,13 @@ function main() {
         process.stdout.write(JSON.stringify(currentStage(taskPath)));
         break;
       }
+      case 'record-review': {
+        const [taskPath, stage, snapshotsJson] = args;
+        let snapshots;
+        try { snapshots = JSON.parse(snapshotsJson); } catch (e) { throw new Error(`Invalid snapshots JSON: ${e.message}`); }
+        process.stdout.write(JSON.stringify(recordReview(taskPath, stage, snapshots)));
+        break;
+      }
       default:
         process.stderr.write(`Unknown command: ${command}\n`);
         process.exit(1);
@@ -361,4 +385,5 @@ module.exports = {
   VALID_GATE_STATUS, readGate, recordGate,
   gateAcceptable, reviewAcceptable, inspect,
   requirementHash, publish, currentStage,
+  recordReview,
 };

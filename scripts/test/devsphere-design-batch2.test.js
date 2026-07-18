@@ -120,3 +120,52 @@ test('inspect(integrated): baselined → complete', () => {
   writeMatrix(taskPath, m);
   assert.deepStrictEqual(inspect(taskPath, 'integratedDesign').nextAction, { kind: 'complete' });
 });
+
+// --- Task 4: record-review (hash-bound multi-perspective merge) ---
+const { recordReview } = require('../devsphere-design');
+
+function writeSolutionDraft(taskPath, id, ver, body = '# solution') {
+  const dp = path.join(taskPath, 'work', 'solution-design', 'draft.md');
+  fs.mkdirSync(path.dirname(dp), { recursive: true });
+  fs.writeFileSync(dp, `---\nartifactId: "${id}"\nversion: "${ver}"\n---\n\n${body}\n`, 'utf-8');
+}
+
+test('record-review: 合并多视角 findings 并 stamp draftRef/status', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'solutionDesign');
+  writeSolutionDraft(taskPath, 'SD-1', '0.1.0');
+  initMatrix(taskPath);
+  const draftRef = readDraftRef(taskPath, 'solutionDesign');
+  const snapshots = [
+    { reviewer: 'sa', artifactId: 'solution-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'blocking', reviewerAgent: 'sa', round: 1 }], closureDecisions: [] },
+    { reviewer: 'mde', artifactId: 'solution-design', artifactVersion: '0.1.0',
+      issueFindings: [{ findingId: 'F1', type: 'advisory', reviewerAgent: 'mde', round: 1 }], closureDecisions: [] },
+  ];
+  recordReview(taskPath, 'solutionDesign', snapshots);
+  const m = readMatrix(taskPath);
+  const entry = m.artifacts['solution-design'];
+  assert.strictEqual(entry.status, 'reviewed');
+  assert.strictEqual(entry.draftRef.hash, draftRef.hash);
+  assert.strictEqual(entry.issuesList.length, 2);
+});
+
+test('record-review: 同 snapshot 重复合并不翻倍（幂等 source）', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'solutionDesign');
+  writeSolutionDraft(taskPath, 'SD-1', '0.1.0');
+  initMatrix(taskPath);
+  const snapshots = [{ reviewer: 'sa', artifactId: 'solution-design', artifactVersion: '0.1.0',
+    issueFindings: [{ findingId: 'F1', type: 'blocking', reviewerAgent: 'sa', round: 1 }], closureDecisions: [] }];
+  recordReview(taskPath, 'solutionDesign', snapshots);
+  recordReview(taskPath, 'solutionDesign', snapshots); // 重复合并
+  const m = readMatrix(taskPath);
+  assert.strictEqual(m.artifacts['solution-design'].issuesList.length, 1);
+});
+
+test('record-review: 无 draft → 抛错', () => {
+  const { taskPath } = makeTask();
+  initStage(taskPath, 'solutionDesign');
+  initMatrix(taskPath);
+  assert.throws(() => recordReview(taskPath, 'solutionDesign', []), /draft/);
+});
