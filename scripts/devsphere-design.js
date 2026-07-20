@@ -16,8 +16,26 @@ const DESIGN_TYPES = {
   solutionDesign: {
     slug: 'solution-design',
     artifactPrefix: 'SD',
-    coreSections: ['目标、约束与边界', '架构与模块', '接口、数据与集成', '质量属性与风险', '适用性说明', '关联设计与交接'],
-    applicabilityItems: ['安全', '可靠性', '数据', '部署运维'],
+    coreSections: [
+      '概述',
+      '特性需求与设计上下文',
+      '总体方案',
+      '4+1 架构视图',
+      '接口与集成设计',
+      '数据设计',
+      '可靠性、可用性与功能安全设计',
+      '安全、隐私与韧性设计',
+      '非功能质量属性设计',
+      '关键技术决策、取舍与风险',
+      '下游设计约束与交接',
+      '需求追溯与覆盖关系',
+      '词汇表',
+      '参考资料',
+    ],
+    requiredSubsections: {
+      '4+1 架构视图': ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图'],
+    },
+    applicabilityItems: [],
   },
   implementationDesign: {
     slug: 'implementation-design',
@@ -294,6 +312,23 @@ function extractSection(raw, heading) {
   return lines.slice(start + 1, end).join('\n').trim();
 }
 
+function extractSubsection(raw, parentHeading, heading) {
+  const parent = extractSection(raw, parentHeading);
+  if (!parent) return '';
+  const marker = `### ${heading}`;
+  const lines = parent.split(/\r?\n/);
+  const start = lines.findIndex(line => line.trimEnd() === marker);
+  if (start < 0) return '';
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^###\s+/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start + 1, end).join('\n').trim();
+}
+
 function checklistPath(checklistId) {
   return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
@@ -329,6 +364,14 @@ function lintDraft(taskPath, designType) {
       code: `core section:${section}`,
       result: extractSection(raw, section) ? 'pass' : 'fail',
     });
+  }
+  for (const [parent, subsections] of Object.entries(definition.requiredSubsections || {})) {
+    for (const subsection of subsections) {
+      checks.push({
+        code: `required subsection:${parent}/${subsection}`,
+        result: extractSubsection(raw, parent, subsection) ? 'pass' : 'fail',
+      });
+    }
   }
   const applicability = extractSection(raw, '适用性说明');
   for (const item of definition.applicabilityItems) {

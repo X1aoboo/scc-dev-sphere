@@ -70,6 +70,49 @@ test('Design Guides contain professional differences and Specs remain independen
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/stages')), false);
 });
 
+test('solution design reference defines target-state architecture without a second workflow', () => {
+  const guide = read('skills/feature-design/references/design-guides/solution-design.md');
+  const spec = read('skills/feature-design/references/specs/solution-design.md');
+
+  for (const phrase of [
+    /目标态/,
+    /新建特性/,
+    /存量特性增强/,
+    /新增.*受影响.*保持不变.*非目标/s,
+    /4\+1/,
+    /场景视图.*逻辑视图.*进程视图.*开发视图.*物理视图/s,
+    /必须关闭的系统级决策/,
+    /系统责任边界.*架构与微服务职责.*接口与集成契约.*数据归属与一致性.*关键质量属性.*异常与失败语义/s,
+  ]) assert.match(guide, phrase);
+
+  for (const heading of [
+    '概述',
+    '特性需求与设计上下文',
+    '总体方案',
+    '4\\+1 架构视图',
+    '接口与集成设计',
+    '数据设计',
+    '可靠性、可用性与功能安全设计',
+    '安全、隐私与韧性设计',
+    '非功能质量属性设计',
+    '关键技术决策、取舍与风险',
+    '下游设计约束与交接',
+    '需求追溯与覆盖关系',
+    '词汇表',
+    '参考资料',
+  ]) assert.match(spec, new RegExp(`^## ${heading}$`, 'm'));
+
+  for (const view of ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图']) {
+    assert.match(spec, new RegExp(`^### ${view}$`, 'm'));
+  }
+
+  assert.match(spec, /内容合同.*design tree\/frontier/s);
+  assert.match(spec, /新建.*存量增强/s);
+  assert.match(spec, /目标态正文|完整目标态/);
+  assert.doesNotMatch(guide, /inspect-workspace|init-design|record-review|approve-current-design|publish|sync-state/);
+  assert.doesNotMatch(spec, /businessDesign\s*→\s*solutionDesign|Business Baseline.*必须|固定前置/);
+});
+
 test('every Review Checklist is Chinese and defines applicability, rules, and concrete items', () => {
   const checklistDir = path.join(root, 'skills/feature-design/references/review-checklists');
   const files = fs.readdirSync(checklistDir).filter(file => file.endsWith('.md'));
