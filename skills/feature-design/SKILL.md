@@ -1,138 +1,162 @@
 ---
 name: feature-design
-description: 设计阶段生命周期入口。在主会话(Design Lead)运行：按 current-stage 解析当前阶段，循环咨询 devsphere-design inspect 拿 nextAction，按动作执行（含多视角并行评审、integrated 组装），检查完成标准后重读。不依赖 Agent Teams，不管理长期 Agent。
+description: 协作完成当前 Feature 设计活动。用于需要业务、方案、实现或测试设计时；从设计工作空间恢复上下文，动态加载专业指南，以 design tree/frontier 推演并确认设计，形成 Draft，经隔离 Review、人工批准和 Baseline 发布后同步状态。
 ---
 
-# Feature Design — 设计阶段生命周期入口
+# Feature Design
 
-你在主会话(Design Lead)运行。**你不自行判断阶段流转或动作选择** —— 一律由确定性 `current-stage` + `inspect` 决定。你只负责：解析当前阶段 → 读 inspect → 按 nextAction 执行 → 检查完成标准 → 重读。
+在主会话中完成当前一个设计活动。业务设计、方案设计、实现设计和测试设计共享下列固定过程；设计类型只决定加载的专业 Reference，不规定活动之间的顺序或依赖。
 
-## 入口
+## 执行任务
 
-进入设计阶段第一步：
+启动后立即使用当前环境的任务管理能力创建五个线性顶层任务，并按完成条件更新：
+
+1. **恢复设计工作空间、识别当前设计活动并建立专业上下文**：当前设计类型、恢复位置、持久化事实和专业 Reference 都有可靠依据。
+2. **完成并确认核心设计**：语义分析循环已收敛，专业覆盖完整，用户确认完整设计内容。
+3. **形成可评审的 Design Draft**：Draft 可脱离聊天独立理解、只表达已确认设计，并通过确定性 Lint。
+4. **独立 Review 并修订至满足发布条件**：所有适用 Checklist 已由隔离 Reviewer 完整执行，blocking findings 已关闭，语义修订后已完整复评。
+5. **获得用户最终批准、发布 Design Baseline 并同步状态**：获批 Draft 已原样发布，工作空间和顶层状态同步成功。
+
+任务增强当前会话对过程的遵循，不作为流程事实来源。查询、问题、设计段落、Reviewer、finding 和局部修订留在所属顶层任务内。
+
+## 1. 恢复工作空间并加载专业上下文
+
+从调用上下文取得 `<taskPath>`，运行：
+
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} designing
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js inspect-workspace <taskPath>
 ```
 
-`<taskPath>` 从 `devsphere-state.js read-current-task` + `get-task-path` 取。
+结合检查结果和用户目标识别当前设计活动：
 
-## 核心循环
+- 唯一未完成 Work/Draft 优先作为恢复候选；
+- Draft 与 Baseline 不一致表示可能重开；
+- 调用上下文明确指定的设计目标可以确定当前类型；
+- 多个候选、持久化事实冲突或证据不足时，展示候选与依据，请用户确认。
 
-每次循环：
-1. 解析当前阶段：
-   ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js current-stage <taskPath>
-   ```
-   - 返回 `{complete:true}` → 设计全部完成，结束。
-   - 返回 `{stage:<stage>}` → 对该 stage 调 `init-stage`（幂等），再 `inspect`：
-     ```bash
-     node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-stage <taskPath> <stage>
-     node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js inspect <taskPath> <stage>
-     ```
-     `inspect` 的 stdout 是一个快照 JSON，关注 `nextAction`。
-2. 按 `nextAction.kind` 执行（见下）。
-3. 执行后**立即重读**（回到步骤 1）。
+以唯一未完成 Work/Draft、调用目标和用户确认组成当前活动的正向证据。确认 `<designType>` 后运行：
 
-## 按 nextAction.kind 执行
-
-### `run_stage`（activity = analyze | discover | design | revise | assemble）
-- analyze/discover/design/revise：加载对应 Stage Skill（如 `scc-dev-sphere:feature-design-business`）按 activity 执行专业工作。
-  - activity=analyze：完成 analysis.md 后，主会话判断达成完成条件 → `mark-ready <taskPath> <stage> analysis`。
-  - activity=discover：完成 discovery.md、登记 evidence、记 decision/assumption 后 → `mark-ready <taskPath> <stage> discovery`。
-  - activity=design：生成/更新 design.md 与 draft.md（draft 完整符合 Artifact 模板，带 frontmatter `artifactId=<slug>`、`version`）。
-  - activity=revise：读取 inspect 返回的 revision 来源（gate fail / open review items），统一修订 design.md/draft.md；不跳过 Gate。
-- activity=assemble（仅 integratedDesign）：主会话组装 `work/integrated-design/draft.md` —— 汇总四阶段 `artifacts/*.md` + 跨阶段追溯（REQ→ARCH→MOD→TEST）+ 关键 decision + 风险 + readiness。**不引入新设计事实**。组装完 draft 带 frontmatter（`artifactId=integrated-design`、`version`）。
-
-### `ask_decision`
-- 对 `decisions` **逐项** AskUserQuestion（遵循 `references/interaction-guidelines.md`，按 decision.askMode 选 single_select/multi_select/confirm_gate）。
-- 每项 resolve：
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js resolve <taskPath> <slug> <decision.id> '<resolution json>'
-```
-- 全部 resolve 后重读 inspect。
-
-### `run_gate`
-- 执行 Template Check（`design-template-check`）与 Quality Check（`design-quality-gate`），由主会话按 checklist 判断。
-- 结果落盘（status ∈ pass|warn|fail；requires_human 改走 ask_decision）：
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js record-gate <taskPath> <stage> <status> '<checks json>'
-```
-`<checks json>` 形如 `{"templateChecks":[...],"qualityChecks":[...]}`。
-- 重读 inspect：fail → revise；pass/warn → run_review。
-
-### `run_review`（多视角并行派发 + record-review）
-- 读取当前冻结 Draft 的 `draftRef`（inspect 返回）。
-- 查评审视角表得该 artifact 的 N 个视角：
-  - business-design → SE
-  - solution-design → SA、MDE、TSE
-  - implementation-design → SE、DEV、TSE
-  - test-design → SA、SE、MDE
-  - integrated-design → 4 个承接维度（见下"Integrated 评审"段，reviewer 为 `business-traceability` / `implementation-traceability` / `test-traceability` / `baseline-consistency`）
-- 对设计阶段（前 4 个 artifact）：**并行派发** N 个 Review Subagent（Agent 原语，单次 message 多 Task 并发），每个加载 `feature-review` skill，派发 prompt 注入：
-  - `draftPath`、`draftHash`、`version`（来自 `draftRef`）
-  - `artifactSlug`（= 该 stage 的 slug，例如 `solution-design`；Subagent 必须把输出 `artifactId` 填成此 slug，`applyReviewResults` 会按 slug 校验）
-  - `reviewProfile=agents/<role>.md`（指向对应 agent 文件的"设计评审"段）
-  - `allowedReads`（`work/<stage>/{analysis,discovery,design}.md`、`evidence/`、`decisions/`、上游 `artifacts/`）
-  - `round`（当前评审轮次）
-- 收齐 N 份 `{reviewer, artifactId, artifactVersion, issueFindings, closureDecisions, summary}`。
-- 合并落盘（一次调用提交全部 N 视角 snapshots）：
-  ```bash
-  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js record-review <taskPath> <stage> '<snapshots json>'
-  ```
-  `<snapshots json>` 为数组，每个元素 `artifactId` 必须等于该 stage 的 slug。
-- 重读 inspect：open blocking/apply → revise；通过 → baseline。
-- Draft hash 变（任何 revise 后）→ 旧 findings 全失效 → 重新 Gate + 重新派发全部 N 视角。
-
-### Integrated 评审（4 个承接维度，不走 `agents/*.md`）
-integrated-design 的 `run_review` 并行派发 4 个 Review Subagent，每个加载 `feature-review` skill，`reviewProfile` 为下列维度 checklist（由派发 prompt 直接注入维度定义，**不**引用 `agents/*.md`）。每个 Subagent 同样接收 `artifactSlug=integrated-design`、`draftPath`、`draftHash`、`version`、`allowedReads`（四阶段 `artifacts/*.md` + `work/integrated-design/draft.md` + `decisions/`）、`round`：
-- **业务承接（reviewer=business-traceability）**：business-design 中的业务要求是否全部被 solution/implementation/test 承接（每条业务要求都能沿 REQ→ARCH→MOD→TEST 追溯到落点）。
-- **实现承接（reviewer=implementation-traceability）**：solution-design 的接口 / 数据 / 模块划分是否被 implementation-design 完整承接，无悬空接口或缺失模块。
-- **测试承接（reviewer=test-traceability）**：关键需求 / 关键接口 / 关键风险是否被 test-design 承接（覆盖关键场景与风险对冲）。
-- **基线一致（reviewer=baseline-consistency）**：四 artifact 的 version / hash / Gate / Review / Baseline 是否自洽（无版本错位、hash 漂移、未合入的 review、缺失 baseline）。
-
-收齐后同样调：
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js record-review <taskPath> integratedDesign '<snapshots>'
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath> <designType>
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js sync-state <taskPath>
 ```
 
-### `baseline`
-- 人工批准（按 workflow mode；strict/collaborative 需 AskUserQuestion confirm_gate）后发布：
+根据返回的 `slug` 读取且只读取当前类型的：
+
+- `references/design-guides/<slug>.md`：专业方法、透镜、风险和收敛标准；
+- `references/specs/<slug>.md`：Draft 内容合同。
+
+同时读取当前需求、相关正式 Artifact、现有 Draft/notes、被设计实际采用的 Evidence/Decision，以及项目代码和文档。只加载当前设计目标实际需要的相关 Artifact。
+
+完成条件：当前设计类型和恢复位置有可靠证据；工作区已恢复或初始化；顶层状态已同步为设计进行中；Design Guide、Spec 和必要事实已进入上下文。
+
+## 2. 完成并确认核心设计
+
+### 建立当前设计模型
+
+先调查，再提问。综合目标、现状、约束、相关设计、代码、Evidence 和可用知识，持续维护当前设计模型：
+
+- 已核验事实及来源；
+- 已确认设计；
+- 暂定理解及可能推翻它的假设；
+- 开放事项、关键取舍和残余风险。
+
+能从项目或知识源查到的事实由你调查。只有用户掌握的上下文和真正需要用户承担的设计决策才提问。独立知识主题可调用 `knowledge-query`；`gap` 只表示当前来源没有答案。
+
+### 运行语义分析循环
+
+把设计问题按决策依赖组织成当前会话中的 **design tree**。前提已经满足、现在无需猜测即可讨论的问题构成 **frontier**。design tree/frontier 只用于推理，不持久化为游标、ID 或依赖图。
+
+循环执行：
+
+1. 重新审视整个设计模型和 Design Guide 的专业透镜。
+2. 从 frontier 选择最可能改变设计、阻塞其他判断、风险最高或返工代价最大的问题。
+3. 调查回答该问题所需的事实。
+4. 形成当前理解、推荐方案、理由、可行替代方案和主要代价。
+5. 指出矛盾、薄弱假设和风险；有依据时直接挑战用户方案。
+6. 默认只深入讨论一个高价值问题；只有真正独立、低耦合的问题才同轮批量讨论。
+7. 根据用户回答更新整个设计模型，说明变化及影响，重新计算 design tree/frontier。
+
+每个问题必须改变或验证设计判断。模板章节是覆盖约束，不是问题清单。简单设计可以很短，但仍需完成事实调查、专业判断和明确确认。
+
+### 动态组织并确认设计
+
+按依赖、内聚性、复杂度和风险组织 **Design Sections**。每次呈现一个已经完成内部推演的段落，说明推荐、替代方案和代价，获得用户确认后再继续。
+
+把用户确认后的内容视为 **Confirmed Design**。新事实或 Review finding 需要修改时，先说明原设计、拟修改内容、原因和影响，再取得重新确认。影响范围不可靠时请用户确认。
+
+收敛前完整核对：
+
+- frontier 没有会实质改变设计的开放项；
+- 关键事实有可核验依据；
+- 重要取舍和残余风险已经明确；
+- Design Guide 的专业收敛标准逐项满足；
+- Spec 核心内容全部覆盖；
+- 每项条件内容都有生成位置或明确不适用理由；
+- 高风险或有歧义的省略已由用户决定。
+
+向用户呈现完整设计与覆盖结果并取得整体确认。
+
+完成条件：上述收敛项全部可检查地满足，用户明确确认当前设计内容已收敛。
+
+## 3. 形成可评审 Draft
+
+设计收敛后才按当前 Spec 写入 `work/<slug>/draft.md`。Draft 必须准确表达 Confirmed Design，可脱离聊天独立理解，不添加未讨论的目标、约束或方案。
+
+运行：
+
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <stage>
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js lint <taskPath> <designType>
 ```
-- publish 原样复制 draft → artifact，校验 hash 一致，写 baseline ref。**publish 不修改 draft 内容**；若仍需改，应回到 revise。
-- **若 inspect 返回 `complete`（仅 integrated baseline 后）**，推进任务状态：
-  ```bash
-  node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} design_ready
-  ```
-  结束（下次 `/workflow` 路由到 feature-approve）。
-- 否则（`stage_complete`）重读 inspect，由 `current-stage` 推进到下一阶段。
 
-### `ask_review`
-- 对 `action.issues` 中的 pending advisory / risk_candidate **逐项** AskUserQuestion（遵循 `references/interaction-guidelines.md`）：
-  - advisory → single_select：`apply`（纳入本轮修订）/ `no_change`（维持现状）。
-  - risk_candidate → single_select：`apply`（纳入本轮修订）/ `accepted_risk`（已知并接受）/ `mitigated`（已缓解）/ `rejected`（不成立）。
-- 每项决策落盘（与 `record-review` 一致，仅 Lead 写 matrix）：
-  ```bash
-  node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-review-matrix.js close <taskPath> <issue.id> --decision <decision> --closure "<一句话决策依据>"
-  ```
-- 全部 resolve 后重读 inspect：apply → `run_stage/revise`（纳入 `getRevisionItems`）；no_change/accepted_risk/mitigated/rejected → `baseline`。
+Lint 只检查 frontmatter、核心章节、适用性说明、占位符和格式。Lint 失败时修复确定性问题；若修复会改变设计语义，返回任务 2 讨论并确认。
 
-### `complete`
-- integrated 已 baseline。推进 `design_ready`：
-  ```bash
-  node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} design_ready
-  ```
-  结束（下次 `/workflow` 路由到 feature-approve）。
+完成条件：Draft 内容完整、无未确认语义、可独立评审，当前 Draft hash 的 Lint 为 `pass`。
 
-### `stage_complete` / `blocked`
-- `stage_complete`：当前阶段已 baseline 且非终态；重读 `current-stage` 自动进入下一阶段。
-- `blocked`：展示 reason，停止，等人工介入。
+## 4. 隔离 Review 并修订
 
-## 约束
+根据 Design Guide 的 Checklist 导航和当前 Draft 判断适用性。适用性不明确时执行；明确不适用时向用户说明理由。此时才读取每份适用的 `references/review-checklists/<checklist-id>.md`。
 
-- **不依赖 Agent Teams** —— 不检查 `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`，不 bootstrap 设计团队，不 spawn/wake/message 稳定 teammate。Review Subagent 是一次性 Agent 原语派发，不持久化 ID。
-- **不自行写流程状态 / artifact / review matrix / decisions** —— state 只经 `publish` 或 `set-task-status`；artifact 只经 `publish`；decisions 只经 CLI；review matrix 只经 `record-review`；gate 只经 `record-gate`。
-- **专业推演在主会话完成** —— analysis/discovery/design/draft 由主会话 + Stage Skill 产出；Subagent 仅用于有界 Review（每个视角一个一次性 Subagent）。
-- **阶段切换卸载上游推演** —— Baseline 后只保留下游所需 Artifact 摘要，不在主会话累积上游 analysis/discovery/design 全文。
-- **integrated 不引入新设计事实** —— assemble 仅汇总与追溯，新增决策须回到对应阶段 revise。
+为每份适用 Checklist 创建新的、会话隔离的 Reviewer Subagent。向 Reviewer 提供：
+
+- 冻结 Draft 及其 hash；
+- 自己的一份 Checklist；
+- 该 Checklist 判断所必需的相关正式 Artifact 或事实材料。
+
+Reviewer 不接收其他 Reviewer 结果，不询问用户，不修改文件。要求其完整应用 Checklist 的评审规则和每个检查项，直接返回轻量 Markdown：`pass`，或包含位置、问题、实际影响和建议的 findings。
+
+收齐结果后由主会话分析重复、关联和冲突，向用户说明对 Confirmed Design 的影响，再讨论修订。所有 blocking findings 必须关闭；advisory 和残余 risk 必须向用户揭示并形成明确处理结论。
+
+Draft 发生语义修改时，重新运行 Lint，并为全部适用 Checklist 创建新的隔离 Reviewer 完整复评。纯排版、错别字或不改变含义的修正只重新 Lint。
+
+评审完成后写入最小摘要：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js record-review <taskPath> <designType> '<review-summary-json>'
+```
+
+摘要只保存 Draft hash、Checklist 结论、必要 findings 和明确不适用理由。
+
+完成条件：摘要绑定当前 Draft hash；每份适用 Checklist 都已执行；所有 blocking findings 已关闭；语义修订后已完整复评；Review 状态为 `pass`。
+
+## 5. 批准、发布并同步状态
+
+向用户展示设计目标、最终方案、关键取舍、Lint、Review 结论、已修订问题和残余风险，明确请求最终批准。
+
+用户批准后运行：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '<approval-json>'
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <designType>
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js sync-state <taskPath>
+```
+
+`publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js reopen <taskPath> <designType>
+```
+
+状态同步根据最新工作空间事实和外层 Workflow 合同决定保持 `designing` 或进入 `design_ready`；本 Skill 不硬编码总体需要哪些设计活动。
+
+完成条件：Artifact 与获批 Draft 字节一致；Approval、Lint 和 Review 绑定同一 hash；Baseline 版本有效；状态同步成功；向外层调用者返回当前 Design Baseline 已获用户批准、发布并完成状态同步。

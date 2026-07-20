@@ -8,51 +8,90 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const readSkill = name => fs.readFileSync(path.join(root, 'skills', name, 'SKILL.md'), 'utf8');
 
-test('feature-clarify routes knowledge dependencies through knowledge-query and handles EV/gap', () => {
+test('feature-clarify uses a dynamic requirement model and investigates queryable facts', () => {
   const skill = readSkill('feature-clarify');
-
-  assert.match(skill, /调用 knowledge-query Skill/i);
-  assert.match(skill, /纳入 EV/i);
+  assert.match(skill, /原始问题 → 需求目标/);
+  assert.match(skill, /边界 ↔ 验收/);
+  assert.match(skill, /问题树/);
+  assert.match(skill, /frontier/i);
+  assert.match(skill, /重算整体需求理解和 frontier/i);
+  assert.match(skill, /可查询事实[\s\S]*主动使用/);
+  assert.match(skill, /knowledge-query/);
   assert.match(skill, /gap/i);
-
 });
 
-test('feature-clarify writes requirement.md after completeness precheck', () => {
+test('feature-clarify creates exactly four delivery tasks and keeps micro-actions inside them', () => {
   const skill = readSkill('feature-clarify');
-
-  // High-impact gaps return to clarification before requirement.md is generated.
-  assert.match(skill, /inputs\/requirement\.md/i);
-  assert.match(skill, /发现高影响缺口时.*返回步骤3/is);
-  assert.match(skill, /set-task-status <workspaceRoot> clarified/i);
+  assert.match(skill, /1\. \*\*收敛并确认需求内容\*\*/);
+  assert.match(skill, /2\. \*\*形成可评审的 Requirement Draft\*\*/);
+  assert.match(skill, /3\. \*\*独立 Review 并修订至满足基线条件\*\*/);
+  assert.match(skill, /4\. \*\*获得用户最终批准并发布 Requirement Baseline\*\*/);
+  assert.match(skill, /不要为查询、提问、修订单项内容或启动 Reviewer 创建任务/);
 });
 
-test('feature-clarify recovers from requirement.md and the evidence registry', () => {
+test('feature-clarify keeps artifacts semantic and paths external', () => {
   const skill = readSkill('feature-clarify');
-
-  assert.match(skill, /evidence\/evidence-registry\.json/i);
-  assert.match(skill, /EV-\*\.md/i);
-  assert.match(skill, /inputs\/requirement\.md/i);
+  assert.match(skill, /从外层调用上下文取得过程产物的路径、命名和生命周期/);
+  assert.match(skill, /已确认内容/);
+  assert.match(skill, /暂定理解/);
+  assert.match(skill, /开放事项/);
+  assert.match(skill, /用户授权后移事项/);
+  assert.doesNotMatch(skill, /ambiguity-backlog|clarification-log|requirement-checklist|feature-clarify\.js|state\.json/);
 });
 
-test('feature-clarify internally judges requirement type without asking user', () => {
+test('feature-clarify enforces Draft review and verbatim user-approved baseline', () => {
   const skill = readSkill('feature-clarify');
+  assert.match(skill, /requirement-baseline\.md/);
+  assert.match(skill, /requirement-reviewer\.md/);
+  assert.match(skill, /全新的独立 Reviewer Subagent/);
+  assert.match(skill, /需求语义变化[\s\S]*重新评审完整 Draft/);
+  assert.match(skill, /用户批准后，将已评审 Draft 原样发布为 Requirement Baseline/);
+  assert.match(skill, /用户批准前不得进入业务设计/);
+});
 
-  // Agent internally judges functional/technical/mixed; user is not asked to choose
-  assert.match(skill, /不再要求用户选择需求类型/);
-  // Functional requirements should not be dragged into unrelated technical details
-  assert.match(skill, /Agent.*判断需求.*技术约束.*延后到设计阶段/is);
+test('feature-clarify supports user-authorized deferral without silent assumptions', () => {
+  const skill = readSkill('feature-clarify');
+  assert.match(skill, /由用户明确授权/);
+  assert.match(skill, /表达“想后移”只算提议/);
+  assert.match(skill, /再取得知情确认/);
+  assert.match(skill, /最迟决策点/);
+  assert.match(skill, /不得静默假设答案/);
+});
+
+test('feature-clarify exposes bundled side effects as candidate scope expansion', () => {
+  const skill = readSkill('feature-clarify');
+  assert.match(skill, /“顺便”“同时”“兼容”/);
+  assert.match(skill, /候选范围扩张/);
+  assert.match(skill, /非自动吸收/);
+});
+
+test('feature-clarify contains only the approved skill resources', () => {
+  const dir = path.join(root, 'skills', 'feature-clarify');
+  const files = fs.readdirSync(dir).sort();
+  const references = fs.readdirSync(path.join(dir, 'references')).sort();
+  assert.deepStrictEqual(files, ['SKILL.md', 'references']);
+  assert.deepStrictEqual(references, ['requirement-baseline.md', 'requirement-reviewer.md']);
+  assert.strictEqual(fs.existsSync(path.join(root, 'scripts', 'feature-clarify.js')), false);
+});
+
+test('requirement reviewer reports only blocking or advisory findings without editing', () => {
+  const reviewer = fs.readFileSync(path.join(root, 'skills', 'feature-clarify', 'references', 'requirement-reviewer.md'), 'utf8');
+  assert.match(reviewer, /Result: pass \| issues-found/);
+  assert.match(reviewer, /\[blocking\]/);
+  assert.match(reviewer, /\[advisory\]/);
+  assert.match(reviewer, /不要与用户交互/);
+  assert.match(reviewer, /不要直接修改 Draft/);
+  assert.match(reviewer, /静默加入用户未确认的需求假设/);
 });
 
 test('feature-init writes requirement.md and routes users to clarification', () => {
   const skill = readSkill('feature-init');
-
   assert.match(skill, /inputs\/requirement\.md/i);
   assert.match(skill, /feature-clarify/i);
 });
 
 test('feature-assess accepts only clarified tasks', () => {
   const skill = readSkill('feature-assess');
-
   assert.match(skill, /status !== 'clarified'/i);
   assert.match(skill, /MUST NOT assess/i);
   assert.match(skill, /feature-clarify/i);
@@ -60,97 +99,17 @@ test('feature-assess accepts only clarified tasks', () => {
 
 test('workflow executes every no-Agent action in the main session', () => {
   const skill = readSkill('workflow');
-  const noAgentSection = skill.match(/#### 无 Agent 场景([\s\S]*?)(?=\n#### )/);
-
-  assert.ok(noAgentSection, 'no-Agent dispatch section');
-  assert.match(noAgentSection[0], /main 会话中直接执行 `nextAction\.skill`/i);
+  const section = skill.match(/#### 无 Agent 场景([\s\S]*?)(?=\n#### )/);
+  assert.ok(section);
+  assert.match(section[0], /main 会话中直接执行 `nextAction\.skill`/i);
 });
 
-test('knowledge-query uses multi-source config and 4-step query flow', () => {
-  const skill = readSkill('knowledge-query');
-
-  assert.match(skill, /knowledge-sources\.json/i);
-  assert.match(skill, /subagent-prompt\.md/i);
-  assert.match(skill, /evidence-registry\.json/i);
-  assert.match(skill, /EV-xxx-\*\.md/i);
-  assert.match(skill, /步骤1/i);
-  assert.match(skill, /步骤2/i);
-  assert.match(skill, /步骤3/i);
-  assert.match(skill, /步骤4/i);
-});
-
-test('knowledge-query dispatches subagent, may ask user, and returns markdown format', () => {
-  const skill = readSkill('knowledge-query');
-
-  assert.match(skill, /Agent.*派发/i);
-  assert.match(skill, /general-purpose/i);
-  assert.match(skill, /AskUserQuestion/i);
-  assert.match(skill, /EV-ID/i);
-  assert.match(skill, /查询结果/i);
-  assert.match(skill, /已有证据/i);
-  assert.match(skill, /本次发现/i);
-  assert.match(skill, /未找到/i);
-});
-
-test('feature-design is a multi-stage lifecycle entry with no Agent Teams dependency', () => {
-  const skill = readSkill('feature-design');
-
-  // Lifecycle entry consumes deterministic current-stage + inspect/publish/init-stage/mark-ready/record-gate CLI.
-  assert.match(skill, /devsphere-design\.js current-stage/);
-  assert.match(skill, /devsphere-design\.js inspect/);
-  assert.match(skill, /devsphere-design\.js publish/);
-  assert.match(skill, /devsphere-design\.js init-stage/);
-  assert.match(skill, /mark-ready/);
-  assert.match(skill, /devsphere-design\.js record-gate/);
-
-  // Multi-perspective review: dispatches N Review Subagents in parallel + merges via record-review.
-  assert.match(skill, /devsphere-design\.js record-review/);
-  assert.match(skill, /并行派发/);
-  assert.match(skill, /artifactSlug/);
-  // Per-artifact reviewer roster.
-  assert.match(skill, /business-design → SE/);
-  assert.match(skill, /solution-design → SA、MDE、TSE/);
-  assert.match(skill, /implementation-design → SE、DEV、TSE/);
-  assert.match(skill, /test-design → SA、SE、MDE/);
-
-  // Integrated assemble activity + 4 承接 dimensions (not agents/*.md).
-  assert.match(skill, /activity = analyze \| discover \| design \| revise \| assemble/);
-  assert.match(skill, /assemble/);
-  assert.match(skill, /business-traceability/);
-  assert.match(skill, /implementation-traceability/);
-  assert.match(skill, /test-traceability/);
-  assert.match(skill, /baseline-consistency/);
-
-  // complete -> design_ready wiring.
-  assert.match(skill, /set-task-status \${CLAUDE_PROJECT_DIR} design_ready/);
-
-  // No stable teammate names, no merge_reviews router action, no router import.
-  assert.doesNotMatch(skill, /design-sa|design-se|design-mde|design-tse|design-dev|design-cie/);
-  assert.doesNotMatch(skill, /merge_reviews/);
-});
-
-test('feature-review is a one-shot Review Subagent job skill aligned with applyReviewResults', () => {
-  const skill = readSkill('feature-review');
-
-  // Job-skill contract: receives frozen draft + reviewProfile, outputs findings shape.
-  assert.match(skill, /一次性评审 Subagent/);
-  assert.match(skill, /draftPath.*draftHash.*version/);
-  assert.match(skill, /reviewProfile/);
-  assert.match(skill, /allowedReads/);
-
-  // Output shape aligned with applyReviewResults (each finding: findingId/type/reviewerAgent/round).
-  assert.match(skill, /issueFindings/);
-  assert.match(skill, /closureDecisions/);
-  assert.match(skill, /findingId.*type.*reviewerAgent.*round/s);
-  assert.match(skill, /blocking \| advisory \| risk_candidate/);
-
-  // artifactId MUST be the slug (not the frontmatter id) — applyReviewResults validates snapshot.artifactId === slug.
-  assert.match(skill, /artifactSlug/);
-  assert.match(skill, /不是.*Draft frontmatter/);
-
-  // Does not write Work/Artifact/matrix; does not ask the user.
-  assert.match(skill, /不修改 Draft \/ Work \/ Artifact \/ matrix/);
-  assert.match(skill, /不询问用户/);
-  assert.doesNotMatch(skill, /review-state\.js complete/);
-  assert.doesNotMatch(skill, /devsphere-review-matrix\.js add|review-matrix\.json/);
+test('workflow owns clarified state sync only after the approved baseline completion fact', () => {
+  const clarify = readSkill('feature-clarify');
+  const workflow = readSkill('workflow');
+  assert.match(clarify, /Requirement Baseline 已经用户批准并发布/);
+  assert.match(clarify, /不要自行读取或修改外层工作流状态/);
+  assert.match(workflow, /仅当它明确返回“Requirement Baseline 已经用户批准并发布”时/);
+  assert.match(workflow, /set-task-status \$\{CLAUDE_PROJECT_DIR\} clarified/);
+  assert.match(workflow, /暂停等待用户回答、Review 或最终批准，不得更新状态/);
 });

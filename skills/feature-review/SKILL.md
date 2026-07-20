@@ -1,51 +1,46 @@
 ---
 name: feature-review
-description: 评审 Subagent 的 job skill。接收冻结 Draft + reviewProfile，产出 findings（对齐 review-matrix），不写 Work/Artifact/matrix、不问用户。由主会话在 run_review 动作中按视角并行派发。
+description: 对冻结的 Feature Design Draft 执行一份专业 Review Checklist；用于 feature-design 为每份适用 Checklist 创建的一次性隔离 Reviewer。
 ---
 
-# Feature Review — 评审 Job
+# Feature Review
 
-你是**一次性评审 Subagent**。主会话在 `run_review` 动作中并行派发你，你只评审一个冻结 Draft 的一个视角，完成后退出。
+评审一个冻结 Draft 的一份 Checklist，完成后直接向主会话返回结果。
 
-## 输入（由派发 prompt 提供）
+## 输入
 
-- `draftPath`、`draftHash`、`version`：冻结 Draft 的位置与指纹。
-- `artifactSlug`：Draft 所属产物的 slug（例如 `solution-design`、`integrated-design`），用于回填输出中的 `artifactId`。
-- `reviewProfile`：你的评审视角 checklist 来源（`agents/<role>.md` 的"设计评审"段，或 integrated 的承接维度 checklist）。
-- `allowedReads`：`work/<stage>/{analysis,discovery,design}.md`、`evidence/`、`decisions/`、上游 `artifacts/`。
-- `round`：当前评审轮次（用于回填每条 finding 的 `round`）。
+读取主会话提供的 Draft、Draft hash、自己的 Checklist，以及 Checklist 判断所必需的相关正式 Artifact 或事实材料。以输入中的 Draft 为唯一评审对象。
 
-## 完成标准
+## 执行
 
-- 所有 finding 指向 Draft（引用 draft 章节/行），不评 Work 过程文件本身。
-- finding 类型仅 `blocking | advisory | risk_candidate`。
-- 每条 finding 带 `findingId`（本视角内唯一，如 `F1`）、`type`、`reviewerAgent`（你的角色名）、`round`。
-- 对上一轮的 open issue，若 Draft 已修，给出 `closureDecisions`（`{issueId, status:'closed', closureEvidence}`）。
-- 不修改 Draft / Work / Artifact / matrix。
-- 不询问用户。发现需用户判断的事项，列入返回的 `unknowns` 并结束。
+逐项应用 Checklist 的适用条件、评审规则和所有检查项。只报告具有实际设计影响的问题：
+
+- `blocking`：不修正就不能可靠发布 Baseline；
+- `advisory`：有具体收益，需要主会话判断是否修改；
+- `risk`：需要用户知晓、缓解或接受的残余风险。
+
+每项 finding 包含 Draft 位置、具体问题、实际影响和建议。上下文不足时明确指出缺口及其影响。没有实质问题时直接通过。
+
+保持会话隔离：不询问用户，不修改文件，不推进流程，不读取其他 Reviewer 结果。
 
 ## 输出
 
-返回 JSON（由主会话收集后调 `record-review`）：
+直接返回轻量 Markdown：
 
-```json
-{
-  "reviewer": "<role>",
-  "artifactId": "<artifactSlug，例如 solution-design>",
-  "artifactVersion": "<从 draft frontmatter version>",
-  "issueFindings": [
-    { "findingId": "F1", "type": "blocking", "reviewerAgent": "<role>", "round": 1 }
-  ],
-  "closureDecisions": [],
-  "summary": "一句话评审结论",
-  "unknowns": []
-}
+```markdown
+# Review: <checklist-id>
+
+- Draft hash: `sha256:...`
+- Result: pass | findings
+- Summary: <一句结论>
+
+## Findings
+
+- Type: blocking | advisory | risk
+  Location: <Draft 位置>
+  Issue: <具体问题>
+  Impact: <实际影响>
+  Recommendation: <建议>
 ```
 
-**关键约束：** `artifactId` 字段必须填**派发 prompt 提供的 `artifactSlug`**（例如 `solution-design`、`integrated-design`），**不是** Draft frontmatter 中的产物 ID（例如 `SD-1`）。`applyReviewResults` 校验 `snapshot.artifactId === slug`，填错会导致评审结果无法合入。`artifactVersion` 字段则从 Draft frontmatter `version` 读取。
-
-## 评审纪律
-
-- 只读 allowedReads；不读下游阶段、不读其他评审的结果。
-- blocking 必须是"不修就不能 baseline"的问题；advisory 是建议；risk_candidate 是需用户知晓的风险。
-- 不为凑数虚报 finding。
+完成条件：Checklist 的每条评审规则和每个检查项均已应用；所有 findings 可定位且说明实际影响；返回 hash 与输入一致；未执行写入或用户交互。

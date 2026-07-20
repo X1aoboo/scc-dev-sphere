@@ -1,131 +1,9 @@
 'use strict';
 
-const path = require('path');
-const fs = require('fs');
-const {
-  readMatrix, getPendingHumanDecisions, getOpenApplyItems,
-} = require('../devsphere-review-matrix');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
-const { readDecisions, countGatedPending } = require('../devsphere-decisions');
-const { STAGE_SLUG } = require('../devsphere-design');
+const { designReady, syncDesignState } = require('../devsphere-design');
 
-/**
- * Feature workflow decision table (spec section 8).
- * Returns a nextAction object describing the single minimal next step.
- */
-function resolveNextAction(taskPath, state) {
-  const status = state.status;
-
-  // --- No active task edge case (handled by router) ---
-
-  // --- initialized ---
-  if (status === 'initialized') {
-    return makeAction('run_skill', state, null, null,
-      'feature-clarify', {}, [],
-      'Task initialized. Clarify and confirm the requirement before complexity and risk assessment.',
-      [], ['inputs/requirement.md']);
-  }
-
-  // --- clarified ---
-  // Completeness of the clarification is judged by feature-clarify (and the user's
-  // final confirmation) per the skill's written principles; routing here keys only
-  // off status. There is intentionally no deterministic re-validation gate.
-  if (status === 'clarified') {
-    return makeAction('run_skill', state, null, null,
-      'feature-assess', {}, [],
-      'Requirement clarification is complete. Proceed with complexity and risk assessment.',
-      ['inputs/requirement.md'], []);
-  }
-
-  // --- assessed ---
-  // feature-design is a sub-orchestrator that runs in the main session (agents=[]).
-  // It must NOT be dispatched as an Agent task — it routes to design sub-skills itself.
-  if (status === 'assessed') {
-    return makeAction('run_skill', state, 'design', null,
-      'feature-design', {}, [],
-      'Assessment complete. Begin design phase.',
-      [], ['artifacts/business-design.md']);
-  }
-
-  // --- designing ---
-  if (status === 'designing') {
-    return makeAction('run_skill', state, 'design', null,
-      'feature-design', {}, [],
-      '设计阶段：由 feature-design skill（生命周期入口）驱动。',
-      [], []);
-  }
-
-  // --- design_ready ---
-  if (status === 'design_ready') {
-    return makeAction('run_skill', state, null, 'design-final',
-      'feature-approve', {}, [],
-      'All design phases complete. Proceed with final design approval.',
-      ['artifacts/integrated-design.md', 'reviews/review-matrix.json'],
-      ['approvals/design-final-approval.json']);
-  }
-
-  // --- approved_for_implementation ---
-  if (status === 'approved_for_implementation') {
-    return makeAction('run_skill', state, null, 'implementation-plan',
-      'feature-plan-implementation', {}, ['dev'],
-      'Design approved. Generate implementation plan before coding.',
-      ['approvals/design-final-approval.json'],
-      ['implementation/implementation-plan.md']);
-  }
-
-  // --- implementation_planned ---
-  if (status === 'implementation_planned') {
-    return makeAction('run_skill', state, null, 'implementation',
-      'feature-implement', {}, ['dev'],
-      'Implementation plan ready. Begin code implementation. First code change requires human confirmation.',
-      ['implementation/implementation-plan.md', 'links/repos.json'],
-      ['implementation/implementation-log.md']);
-  }
-
-  // --- implementing ---
-  if (status === 'implementing') {
-    return makeAction('run_skill', state, null, 'implementation',
-      'feature-implement', {}, ['dev'],
-      'Continue implementation, fix issues, or supplement tests.',
-      [], []);
-  }
-
-  // --- verification_ready ---
-  if (status === 'verification_ready') {
-    return makeAction('run_skill', state, null, 'verification',
-      'feature-verify', {}, ['dev'],
-      'Code implementation complete. Run verification and generate test handoff package.',
-      [], ['verification/test-handoff.md']);
-  }
-
-  // --- completed ---
-  if (status === 'completed') {
-    return makeAction('completed', state, null, null, null, {}, [],
-      'Task is completed. No further workflow actions available.',
-      [], []);
-  }
-
-  // --- blocked ---
-  if (status === 'blocked') {
-    return makeAction('blocked', state, null, null, null, {}, [],
-      'Task is blocked. Review the blocked reason and resolve before continuing.',
-      [], []);
-  }
-
-  // --- fallback ---
-  return makeAction('show_status', state, null, null, null, {}, [],
-    `Unknown or unhandled status: ${status}`,
-    [], []);
-}
-
-// New-flow check: an artifact's review is complete when the matrix entry has
-// been stamped 'reviewed' (record-review does this directly when all required
-// reviewers complete for the current version). No review-state lookup needed.
-function isCurrentReviewComplete(taskPath, artifact, artifactMatrix) {
-  return Boolean(artifactMatrix && artifactMatrix.status === 'reviewed');
-}
-
-function makeAction(kind, state, stage, target, skill, args, agents, reason, required, expected, pause) {
+function makeAction(kind, state, stage, target, skill, agents, reason, required = [], expected = []) {
   return {
     kind,
     taskType: 'feature',
@@ -134,150 +12,113 @@ function makeAction(kind, state, stage, target, skill, args, agents, reason, req
     stage: stage || null,
     target: target || null,
     skill: skill || null,
-    args: args || {},
+    args: {},
     agents: agents || [],
     reason,
-    requiredArtifacts: required || [],
-    expectedArtifacts: expected || [],
-    pause: pause || null,
+    requiredArtifacts: required,
+    expectedArtifacts: expected,
+    pause: null,
   };
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const command = args[0];
-
-  switch (command) {
-    case 'sync-stage-status': {
-      const workspaceRoot = args[1];
-      const current = readCurrentTask(workspaceRoot);
-      if (!current || !current.activeTaskId) {
-        process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
-        process.exit(0);
-      }
-      const taskPath = getTaskPath(workspaceRoot);
-      const state = readState(taskPath);
-      if (!state || !state.stages) {
-        process.stdout.write(JSON.stringify({ synced: false, reason: 'No stages in state' }));
-        process.exit(0);
-      }
-
-      const updated = [];
-      for (const [stageName, stageData] of Object.entries(state.stages)) {
-        if (!stageData.artifact) continue;
-        const artifactPath = path.join(taskPath, stageData.artifact);
-
-        // 确定性事实：artifact 存在 + not_started + gated 决策已 resolved → drafted
-        if (fs.existsSync(artifactPath) && stageData.status === 'not_started') {
-          const slug = STAGE_SLUG[stageName];
-          // 仅对四个设计阶段做决策门校验（integrated 等无 decisions）
-          if (readDecisions(taskPath, slug) && countGatedPending(taskPath, slug) > 0) {
-            // gated 未 resolved，禁止升 drafted（防错）
-            continue;
-          }
-          stageData.status = 'drafted';
-          updated.push({ stage: stageName, from: 'not_started', to: 'drafted' });
-        }
-      }
-
-      // 评审状态同步
-      const matrix = readMatrix(taskPath);
-      if (matrix && matrix.artifacts) {
-        for (const [stageName, stageData] of Object.entries(state.stages)) {
-          if (stageData.status !== 'drafted') continue;
-          const artifactTarget = STAGE_SLUG[stageName];
-          const artifactMatrix = matrix.artifacts[artifactTarget];
-          const pendingReview = artifactMatrix
-            ? getPendingHumanDecisions(matrix, artifactTarget) : [];
-          const openApply = artifactMatrix
-            ? getOpenApplyItems(matrix, artifactTarget) : [];
-          if (artifactMatrix && artifactMatrix.issues
-            && artifactMatrix.issues.blocking === 0
-            && isCurrentReviewComplete(taskPath, artifactTarget, artifactMatrix)
-            && pendingReview.length === 0
-            && openApply.length === 0) {
-            stageData.status = 'ai_review_passed';
-            updated.push({ stage: stageName, from: 'drafted', to: 'ai_review_passed' });
-          }
-        }
-      }
-
-      writeState(taskPath, state);
-      process.stdout.write(JSON.stringify({ synced: true, updated }));
-      break;
-    }
-    case 'set-stage-status': {
-      const taskPath = args[1];
-      const stageName = args[2];
-      const newStatus = args[3];
-      const VALID_STAGE_STATUSES = ['not_started', 'drafted', 'ai_review_passed', 'human_approved'];
-      if (!VALID_STAGE_STATUSES.includes(newStatus)) {
-        process.stderr.write(`Invalid stage status: ${newStatus}. Valid: ${VALID_STAGE_STATUSES.join(', ')}\n`);
-        process.exit(1);
-      }
-      const artifactTarget = STAGE_SLUG[stageName];
-      const matrix = readMatrix(taskPath);
-      const artifactMatrix = matrix && matrix.artifacts ? matrix.artifacts[artifactTarget] : null;
-      if (artifactMatrix && (newStatus === 'ai_review_passed' || newStatus === 'human_approved')) {
-        if (!isCurrentReviewComplete(taskPath, artifactTarget, artifactMatrix)) {
-          process.stderr.write(`Cannot set stage '${stageName}': artifact review status is not reviewed\n`);
-          process.exit(1);
-        }
-        const pendingReview = getPendingHumanDecisions(matrix, artifactTarget);
-        const openApply = getOpenApplyItems(matrix, artifactTarget);
-        if (artifactMatrix.issues.blocking > 0) {
-          process.stderr.write(`Cannot set stage '${stageName}': open blocking issue(s) remain\n`);
-          process.exit(1);
-        }
-        if (pendingReview.length > 0) {
-          process.stderr.write(`Cannot set stage '${stageName}': pending advisory/risk decision(s) remain\n`);
-          process.exit(1);
-        }
-        if (openApply.length > 0) {
-          process.stderr.write(`Cannot set stage '${stageName}': apply revision issue(s) remain open\n`);
-          process.exit(1);
-        }
-      }
-      const { updateStageStatus } = require('../devsphere-state');
-      updateStageStatus(taskPath, stageName, newStatus);
-      process.stdout.write(JSON.stringify({ synced: true, stage: stageName, status: newStatus }));
-      break;
-    }
-    case 'set-task-status': {
-      const workspaceRoot = args[1];
-      const newStatus = args[2];
-      const workflowMode = args[3];
-      const humanGateStages = args[4] ? args[4].split(',') : [];
-      const ciCdRiskRaw = args[5];
-
-      const current = readCurrentTask(workspaceRoot);
-      if (!current || !current.activeTaskId) {
-        process.stdout.write(JSON.stringify({ synced: false, reason: 'No active task' }));
-        process.exit(0);
-      }
-      const taskPath = getTaskPath(workspaceRoot);
-      const state = readState(taskPath);
-      if (!state) {
-        process.stdout.write(JSON.stringify({ synced: false, reason: 'No state file' }));
-        process.exit(0);
-      }
-
-      if (newStatus) state.status = newStatus;
-      if (workflowMode) state.workflowMode = workflowMode;
-      if (humanGateStages.length > 0) state.humanGateStages = humanGateStages;
-      if (ciCdRiskRaw !== undefined) state.ciCdRisk = (ciCdRiskRaw === 'true');
-
-      writeState(taskPath, state);
-      process.stdout.write(JSON.stringify({ synced: true, status: state.status, workflowMode: state.workflowMode, humanGateStages: state.humanGateStages || [], ciCdRisk: state.ciCdRisk === true }));
-      break;
-    }
+function resolveNextAction(taskPath, state) {
+  switch (state.status) {
+    case 'initialized':
+      return makeAction('run_skill', state, null, null, 'feature-clarify', [],
+        'Clarify and confirm the requirement before assessment.', [], ['inputs/requirement.md']);
+    case 'clarified':
+      return makeAction('run_skill', state, null, null, 'feature-assess', [],
+        'Requirement clarification is complete.', ['inputs/requirement.md']);
+    case 'assessed':
+    case 'designing':
+      return makeAction('run_skill', state, 'design', null, 'feature-design', [],
+        'Feature Design runs in the main session, recovers the current design activity from workspace facts, and applies one shared design process.');
+    case 'design_ready':
+      return makeAction('run_skill', state, null, 'design-final', 'feature-approve', [],
+        'The required Design Baseline set is ready for overall approval.',
+        (state.requiredDesignTypes || []).map(designType => `artifacts/${({
+          businessDesign: 'business-design',
+          solutionDesign: 'solution-design',
+          implementationDesign: 'implementation-design',
+          testDesign: 'test-design',
+        })[designType]}.md`),
+        ['approvals/design-final-approval.json']);
+    case 'approved_for_implementation':
+      return makeAction('run_skill', state, null, 'implementation-plan', 'feature-plan-implementation', ['dev'],
+        'Overall design approved. Generate the implementation plan.',
+        ['approvals/design-final-approval.json'], ['implementation/implementation-plan.md']);
+    case 'implementation_planned':
+    case 'implementing':
+      return makeAction('run_skill', state, null, 'implementation', 'feature-implement', ['dev'],
+        'Implement the approved design.', ['implementation/implementation-plan.md'], ['implementation/implementation-log.md']);
+    case 'verification_ready':
+      return makeAction('run_skill', state, null, 'verification', 'feature-verify', ['dev'],
+        'Verify the implementation.', [], ['verification/test-handoff.md']);
+    case 'completed':
+      return makeAction('completed', state, null, null, null, [], 'Task is completed.');
+    case 'blocked':
+      return makeAction('blocked', state, null, null, null, [], 'Task is blocked.');
     default:
-      break;
+      return makeAction('show_status', state, null, null, null, [], `Unhandled status: ${state.status}`);
   }
 }
 
-if (require.main === module) {
-  main();
+function setTaskStatus(workspaceRoot, newStatus, workflowMode, humanGateStages, ciCdRiskRaw) {
+  const current = readCurrentTask(workspaceRoot);
+  if (!current || !current.activeTaskId) throw new Error('No active task');
+  const taskPath = getTaskPath(workspaceRoot);
+  const state = readState(taskPath);
+  if (!state) throw new Error('No state file');
+  if (newStatus === 'approved_for_implementation') {
+    throw new Error('Overall approval must use devsphere-approval.js approve-design');
+  }
+  const allowedTransitions = {
+    initialized: ['clarified'],
+    clarified: ['assessed'],
+    assessed: ['designing'],
+    designing: ['design_ready'],
+  };
+  if (newStatus && newStatus !== state.status && !(allowedTransitions[state.status] || []).includes(newStatus)) {
+    throw new Error(`Invalid generic status transition: ${state.status} -> ${newStatus}`);
+  }
+  if (newStatus === 'design_ready') {
+    const ready = designReady(taskPath);
+    if (!ready.valid) throw new Error(ready.issues.join('; '));
+  }
+  if (newStatus) state.status = newStatus;
+  if (workflowMode) state.workflowMode = workflowMode;
+  if (humanGateStages && humanGateStages.length) state.humanGateStages = humanGateStages;
+  if (ciCdRiskRaw !== undefined) state.ciCdRisk = ciCdRiskRaw === 'true';
+  writeState(taskPath, state);
+  return { synced: true, status: state.status };
 }
 
-module.exports = { resolveNextAction };
+function main() {
+  const [command, workspaceRoot, newStatus, workflowMode, humanGateRaw, ciCdRiskRaw] = process.argv.slice(2);
+  try {
+    let result;
+    if (command === 'set-task-status') {
+      result = setTaskStatus(
+        workspaceRoot,
+        newStatus,
+        workflowMode,
+        humanGateRaw ? humanGateRaw.split(',') : [],
+        ciCdRiskRaw,
+      );
+    } else if (command === 'sync-design-status') {
+      const taskPath = getTaskPath(workspaceRoot);
+      if (!taskPath) throw new Error('No active task');
+      result = syncDesignState(taskPath);
+    } else {
+      throw new Error(`Unknown command: ${command}`);
+    }
+    process.stdout.write(JSON.stringify(result));
+  } catch (error) {
+    process.stderr.write(`Error: ${error.message}\n`);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) main();
+
+module.exports = { resolveNextAction, setTaskStatus };

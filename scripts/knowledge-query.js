@@ -29,10 +29,6 @@ function writeJSON(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
 // --- Config paths ---
 
 function getWorkspaceConfigPath(workspaceRoot) {
@@ -217,10 +213,6 @@ function getRegistryPath(workspaceRoot) {
   return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'evidence-registry.json');
 }
 
-function getEvidenceDir(workspaceRoot) {
-  return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'knowledge');
-}
-
 function readRegistry(workspaceRoot) {
   const registryPath = getRegistryPath(workspaceRoot);
   let registry = readJSON(registryPath);
@@ -234,65 +226,74 @@ function readRegistry(workspaceRoot) {
   return registry;
 }
 
-// --- Evidence operations ---
-
-function nextEvId(workspaceRoot) {
-  const registry = readRegistry(workspaceRoot);
-  const maxId = registry.evidences.reduce((max, ev) => {
-    const num = parseInt((ev.id || '').replace('EV-', ''), 10);
-    return num > max ? num : max;
-  }, 0);
-  const nextNum = maxId + 1;
-  const nextId = 'EV-' + String(nextNum).padStart(3, '0');
-  return { nextId };
+// Merge read-only source-agent results. Equal claims retain all supporting
+// sources; disagreeing claims remain explicit conflicts for the main session.
+function mergeCandidateResults(results) {
+  const byKey = new Map();
+  const gaps = [];
+  for (const result of results || []) {
+    const source = result.source;
+    for (const claim of result.claims || []) {
+      if (!byKey.has(claim.key)) byKey.set(claim.key, []);
+      let variant = byKey.get(claim.key).find(item => item.text === claim.text);
+      if (!variant) {
+        variant = { key: claim.key, text: claim.text, sources: [] };
+        byKey.get(claim.key).push(variant);
+      }
+      variant.sources.push(source);
+    }
+    for (const gap of result.gaps || []) if (!gaps.includes(gap)) gaps.push(gap);
+  }
+  const candidates = [];
+  const conflicts = [];
+  for (const [key, variants] of byKey.entries()) {
+    candidates.push(variants[0]);
+    if (variants.length > 1) conflicts.push({ key, variants });
+  }
+  return { candidates, conflicts, gaps };
 }
 
-function sanitizeDescription(desc) {
-  return desc.replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'evidence';
-}
-
-function registerEvidence(workspaceRoot, description, sourceType, query) {
-  const VALID_SOURCE_TYPES = ['skill', 'local', 'repo', 'mcp', 'web', 'user'];
-  if (!workspaceRoot || !description || !sourceType) {
-    throw new Error('Usage: echo "<summary>" | register-evidence <description> <sourceType> <query>');
-  }
-  if (!VALID_SOURCE_TYPES.includes(sourceType)) {
-    throw new Error(`Invalid sourceType: ${sourceType}. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`);
-  }
-
-  const taskRoot = resolveTaskRoot(workspaceRoot);
-  const { nextId } = nextEvId(workspaceRoot);
-  const safeDesc = sanitizeDescription(description);
-  const snapshotName = `${nextId}-${safeDesc}.md`;
-  const snapshotPath = path.join(getEvidenceDir(workspaceRoot), snapshotName);
-  const timestamp = new Date().toISOString();
-
-  // Read content summary from stdin
-  const summary = fs.readFileSync(0, 'utf-8').trim();
-  const snapshotContent = `# ${nextId}: ${description}
-
-- **Source:** ${sourceType}
-- **Query:** ${query || '-'}
-- **Retrieved:** ${timestamp}
-- **Content Summary:**
-${summary}`;
-
-  ensureDir(getEvidenceDir(workspaceRoot));
-  fs.writeFileSync(snapshotPath, snapshotContent, 'utf-8');
-
-  // Update registry
-  const registry = readRegistry(workspaceRoot);
-  registry.evidences.push({
-    id: nextId,
-    description: description,
-    sourceType: sourceType,
-    query: query || '',
-    file: path.relative(taskRoot, snapshotPath),
-    retrievedAt: timestamp
+function registerEvidenceRecord(workspaceRoot, input) {
+  if (!input || typeof input.topic !== 'string' || !input.topic.trim()) throw new Error('Evidence topic is required');
+  if (typeof input.summary !== 'string' || !input.summary.trim()) throw new Error('Evidence summary is required');
+  if (!Array.isArray(input.sources) || input.sources.length === 0) throw new Error('Evidence requires at least one source');
+  const allowedSourceTypes = new Set(['mcp', 'skill', 'local', 'repo', 'web', 'user']);
+  input.sources.forEach((source, index) => {
+    for (const field of ['type', 'reference', 'summary']) {
+      if (!source || typeof source[field] !== 'string' || !source[field].trim()) {
+        throw new Error(`Evidence source ${index + 1} requires non-empty ${field}`);
+      }
+    }
+    if (!allowedSourceTypes.has(source.type)) throw new Error(`Unsupported Evidence source type: ${source.type}`);
+    const marker = `S${index + 1}`;
+    if (!input.summary.includes(`[${marker}]`)) throw new Error(`Evidence summary must reference [${marker}]`);
   });
+  const taskRoot = resolveTaskRoot(workspaceRoot);
+  const registry = readRegistry(workspaceRoot);
+  const max = registry.evidences.reduce((value, item) => {
+    const match = String(item.id || '').match(/^EV-(\d+)$/);
+    return match ? Math.max(value, Number(match[1])) : value;
+  }, 0);
+  const id = `EV-${String(max + 1).padStart(3, '0')}`;
+  const record = {
+    id,
+    topic: input.topic,
+    summary: input.summary,
+    sources: input.sources.map((source, index) => ({
+      marker: `S${index + 1}`,
+      type: source.type,
+      reference: source.reference,
+      summary: source.summary,
+    })),
+    conflicts: input.conflicts || [],
+    gaps: input.gaps || [],
+    recordedAt: new Date().toISOString(),
+  };
+  const recordPath = path.join(taskRoot, 'evidence', 'knowledge', `${id}.json`);
+  writeJSON(recordPath, record);
+  registry.evidences.push({ id, topic: record.topic, file: path.relative(taskRoot, recordPath) });
   writeJSON(getRegistryPath(workspaceRoot), registry);
-
-  return { evId: nextId, snapshotPath };
+  return record;
 }
 
 function readEvidence(workspaceRoot, evId) {
@@ -367,9 +368,8 @@ function main() {
     console.error('  remove-config-item <field> <item>');
     console.error('  reset-config');
     console.error('');
-    console.error('Evidence commands:');
-    console.error('  next-ev-id');
-    console.error('  register-evidence <description> <sourceType> <query>  (content from stdin)');
+    console.error('Evidence commands (main session only):');
+    console.error('  register-evidence-record  (JSON from stdin)');
     console.error('  read-evidence <evId>');
     process.exit(0);
   }
@@ -401,13 +401,15 @@ function main() {
         result = resetConfig(workspaceRoot);
         console.log(JSON.stringify(result));
         break;
-      case 'next-ev-id':
-        result = nextEvId(workspaceRoot);
-        console.log(JSON.stringify(result));
+      case 'register-evidence-record': {
+        const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+        result = registerEvidenceRecord(workspaceRoot, input);
+        console.log(JSON.stringify(result, null, 2));
         break;
-      case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[2], args[3], args[4]);
-        console.log(JSON.stringify(result));
+      }
+      case 'merge-results':
+        result = mergeCandidateResults(JSON.parse(fs.readFileSync(0, 'utf8')));
+        console.log(JSON.stringify(result, null, 2));
         break;
       case 'read-evidence':
         result = readEvidence(workspaceRoot, args[2]);
@@ -448,7 +450,6 @@ if (require.main === module) {
 module.exports = {
   readJSON,
   writeJSON,
-  ensureDir,
   getEffectiveConfig,
   readConfig,
   showConfig,
@@ -456,9 +457,10 @@ module.exports = {
   addConfigItem,
   removeConfigItem,
   resetConfig,
-  nextEvId,
-  registerEvidence,
+  registerEvidenceRecord,
   readEvidence,
+  readRegistry,
+  mergeCandidateResults,
   guardWrite,
   guardBash,
 };

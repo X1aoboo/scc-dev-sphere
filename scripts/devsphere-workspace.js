@@ -4,13 +4,21 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  writeState, writeCurrentTask, getDesignRevisionLimit,
+  writeState, writeCurrentTask,
 } = require('./devsphere-state');
+
+const DEFAULT_REQUIRED_DESIGN_TYPES = [
+  'businessDesign',
+  'solutionDesign',
+  'implementationDesign',
+  'testDesign',
+];
 
 const DIRS = [
   'inputs',
   'artifacts',
   'reviews',
+  'quality-gates',
   'approvals',
   'implementation',
   'verification',
@@ -36,14 +44,8 @@ function initState(taskPath, opts = {}) {
     taskType: 'feature',
     workflowMode: opts.workflowMode || 'auto-design',
     humanGateStages: opts.humanGateStages || [],
-    designRevisionLimit: getDesignRevisionLimit(opts),
+    requiredDesignTypes: opts.requiredDesignTypes || DEFAULT_REQUIRED_DESIGN_TYPES,
     status: 'initialized',
-    stages: {
-      businessDesign: { status: 'not_started', artifact: 'artifacts/business-design.md' },
-      solutionDesign: { status: 'not_started', artifact: 'artifacts/solution-design.md' },
-      implementationDesign: { status: 'not_started', artifact: 'artifacts/implementation-design.md' },
-      testDesign: { status: 'not_started', artifact: 'artifacts/test-design.md' },
-    },
   };
   writeState(taskPath, state);
 }
@@ -100,4 +102,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createFeatureTask, ensureDirectories, initState };
+module.exports = { DEFAULT_REQUIRED_DESIGN_TYPES, createFeatureTask, ensureDirectories, initState };

@@ -151,7 +151,15 @@ resolver 会：
 
 所有 Agent 完成后，执行以下同步流程：
 
-1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `clarified → assessed` 迁移：
+1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“Requirement Baseline 已经用户批准并发布”时，才由外层 workflow 完成顶层状态迁移：
+
+   ```bash
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} clarified
+   ```
+
+   如果 Skill 暂停等待用户回答、Review 或最终批准，不得更新状态。
+
+2. **需求评估状态同步：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `clarified → assessed` 迁移：
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages> <ciCdRisk>
@@ -161,11 +169,13 @@ resolver 会：
    - `<humanGateStages>`（第4位，逗号分隔，无则传空串）为门禁阶段名（仅 `collaborative-design` 时需要），如 `businessDesign,testDesign`
    - `<ciCdRisk>`（第5位，`'true'`/`'false'`）来自 feature-assess 的 CI/CD 风险评估；仅当评估命中部署/配置/CI/CD/环境风险时为 `'true'`。
 
-2. **阶段状态同步：**
+3. **设计状态同步：** 如果刚完成的 skill 是 `feature-design`，只有它明确返回“当前 Design Baseline 已获用户批准、发布并完成状态同步”时，重新执行一次幂等同步：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design-status ${CLAUDE_PROJECT_DIR}
    ```
+
+   同步根据工作空间中的 Baseline 和 `state.requiredDesignTypes` 判定保持 `designing` 或进入 `design_ready`，不按固定设计类型顺序推进。
 
 然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
 

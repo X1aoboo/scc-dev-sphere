@@ -1,7 +1,7 @@
 {
   "name": "scc-dev-sphere",
   "version": "0.1.0",
-  "description": "需求开发流程插件 — 从设计到代码落地的可审计 AI 辅助工作流。支持 SA/SE/MDE/DEV/TSE/CIE 多角色协作，内置 AI 交叉评审闭环和 Human-in-loop 批准机制。",
+  "description": "需求开发流程插件 — 以主会话 Skill-first 协作设计、隔离 Checklist Review、Human-in-loop 批准和确定性 Artifact 合同推进代码落地。",
   "author": {
     "name": "scc-dev-sphere"
   },

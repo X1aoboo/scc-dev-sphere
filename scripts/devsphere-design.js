@@ -5,478 +5,588 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
-const { listGatedPending, readDecisions } = require('./devsphere-decisions');
-const {
-  readMatrix, writeMatrix, getRevisionItems, applyReviewResults, getPendingHumanDecisions,
-  ensureIssuesList, nextIssueId, recomputeCounts,
-} = require('./devsphere-review-matrix');
 
-const STAGE_SLUG = {
-  businessDesign: 'business-design',
-  solutionDesign: 'solution-design',
-  implementationDesign: 'implementation-design',
-  testDesign: 'test-design',
-  integratedDesign: 'integrated-design',
+const DESIGN_TYPES = {
+  businessDesign: {
+    slug: 'business-design',
+    artifactPrefix: 'BD',
+    coreSections: ['目标与范围', '角色、流程与规则', '状态、术语与验收', '适用性说明', '关联设计与交接'],
+    applicabilityItems: ['复杂规则', '长流程', '隐私', '术语冲突'],
+  },
+  solutionDesign: {
+    slug: 'solution-design',
+    artifactPrefix: 'SD',
+    coreSections: ['目标、约束与边界', '架构与模块', '接口、数据与集成', '质量属性与风险', '适用性说明', '关联设计与交接'],
+    applicabilityItems: ['安全', '可靠性', '数据', '部署运维'],
+  },
+  implementationDesign: {
+    slug: 'implementation-design',
+    artifactPrefix: 'IMPL',
+    coreSections: ['实现范围与代码影响', '模块接口与调用链', '错误、并发与数据一致性', '迁移、回滚与可测试性', '适用性说明', '关联设计与交接'],
+    applicabilityItems: ['并发', '迁移', '运维', '资源约束'],
+  },
+  testDesign: {
+    slug: 'test-design',
+    artifactPrefix: 'TD',
+    coreSections: ['风险与测试范围', '测试策略与场景', '数据、环境与自动化', '不可测项与转测准入', '适用性说明', '关联设计与交接'],
+    applicabilityItems: ['安全', '性能', '兼容性', '迁移外部集成'],
+  },
 };
 
-const DESIGN_STAGE_ORDER = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign', 'integratedDesign'];
+const DESIGN_TYPE_KEYS = Object.keys(DESIGN_TYPES);
+const DESIGN_SLUGS = Object.fromEntries(
+  Object.entries(DESIGN_TYPES).map(([designType, definition]) => [designType, definition.slug]),
+);
 
-function currentStage(taskPath) {
+function definitionFor(designType) {
+  const definition = DESIGN_TYPES[designType];
+  if (!definition) throw new Error(`Unknown design type: ${designType}`);
+  return definition;
+}
+
+function requiredDesignTypes(taskPath) {
   const state = readState(taskPath);
-  if (!state || !state.stages) return { stage: null, complete: false };
-  for (const stage of DESIGN_STAGE_ORDER) {
-    const sd = state.stages[stage];
-    if (!sd || !sd.baseline) return { stage, complete: false };
+  if (!state) throw new Error('State file not found');
+  const required = state.requiredDesignTypes;
+  if (!Array.isArray(required) || required.length === 0) {
+    throw new Error('state.requiredDesignTypes must contain at least one design type');
   }
-  return { stage: null, complete: true };
+  if (new Set(required).size !== required.length) throw new Error('state.requiredDesignTypes contains duplicates');
+  for (const designType of required) definitionFor(designType);
+  return required;
 }
 
-function stageDir(taskPath, stage) {
-  return path.join(taskPath, 'work', STAGE_SLUG[stage] || stage);
+function designDir(taskPath, designType) {
+  return path.join(taskPath, 'work', definitionFor(designType).slug);
 }
 
-function progressPath(taskPath, stage) {
-  return path.join(stageDir(taskPath, stage), 'progress.json');
+function draftPath(taskPath, designType) {
+  return path.join(designDir(taskPath, designType), 'draft.md');
 }
 
-function draftPath(taskPath, stage) {
-  return path.join(stageDir(taskPath, stage), 'draft.md');
+function notesPath(taskPath, designType) {
+  return path.join(designDir(taskPath, designType), 'notes.md');
 }
 
-function artifactPath(taskPath, stage) {
-  return path.join(taskPath, 'artifacts', `${STAGE_SLUG[stage]}.md`);
+function artifactPath(taskPath, designType) {
+  return path.join(taskPath, 'artifacts', `${definitionFor(designType).slug}.md`);
 }
 
-function gatePath(taskPath, stage) {
-  return path.join(taskPath, 'quality-gates', `${STAGE_SLUG[stage]}.json`);
+function lintPath(taskPath, designType) {
+  return path.join(taskPath, 'quality-gates', `${definitionFor(designType).slug}-lint.json`);
+}
+
+function reviewSummaryPath(taskPath, designType) {
+  return path.join(taskPath, 'reviews', definitionFor(designType).slug, 'summary.json');
+}
+
+function approvalPath(taskPath, designType) {
+  return path.join(taskPath, 'approvals', `${definitionFor(designType).slug}.json`);
+}
+
+function sha256Buffer(buffer) {
+  return `sha256:${crypto.createHash('sha256').update(buffer).digest('hex')}`;
 }
 
 function sha256File(filePath) {
-  const buf = fs.readFileSync(filePath);
-  return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex');
+  return sha256Buffer(fs.readFileSync(filePath));
 }
 
-// 解析 draft/artifact frontmatter 中的 artifactId 与 version。缺失返回 null。
-function parseDraftFrontmatter(filePath) {
+function semanticHash(raw) {
+  const normalized = raw
+    .replace(/<!--([\s\S]*?)-->/g, '')
+    .split('\n')
+    .map(line => line.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join('\n');
+  return sha256Buffer(Buffer.from(normalized));
+}
+
+function parseFrontmatter(filePath) {
   let raw;
-  try { raw = fs.readFileSync(filePath, 'utf-8'); } catch (e) { return null; }
-  const m = raw.match(/^---\n([\s\S]*?)\n---/);
-  if (!m) return null;
-  const fm = m[1];
-  const idMatch = fm.match(/^artifactId:\s*"?([^"\n]+)"?/m);
-  const verMatch = fm.match(/^version:\s*"?([^"\n]+)"?/m);
-  if (!idMatch || !verMatch) return null;
-  return { artifactId: idMatch[1].trim(), version: verMatch[1].trim() };
-}
-
-// 读取当前 draft 引用：{artifactId, version, hash}；draft 不存在或 frontmatter 不全 → null
-function readDraftRef(taskPath, stage) {
-  const dp = draftPath(taskPath, stage);
-  if (!fs.existsSync(dp)) return null;
-  const fm = parseDraftFrontmatter(dp);
-  if (!fm) return null;
-  return { artifactId: fm.artifactId, version: fm.version, hash: sha256File(dp) };
-}
-
-const TEMPLATES_DIR = path.join(__dirname, '..', 'templates');
-
-const WORK_TEMPLATES = {
-  'analysis.md': 'design-work/analysis.md',
-  'discovery.md': 'design-work/discovery.md',
-  'design.md': 'design-work/design.md',
-};
-
-function defaultDraftFrontmatter(taskPath, stage) {
-  const state = readState(taskPath) || {};
-  const taskId = state.taskId || 'UNKNOWN';
-  const idPrefix = { 'business-design': 'BD', 'solution-design': 'SD', 'implementation-design': 'ID', 'test-design': 'TD', 'integrated-design': 'INT' }[STAGE_SLUG[stage]] || 'X';
-  // 占位骨架：不带 frontmatter，避免 readDraftRef 误判为有效 draft。
-  // design activity 会用真实 artifactId/version 覆盖此文件。
-  return `<!-- placeholder draft; artifactId: ${idPrefix}-${taskId}; run design activity to produce a real draft -->\n\n# 待填充 Draft\n`;
-}
-
-function initStage(taskPath, stage) {
-  if (!STAGE_SLUG[stage]) throw new Error(`Unknown stage: ${stage}`);
-  const dir = stageDir(taskPath, stage);
-  fs.mkdirSync(dir, { recursive: true });
-
-  if (stage === 'integratedDesign') {
-    const dp = path.join(dir, 'draft.md');
-    if (!fs.existsSync(dp)) fs.writeFileSync(dp, defaultDraftFrontmatter(taskPath, stage), 'utf-8');
-    return { dir };
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
   }
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return null;
+  const fields = match[1].split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (fields.length !== 2 || !fields.some(line => /^artifactId:/.test(line)) || !fields.some(line => /^version:/.test(line))) {
+    return null;
+  }
+  const artifactId = match[1].match(/^artifactId:\s*["']?([^"'\n]+)["']?/m);
+  const version = match[1].match(/^version:\s*["']?([^"'\n]+)["']?/m);
+  if (!artifactId || !version) return null;
+  return { artifactId: artifactId[1].trim(), version: version[1].trim() };
+}
 
-  for (const [name, rel] of Object.entries(WORK_TEMPLATES)) {
-    const dest = path.join(dir, name);
-    if (!fs.existsSync(dest)) {
-      const tpl = path.join(TEMPLATES_DIR, rel);
-      const body = fs.existsSync(tpl) ? fs.readFileSync(tpl, 'utf-8') : `# ${name}\n`;
-      fs.writeFileSync(dest, body.replace(/\{\{STAGE\}\}/g, STAGE_SLUG[stage]), 'utf-8');
+function readDraftRef(taskPath, designType) {
+  const file = draftPath(taskPath, designType);
+  const frontmatter = parseFrontmatter(file);
+  if (!frontmatter) return null;
+  const raw = fs.readFileSync(file, 'utf8');
+  return {
+    ...frontmatter,
+    hash: sha256Buffer(Buffer.from(raw)),
+    semanticHash: semanticHash(raw),
+  };
+}
+
+function readArtifactRef(taskPath, designType) {
+  const file = artifactPath(taskPath, designType);
+  const frontmatter = parseFrontmatter(file);
+  if (!frontmatter) return null;
+  const state = readState(taskPath);
+  const definition = definitionFor(designType);
+  if (
+    !state
+    || frontmatter.artifactId !== `${definition.artifactPrefix}-${state.taskId}`
+    || !/^\d+\.\d+\.\d+$/.test(frontmatter.version)
+  ) return null;
+  return { ...frontmatter, hash: sha256File(file) };
+}
+
+function fileExists(filePath) {
+  return fs.existsSync(filePath);
+}
+
+function inspectDesign(taskPath, designType) {
+  definitionFor(designType);
+  const draft = readDraftRef(taskPath, designType);
+  const artifact = readArtifactRef(taskPath, designType);
+  const lint = readJSON(lintPath(taskPath, designType));
+  const review = readJSON(reviewSummaryPath(taskPath, designType));
+  const approval = readJSON(approvalPath(taskPath, designType));
+  const hasWork = fileExists(notesPath(taskPath, designType)) || fileExists(draftPath(taskPath, designType));
+  const lintValid = Boolean(draft && lint && lint.status === 'pass' && lint.draftHash === draft.hash);
+  const reviewValid = Boolean(draft && review && review.status === 'pass' && review.draftHash === draft.hash);
+  const approvalValid = Boolean(draft && approval && approval.approvedBy === 'human' && approval.draftHash === draft.hash);
+
+  if (draft && artifact && draft.hash !== artifact.hash) {
+    return {
+      designType,
+      slug: definitionFor(designType).slug,
+      recovery: 'needs_user_confirmation',
+      reason: 'Draft and Baseline both exist with different content; confirm whether this design was intentionally reopened.',
+      hasWork,
+      draft,
+      artifact,
+      lint: { valid: lintValid },
+      review: { valid: reviewValid },
+      approval: { valid: approvalValid },
+    };
+  }
+  if (artifact) {
+    return {
+      designType,
+      slug: definitionFor(designType).slug,
+      recovery: 'baseline_complete',
+      hasWork,
+      artifact,
+      lint: { valid: true },
+      review: { valid: true },
+      approval: { valid: Boolean(approval && approval.approvedBy === 'human' && approval.draftHash === artifact.hash) },
+    };
+  }
+  if (!draft) {
+    return {
+      designType,
+      slug: definitionFor(designType).slug,
+      recovery: hasWork ? 'resume_collaboration' : 'not_started',
+      reason: hasWork ? 'Resume from work notes and user-confirmed design.' : 'No persisted work exists for this design type.',
+      hasWork,
+      lint: { valid: false },
+      review: { valid: false },
+      approval: { valid: false },
+    };
+  }
+  return {
+    designType,
+    slug: definitionFor(designType).slug,
+    recovery: 'resume_from_draft',
+    hasWork,
+    draft,
+    lint: { valid: lintValid },
+    review: { valid: reviewValid },
+    approval: { valid: approvalValid },
+  };
+}
+
+function inspectWorkspace(taskPath, requestedDesignType) {
+  const designs = Object.fromEntries(DESIGN_TYPE_KEYS.map(designType => [designType, inspectDesign(taskPath, designType)]));
+  const conflicts = DESIGN_TYPE_KEYS.filter(designType => designs[designType].recovery === 'needs_user_confirmation');
+  const active = DESIGN_TYPE_KEYS.filter(designType => ['resume_collaboration', 'resume_from_draft'].includes(designs[designType].recovery));
+  const completed = DESIGN_TYPE_KEYS.filter(designType => designs[designType].recovery === 'baseline_complete');
+
+  if (requestedDesignType) {
+    definitionFor(requestedDesignType);
+    return {
+      recovery: conflicts.includes(requestedDesignType) ? 'needs_user_confirmation' : 'design_identified',
+      designType: requestedDesignType,
+      design: designs[requestedDesignType],
+      conflicts,
+      active,
+      completed,
+      requiredDesignTypes: requiredDesignTypes(taskPath),
+    };
+  }
+  if (conflicts.length || active.length > 1) {
+    return {
+      recovery: 'needs_user_confirmation',
+      reason: conflicts.length ? 'Persisted Draft and Baseline facts conflict.' : 'Multiple unfinished design activities exist.',
+      candidates: [...new Set([...conflicts, ...active])],
+      designs,
+      completed,
+      requiredDesignTypes: requiredDesignTypes(taskPath),
+    };
+  }
+  if (active.length === 1) {
+    return {
+      recovery: 'design_inferred',
+      designType: active[0],
+      design: designs[active[0]],
+      completed,
+      requiredDesignTypes: requiredDesignTypes(taskPath),
+    };
+  }
+  return {
+    recovery: 'needs_design_selection',
+    reason: 'No unfinished design activity can be inferred from persisted work; use the current user goal or caller context.',
+    completed,
+    availableDesignTypes: DESIGN_TYPE_KEYS,
+    requiredDesignTypes: requiredDesignTypes(taskPath),
+  };
+}
+
+function initDesign(taskPath, designType) {
+  const definition = definitionFor(designType);
+  const dir = designDir(taskPath, designType);
+  fs.mkdirSync(dir, { recursive: true });
+  const notes = notesPath(taskPath, designType);
+  if (!fs.existsSync(notes)) {
+    fs.writeFileSync(notes, '# 设计工作笔记\n\n保存恢复所需的事实、已确认设计和开放事项。\n', 'utf8');
+  }
+  return {
+    designType,
+    slug: definition.slug,
+    dir,
+    notes,
+    draft: draftPath(taskPath, designType),
+    guide: `skills/feature-design/references/design-guides/${definition.slug}.md`,
+    spec: `skills/feature-design/references/specs/${definition.slug}.md`,
+  };
+}
+
+function extractSection(raw, heading) {
+  const marker = `## ${heading}`;
+  const lines = raw.split(/\r?\n/);
+  const start = lines.findIndex(line => line.trimEnd() === marker);
+  if (start < 0) return '';
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^##\s+/.test(lines[index])) {
+      end = index;
+      break;
     }
   }
-  const dp = path.join(dir, 'draft.md');
-  if (!fs.existsSync(dp)) fs.writeFileSync(dp, defaultDraftFrontmatter(taskPath, stage), 'utf-8');
-  const pp = progressPath(taskPath, stage);
-  if (!fs.existsSync(pp)) {
-    writeJSON(pp, { step: 'analyze', ready: { analysis: false, discovery: false } });
-  }
-  return { dir, progress: pp };
+  return lines.slice(start + 1, end).join('\n').trim();
 }
 
-function markReady(taskPath, stage, which) {
-  if (which !== 'analysis' && which !== 'discovery') {
-    throw new Error(`which must be analysis|discovery, got: ${which}`);
-  }
-  const pp = progressPath(taskPath, stage);
-  const prog = readJSON(pp) || { step: 'analyze', ready: { analysis: false, discovery: false } };
-  prog.ready = prog.ready || { analysis: false, discovery: false };
-  prog.ready[which] = true;
-  if (which === 'analysis' && prog.step === 'analyze') prog.step = 'discover';
-  writeJSON(pp, prog);
-  return prog;
+function checklistPath(checklistId) {
+  return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
 
-const VALID_GATE_STATUS = ['pass', 'warn', 'fail'];
+function lintDraft(taskPath, designType) {
+  const definition = definitionFor(designType);
+  const file = draftPath(taskPath, designType);
+  if (!fs.existsSync(file)) throw new Error(`Draft not found: ${file}`);
+  const raw = fs.readFileSync(file, 'utf8');
+  const draftRef = readDraftRef(taskPath, designType);
+  const state = readState(taskPath);
+  const frontmatter = parseFrontmatter(file);
+  const checks = [];
 
-function readGate(taskPath, stage) {
-  return readJSON(gatePath(taskPath, stage));
-}
-
-function recordGate(taskPath, stage, status, checks) {
-  if (!VALID_GATE_STATUS.includes(status)) {
-    throw new Error(`gate status must be pass|warn|fail, got: ${status}`);
+  checks.push({
+    code: 'frontmatter',
+    result: frontmatter ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'artifact id',
+    result: frontmatter && state && frontmatter.artifactId === `${definition.artifactPrefix}-${state.taskId}` ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'version',
+    result: frontmatter && /^\d+\.\d+\.\d+$/.test(frontmatter.version) ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'placeholder',
+    result: /<[^>]+>|\{\{[^}]+\}\}|\b(?:TODO|TBD)\b/i.test(raw) ? 'fail' : 'pass',
+  });
+  for (const section of definition.coreSections) {
+    checks.push({
+      code: `core section:${section}`,
+      result: extractSection(raw, section) ? 'pass' : 'fail',
+    });
   }
-  const draftRef = readDraftRef(taskPath, stage);
-  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
+  const applicability = extractSection(raw, '适用性说明');
+  for (const item of definition.applicabilityItems) {
+    const escaped = item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const decision = applicability.split(/\r?\n/).find(line => new RegExp(`^-\\s*${escaped}[：:]`).test(line.trim()));
+    checks.push({
+      code: `applicability:${item}`,
+      result: decision && new RegExp(`^-\\s*${escaped}[：:]\\s*(生成|不适用)[：:]\\s*\\S+`).test(decision.trim()) ? 'pass' : 'fail',
+    });
+  }
+
   const result = {
-    draftRef,
-    templateChecks: (checks && checks.templateChecks) || [],
-    qualityChecks: (checks && checks.qualityChecks) || [],
-    status,
-    recordedAt: new Date().toISOString(),
+    designType,
+    draftHash: draftRef ? draftRef.hash : sha256Buffer(Buffer.from(raw)),
+    semanticHash: semanticHash(raw),
+    status: checks.some(check => check.result === 'fail') ? 'fail' : 'pass',
+    checks,
   };
-  writeJSON(gatePath(taskPath, stage), result);
+  writeJSON(lintPath(taskPath, designType), result);
   return result;
 }
 
-// gate 通过判定：存在、绑定当前 draft hash、status 为 pass|warn。
-function gateAcceptable(gate, draftRef) {
-  if (!gate || !gate.draftRef) return false;
-  return gate.draftRef.hash === draftRef.hash && (gate.status === 'pass' || gate.status === 'warn');
+function validateFinding(finding) {
+  if (!finding || !['blocking', 'advisory', 'risk'].includes(finding.type)) {
+    throw new Error('Review finding type must be blocking|advisory|risk');
+  }
+  if (!finding.location || !finding.issue || !finding.impact || !finding.recommendation) {
+    throw new Error('Review finding requires location, issue, impact, and recommendation');
+  }
 }
 
-// review 状态判定：返回 {complete, hasOpenRevision}。
-function reviewAcceptable(matrix, slug, draftRef) {
-  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) return { complete: false, hasOpenRevision: false };
-  const entry = matrix.artifacts[slug];
-  const reviewedAtHash = entry.draftRef && entry.draftRef.hash;
-  const revisionItems = getRevisionItems(matrix, slug);
-  return {
-    complete: reviewedAtHash === draftRef.hash && entry.status === 'reviewed' && revisionItems.length === 0,
-    hasOpenRevision: reviewedAtHash === draftRef.hash && revisionItems.length > 0,
+function recordReview(taskPath, designType, input) {
+  definitionFor(designType);
+  const draft = readDraftRef(taskPath, designType);
+  const lint = readJSON(lintPath(taskPath, designType));
+  if (!draft) throw new Error(`No valid Draft for ${designType}`);
+  if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
+    throw new Error('Current Draft must pass deterministic lint before review');
+  }
+  if (!input || input.draftHash !== draft.hash) throw new Error('Review summary does not bind the current Draft');
+  if (!Array.isArray(input.checklists) || input.checklists.length === 0) {
+    throw new Error('Review summary requires at least one executed checklist');
+  }
+  const checklistIds = input.checklists.map(item => item.checklistId);
+  if (new Set(checklistIds).size !== checklistIds.length) throw new Error('Review summary contains duplicate checklists');
+  const findings = [];
+  for (const checklist of input.checklists) {
+    if (!checklist.checklistId || !['pass', 'findings'].includes(checklist.result)) {
+      throw new Error('Checklist result must contain checklistId and pass|findings');
+    }
+    if (!fs.existsSync(checklistPath(checklist.checklistId))) {
+      throw new Error(`Review checklist not found: ${checklist.checklistId}`);
+    }
+    const checklistFindings = checklist.findings || [];
+    for (const finding of checklistFindings) validateFinding(finding);
+    if (checklist.result === 'pass' && checklistFindings.length) {
+      throw new Error(`Passing checklist cannot contain findings: ${checklist.checklistId}`);
+    }
+    findings.push(...checklistFindings.map(finding => ({ checklistId: checklist.checklistId, ...finding })));
+  }
+  const notApplicable = input.notApplicable || [];
+  for (const item of notApplicable) {
+    if (!item.checklistId || !item.reason) throw new Error('Not-applicable checklist requires checklistId and reason');
+    if (!fs.existsSync(checklistPath(item.checklistId))) throw new Error(`Review checklist not found: ${item.checklistId}`);
+  }
+  const summary = {
+    designType,
+    draftHash: draft.hash,
+    semanticHash: draft.semanticHash,
+    status: findings.some(finding => finding.type === 'blocking') ? 'blocked' : 'pass',
+    checklists: input.checklists.map(item => ({
+      checklistId: item.checklistId,
+      result: item.result,
+      summary: item.summary || '',
+    })),
+    notApplicable,
+    findings,
   };
+  writeJSON(reviewSummaryPath(taskPath, designType), summary);
+  return summary;
 }
 
-// 确定性 Router：读取 stage work 状态，返回 milestone + nextAction。
-// 优先级：blocked > ask_decision > gate-fail revise > gate-missing > review-revision revise > review-missing > baseline > stage_complete。
-function inspect(taskPath, stage) {
-  const slug = STAGE_SLUG[stage];
-  if (!slug) return { stage, nextAction: { kind: 'blocked', reason: `Unknown stage: ${stage}` } };
-
-  if (stage === 'integratedDesign') {
-    const draftRef = readDraftRef(taskPath, stage);
-    if (!draftRef) return { stage, milestone: 'not_started', nextAction: { kind: 'run_stage', activity: 'assemble' } };
-    const gate = readGate(taskPath, stage);
-    if (gate && gate.draftRef && gate.draftRef.hash === draftRef.hash && gate.status === 'fail') {
-      return { stage, milestone: 'drafted', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'gate fail' } };
-    }
-    if (!gateAcceptable(gate, draftRef)) {
-      return { stage, milestone: 'drafted', draftRef, nextAction: { kind: 'run_gate' } };
-    }
-    const matrix = readMatrix(taskPath);
-    const rev = reviewAcceptable(matrix, slug, draftRef);
-    if (rev.hasOpenRevision) {
-      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'open review items' } };
-    }
-    if (!rev.complete) {
-      return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
-    }
-    // Pending advisory/risk decisions gate baseline — spec requires a human decision
-    // before baseline. `getPendingHumanDecisions` is filtered to this artifact's slug,
-    // so pending items raised against other artifacts don't block this baseline.
-    const pendingHuman = getPendingHumanDecisions(matrix, slug);
-    if (pendingHuman.length > 0) {
-      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
-    }
-    const state = readState(taskPath) || {};
-    const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
-    if (!baseline || baseline.hash !== draftRef.hash) {
-      return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'baseline' } };
-    }
-    return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'complete' } };
+function refreshFormattingReview(taskPath, designType) {
+  const draft = readDraftRef(taskPath, designType);
+  const lint = readJSON(lintPath(taskPath, designType));
+  const summary = readJSON(reviewSummaryPath(taskPath, designType));
+  if (!draft || !lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
+    throw new Error('Current Draft must pass lint');
   }
-
-  const pp = progressPath(taskPath, stage);
-  const prog = fs.existsSync(pp) ? readJSON(pp) : null;
-
-  // 无 work → analyze
-  if (!prog) return { stage, milestone: 'not_started', nextAction: { kind: 'run_stage', activity: 'analyze' } };
-
-  if (!prog.ready || !prog.ready.analysis) {
-    return { stage, milestone: 'analysis_ready', nextAction: { kind: 'run_stage', activity: 'analyze' } };
+  if (!summary || summary.semanticHash !== draft.semanticHash || summary.status !== 'pass') {
+    throw new Error('Change is semantic; all applicable reviews must run again');
   }
-  if (!prog.ready.discovery) {
-    return { stage, milestone: 'discovery_ready', nextAction: { kind: 'run_stage', activity: 'discover' } };
-  }
-
-  // discovery ready：先看 pending gated decision
-  const pendingGated = listGatedPending(taskPath, slug);
-  if (pendingGated.length > 0) {
-    return { stage, milestone: 'discovery_ready', pendingGated, nextAction: { kind: 'ask_decision', decisions: pendingGated } };
-  }
-
-  const draftRef = readDraftRef(taskPath, stage);
-  if (!draftRef) {
-    return { stage, milestone: 'discovery_ready', nextAction: { kind: 'run_stage', activity: 'design' } };
-  }
-
-  const gate = readGate(taskPath, stage);
-  // gate fail（且绑定当前 hash）→ revise
-  if (gate && gate.draftRef && gate.draftRef.hash === draftRef.hash && gate.status === 'fail') {
-    return { stage, milestone: 'drafted', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'gate fail' } };
-  }
-  if (!gateAcceptable(gate, draftRef)) {
-    return { stage, milestone: 'drafted', draftRef, nextAction: { kind: 'run_gate' } };
-  }
-
-  const matrix = readMatrix(taskPath);
-  const rev = reviewAcceptable(matrix, slug, draftRef);
-  if (rev.hasOpenRevision) {
-    return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_stage', activity: 'revise', reason: 'open review items' } };
-  }
-  if (!rev.complete) {
-    return { stage, milestone: 'validated', draftRef, gate, nextAction: { kind: 'run_review' } };
-  }
-
-  // Pending advisory/risk decisions gate baseline — spec requires a human decision
-  // before baseline. Same logic as the integratedDesign branch above.
-  const pendingHuman = getPendingHumanDecisions(matrix, slug);
-  if (pendingHuman.length > 0) {
-    return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'ask_review', stage, slug, issues: pendingHuman } };
-  }
-
-  // review 通过且无 open revision → baseline
-  const state = readState(taskPath) || {};
-  const baseline = state.stages && state.stages[stage] && state.stages[stage].baseline;
-  if (!baseline || baseline.hash !== draftRef.hash) {
-    return { stage, milestone: 'reviewed', draftRef, gate, nextAction: { kind: 'baseline' } };
-  }
-  return { stage, milestone: 'baselined', draftRef, gate, baseline, nextAction: { kind: 'stage_complete' } };
+  summary.draftHash = draft.hash;
+  summary.formattingRefresh = true;
+  writeJSON(reviewSummaryPath(taskPath, designType), summary);
+  return summary;
 }
 
-function requirementHash(taskPath) {
-  const reqPath = path.join(taskPath, 'inputs', 'requirement.md');
-  if (!fs.existsSync(reqPath)) return null;
-  return sha256File(reqPath);
-}
-
-function publish(taskPath, stage) {
-  const slug = STAGE_SLUG[stage];
-  if (!slug) throw new Error(`Unknown stage: ${stage}`);
-  const draftRef = readDraftRef(taskPath, stage);
-  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
-
-  const gate = readGate(taskPath, stage);
-  if (!gateAcceptable(gate, draftRef)) {
-    throw new Error(`gate 不通过或 hash 不匹配当前 draft（stage=${stage}）`);
+function approveCurrentDesign(taskPath, designType, approval) {
+  const status = inspectDesign(taskPath, designType);
+  if (!status.draft || !status.lint.valid || !status.review.valid) {
+    throw new Error('Current Draft does not have passing lint and review');
   }
-
-  const matrix = readMatrix(taskPath);
-  const rev = reviewAcceptable(matrix, slug, draftRef);
-  if (!rev.complete || rev.hasOpenRevision) {
-    throw new Error(`review 未完成或存在 open revision（stage=${stage}）`);
-  }
-
-  const dp = draftPath(taskPath, stage);
-  const ap = artifactPath(taskPath, stage);
-  fs.mkdirSync(path.dirname(ap), { recursive: true });
-  fs.copyFileSync(dp, ap);
-  if (sha256File(ap) !== draftRef.hash) {
-    throw new Error('artifact hash 与 draft hash 不一致（复制异常）');
-  }
-
-  const state = readState(taskPath);
-  if (!state) throw new Error('state.json 不存在');
-  state.stages = state.stages || {};
-  state.stages[stage] = state.stages[stage] || {};
-  const baseline = {
-    version: draftRef.version,
-    hash: draftRef.hash,
-    inputVersions: {},
+  if (!approval || approval.approvedBy !== 'human') throw new Error('Design approval must be human');
+  const record = {
+    designType,
+    draftHash: status.draft.hash,
+    approvedBy: 'human',
+    acceptedRisks: approval.acceptedRisks || [],
+    summary: approval.summary || '',
     approvedAt: new Date().toISOString(),
   };
-  const reqHash = requirementHash(taskPath);
-  if (reqHash) baseline.inputVersions.requirement = reqHash;
-  state.stages[stage].baseline = baseline;
-  state.stages[stage].artifact = `artifacts/${slug}.md`;
-  writeState(taskPath, state);
-
-  return { artifactPath: ap, hash: draftRef.hash, baseline };
+  writeJSON(approvalPath(taskPath, designType), record);
+  return record;
 }
 
-function recordReview(taskPath, stage, snapshots) {
-  const slug = STAGE_SLUG[stage];
-  if (!slug) throw new Error(`Unknown stage: ${stage}`);
-  const draftRef = readDraftRef(taskPath, stage);
-  if (!draftRef) throw new Error(`No valid draft for stage ${stage}`);
-  const result = applyReviewResults(taskPath, slug, draftRef.version, snapshots);
-  const matrix = readMatrix(taskPath);
-  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) {
-    throw new Error(`Matrix entry missing for ${slug}`);
-  }
-  matrix.artifacts[slug].draftRef = draftRef;
-  matrix.artifacts[slug].status = 'reviewed';
-  matrix.artifacts[slug].reviewedVersion = draftRef.version;
-  writeMatrix(taskPath, matrix);
-  return result;
-}
-
-const REOPEN_SCOPE = {
-  businessDesign: ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'],
-  solutionDesign: ['solutionDesign', 'implementationDesign', 'testDesign'],
-  implementationDesign: ['implementationDesign', 'testDesign'],
-  testDesign: ['testDesign'],
-};
-
-// bump draft frontmatter version minor+1, patch=0; write back; return new version string.
-function bumpVersionMinor(draftFilePath) {
-  let raw = fs.readFileSync(draftFilePath, 'utf-8');
-  const m = raw.match(/^version:\s*"?(\d+)\.(\d+)\.(\d+)"?/m);
-  if (!m) throw new Error(`无法从 ${draftFilePath} 读取 version`);
-  const major = parseInt(m[1], 10);
-  const minor = parseInt(m[2], 10) + 1;
-  const newVer = `${major}.${minor}.0`;
-  raw = raw.replace(/^version:\s*"?[0-9.]+"?/m, `version: "${newVer}"`);
-  fs.writeFileSync(draftFilePath, raw, 'utf-8');
-  return newVer;
-}
-
-// design_change 重开：bump 版本、清 baseline、重置 progress，并在目标 stage 的 matrix entry
-// 写入一条 design-change blocking（绑定新 draft hash）。仅目标 stage 写 blocking；
-// 其余 scope stage 仅版本/状态重置，由各自后续 review 流程处理。
-function reopen(taskPath, stage, decisionId) {
-  const slug = STAGE_SLUG[stage];
-  if (!slug) throw new Error(`Unknown stage: ${stage}`);
-  const scope = REOPEN_SCOPE[stage];
-  if (!scope) throw new Error(`Stage not reopenable: ${stage}`);
-
-  // 校验 design_change decision 已批准
-  const decisionsFile = readDecisions(taskPath, slug);
-  if (!decisionsFile) throw new Error(`decisions 文件未初始化: ${slug}`);
-  const decision = (decisionsFile.decisions || []).find(d => d.id === decisionId);
-  if (!decision) throw new Error(`decision 未找到: ${decisionId}`);
-  if (decision.type !== 'design_change') throw new Error(`decision 非 design_change: ${decisionId}`);
-  if (decision.status !== 'decided' || !(decision.resolution && decision.resolution.chosen === 'apply')) {
-    throw new Error(`design_change 未批准(需 status=decided, resolution.chosen=apply): ${decisionId}`);
-  }
-
-  const newVersions = {};
-  for (const s of scope) {
-    const dp = draftPath(taskPath, s);
-    if (!fs.existsSync(dp)) throw new Error(`draft 不存在: ${s}`);
-    newVersions[s] = bumpVersionMinor(dp);
-    // 清 baseline
-    const state = readState(taskPath);
-    if (state.stages && state.stages[s]) delete state.stages[s].baseline;
-    writeState(taskPath, state);
-    // 重置 progress（integratedDesign 无 progress，跳过）
-    if (s !== 'integratedDesign') {
-      writeJSON(progressPath(taskPath, s), { step: 'analyze', ready: { analysis: false, discovery: false } });
+function designReady(taskPath) {
+  const required = requiredDesignTypes(taskPath);
+  const artifacts = {};
+  const approvals = {};
+  const issues = [];
+  for (const designType of required) {
+    const artifact = readArtifactRef(taskPath, designType);
+    const approval = readJSON(approvalPath(taskPath, designType));
+    if (!artifact) {
+      issues.push(`Missing required Design Baseline: ${designType}`);
+      continue;
+    }
+    artifacts[designType] = artifact;
+    approvals[designType] = approval;
+    if (!approval || approval.approvedBy !== 'human' || approval.draftHash !== artifact.hash) {
+      issues.push(`Current Design Baseline has no matching human approval: ${designType}`);
     }
   }
+  return { valid: issues.length === 0, issues, requiredDesignTypes: required, artifacts, approvals };
+}
 
-  // 目标阶段写 design-change blocking
-  const matrix = readMatrix(taskPath);
-  if (!matrix || !matrix.artifacts || !matrix.artifacts[slug]) {
-    throw new Error(`matrix entry 缺失: ${slug}`);
+function syncDesignState(taskPath) {
+  const state = readState(taskPath);
+  if (!state) throw new Error('State file not found');
+  const previousStatus = state.status;
+  const ready = designReady(taskPath);
+  if (['assessed', 'designing'].includes(state.status)) {
+    state.status = ready.valid ? 'design_ready' : 'designing';
+  } else if (['design_ready', 'approved_for_implementation'].includes(state.status) && !ready.valid) {
+    state.status = 'designing';
   }
-  const entry = matrix.artifacts[slug];
-  const draftRef = readDraftRef(taskPath, stage);
-  entry.draftRef = draftRef;
-  entry.status = 'pending';
-  const list = ensureIssuesList(entry);
-  const maxRound = list.reduce((mx, i) => Math.max(mx, i.round || 1), 0);
-  list.push({
-    id: nextIssueId(entry, 'blocking'),
-    type: 'blocking',
-    reviewerAgent: 'design-change',
-    status: 'open',
-    round: maxRound + 1,
-    humanDecision: 'pending',
-    closureEvidence: '',
-    source: `${slug}@${newVersions[stage]}:design-change:${decisionId}`,
-    note: decision.summary,
-  });
-  recomputeCounts(entry);
-  writeMatrix(taskPath, matrix);
+  writeState(taskPath, state);
+  return {
+    synced: true,
+    previousStatus,
+    status: state.status,
+    ready: ready.valid,
+    issues: ready.issues,
+    requiredDesignTypes: ready.requiredDesignTypes,
+  };
+}
 
-  return { reopenedStages: scope, newVersions };
+function publish(taskPath, designType) {
+  const draft = readDraftRef(taskPath, designType);
+  if (!draft) throw new Error(`No valid Draft for ${designType}`);
+  const lint = readJSON(lintPath(taskPath, designType));
+  const review = readJSON(reviewSummaryPath(taskPath, designType));
+  const approval = readJSON(approvalPath(taskPath, designType));
+  if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) throw new Error('Current lint is not passing');
+  if (!review || review.status !== 'pass' || review.draftHash !== draft.hash) throw new Error('Current review is not passing');
+  if (!approval || approval.draftHash !== draft.hash || approval.approvedBy !== 'human') throw new Error('Current human approval is missing');
+
+  const source = draftPath(taskPath, designType);
+  const target = artifactPath(taskPath, designType);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (fs.existsSync(target)) {
+    if (sha256File(source) !== sha256File(target)) {
+      throw new Error('Existing Baseline differs from approved Draft; explicitly reopen this design before publishing');
+    }
+    return {
+      designType,
+      artifactPath: target,
+      hash: sha256File(target),
+      version: draft.version,
+      idempotent: true,
+      state: syncDesignState(taskPath),
+    };
+  }
+  fs.copyFileSync(source, target);
+  if (sha256File(source) !== sha256File(target)) throw new Error('Published Artifact differs from approved Draft');
+  return {
+    designType,
+    artifactPath: target,
+    hash: sha256File(target),
+    version: draft.version,
+    state: syncDesignState(taskPath),
+  };
+}
+
+function bumpMajorVersion(raw) {
+  const match = raw.match(/^version:\s*["']?(\d+)\.(\d+)\.(\d+)["']?/m);
+  if (!match) throw new Error('Baseline Artifact has no semantic version');
+  return raw.replace(
+    /^version:\s*["']?\d+\.\d+\.\d+["']?/m,
+    `version: "${Number(match[1]) + 1}.0.0"`,
+  );
+}
+
+function unlinkIfExists(filePath) {
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
+
+function reopenDesign(taskPath, designType) {
+  definitionFor(designType);
+  const artifact = artifactPath(taskPath, designType);
+  const ref = readArtifactRef(taskPath, designType);
+  if (!ref) throw new Error(`No valid Baseline to reopen: ${designType}`);
+  const history = path.join(taskPath, 'artifacts', 'history', definitionFor(designType).slug, `${ref.version}.md`);
+  fs.mkdirSync(path.dirname(history), { recursive: true });
+  fs.copyFileSync(artifact, history);
+  initDesign(taskPath, designType);
+  fs.writeFileSync(draftPath(taskPath, designType), bumpMajorVersion(fs.readFileSync(artifact, 'utf8')), 'utf8');
+  unlinkIfExists(artifact);
+  unlinkIfExists(lintPath(taskPath, designType));
+  unlinkIfExists(reviewSummaryPath(taskPath, designType));
+  unlinkIfExists(approvalPath(taskPath, designType));
+  return { designType, historyFile: history, draft: draftPath(taskPath, designType), state: syncDesignState(taskPath) };
+}
+
+function parseJSONArg(raw, name) {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`Invalid ${name} JSON: ${error.message}`);
+  }
 }
 
 function main() {
   const [command, ...args] = process.argv.slice(2);
   try {
+    let result;
     switch (command) {
-      case 'init-stage': {
-        const [taskPath, stage] = args;
-        process.stdout.write(JSON.stringify(initStage(taskPath, stage)));
-        break;
-      }
-      case 'mark-ready': {
-        const [taskPath, stage, which] = args;
-        process.stdout.write(JSON.stringify(markReady(taskPath, stage, which)));
-        break;
-      }
-      case 'record-gate': {
-        const [taskPath, stage, status, checksJson] = args;
-        let checks;
-        try { checks = JSON.parse(checksJson); } catch (e) { throw new Error(`Invalid checks JSON: ${e.message}`); }
-        process.stdout.write(JSON.stringify(recordGate(taskPath, stage, status, checks)));
-        break;
-      }
-      case 'inspect': {
-        const [taskPath, stage] = args;
-        process.stdout.write(JSON.stringify(inspect(taskPath, stage), null, 2));
-        break;
-      }
-      case 'publish': {
-        const [taskPath, stage] = args;
-        process.stdout.write(JSON.stringify(publish(taskPath, stage)));
-        break;
-      }
-      case 'current-stage': {
-        const [taskPath] = args;
-        process.stdout.write(JSON.stringify(currentStage(taskPath)));
-        break;
-      }
-      case 'record-review': {
-        const [taskPath, stage, snapshotsJson] = args;
-        let snapshots;
-        try { snapshots = JSON.parse(snapshotsJson); } catch (e) { throw new Error(`Invalid snapshots JSON: ${e.message}`); }
-        process.stdout.write(JSON.stringify(recordReview(taskPath, stage, snapshots)));
-        break;
-      }
-      case 'reopen': {
-        const [taskPath, stage, decisionId] = args;
-        process.stdout.write(JSON.stringify(reopen(taskPath, stage, decisionId)));
-        break;
-      }
-      default:
-        process.stderr.write(`Unknown command: ${command}\n`);
-        process.exit(1);
+      case 'inspect-workspace': result = inspectWorkspace(args[0], args[1]); break;
+      case 'init-design': result = initDesign(args[0], args[1]); break;
+      case 'inspect-design': result = inspectDesign(args[0], args[1]); break;
+      case 'lint': result = lintDraft(args[0], args[1]); break;
+      case 'record-review': result = recordReview(args[0], args[1], parseJSONArg(args[2], 'review summary')); break;
+      case 'refresh-format-review': result = refreshFormattingReview(args[0], args[1]); break;
+      case 'approve-current-design': result = approveCurrentDesign(args[0], args[1], parseJSONArg(args[2], 'approval')); break;
+      case 'publish': result = publish(args[0], args[1]); break;
+      case 'reopen': result = reopenDesign(args[0], args[1]); break;
+      case 'sync-state': result = syncDesignState(args[0]); break;
+      case 'design-ready': result = designReady(args[0]); break;
+      default: throw new Error(`Unknown command: ${command}`);
     }
-  } catch (e) {
-    process.stderr.write(`Error: ${e.message}\n`);
+    process.stdout.write(JSON.stringify(result, null, 2));
+  } catch (error) {
+    process.stderr.write(`Error: ${error.message}\n`);
     process.exit(1);
   }
 }
@@ -484,11 +594,31 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
-  STAGE_SLUG, DESIGN_STAGE_ORDER, stageDir, progressPath, draftPath, artifactPath, gatePath,
-  sha256File, parseDraftFrontmatter, readDraftRef, initStage, markReady,
-  VALID_GATE_STATUS, readGate, recordGate,
-  gateAcceptable, reviewAcceptable, inspect,
-  requirementHash, publish, currentStage,
+  DESIGN_TYPES,
+  DESIGN_TYPE_KEYS,
+  DESIGN_SLUGS,
+  requiredDesignTypes,
+  designDir,
+  draftPath,
+  notesPath,
+  artifactPath,
+  lintPath,
+  reviewSummaryPath,
+  approvalPath,
+  sha256File,
+  semanticHash,
+  parseDraftFrontmatter: parseFrontmatter,
+  readDraftRef,
+  readArtifactRef,
+  inspectWorkspace,
+  initDesign,
+  inspectDesign,
+  lintDraft,
   recordReview,
-  REOPEN_SCOPE, bumpVersionMinor, reopen,
+  refreshFormattingReview,
+  approveCurrentDesign,
+  publish,
+  reopenDesign,
+  designReady,
+  syncDesignState,
 };

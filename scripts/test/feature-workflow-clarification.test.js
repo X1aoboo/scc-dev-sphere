@@ -36,6 +36,9 @@ test('clarified routes to feature-assess on status alone', () => {
 
 test('set-task-status preserves the full assessed CLI form', () => {
   const { workspaceRoot, taskPath } = makeTask();
+  const initial = readState(taskPath);
+  initial.status = 'clarified';
+  writeState(taskPath, initial);
 
   execFileSync('node', [
     path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
