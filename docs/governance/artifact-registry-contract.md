@@ -1,92 +1,33 @@
-# Artifact Registry Contract
+# Artifact Contract
 
-## 1. 目的
+Feature Design 支持下列独立 Baseline Artifact 类型：
 
-定义设计产物 (artifact) 的最小元数据契约和未来 registry 结构，让评审矩阵、审批和（未来的）registry/hash 脚本能按**稳定标识**引用产物，而不是脆弱的文件路径。
+| Design Type | Prefix | Path |
+|---|---|---|
+| businessDesign | `BD` | `artifacts/business-design.md` |
+| solutionDesign | `SD` | `artifacts/solution-design.md` |
+| implementationDesign | `IMPL` | `artifacts/implementation-design.md` |
+| testDesign | `TD` | `artifacts/test-design.md` |
 
-本契约遵循 YAGNI：模板中只保留**当前已有消费者**的最小字段；其余字段留待出现消费者脚本时再加。
-
-## 2. 当前 frontmatter schema（P0 最小集）
-
-所有 `templates/artifacts/*.md` 顶部包含且仅包含两个字段：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `artifactId` | string | 产物唯一标识，命名 `<TYPE>-<taskId>` |
-| `version` | string | semver，每次评审修订递增（如 `0.1.0` → `0.2.0`） |
-
-命名前缀：
-
-| artifactType | 前缀 | 模板文件 |
-|--------------|------|---------|
-| business-design | `BD` | business-design.md |
-| solution-design | `SD` | solution-design.md |
-| implementation-design | `IMPL` | implementation-design.md |
-| test-design | `TD` | test-design.md |
-| integrated-design | `IG` | integrated-design.md |
-
-示例（business-design.md）：
+每份 Draft/Artifact frontmatter 只包含：
 
 ```yaml
 ---
-artifactId: "BD-{{TASK_ID}}"
-version: "0.1.0"
+artifactId: "<PREFIX>-<TASK_ID>"
+version: "1.0.0"
 ---
 ```
 
-## 3. 设计原则：frontmatter 不复制 state.json
+`version` 表示正式 Baseline 版本。评审轮次内的语义修订只改变 Draft hash；Baseline 后显式重开才递增正式版本。外层 Workflow 通过 `state.requiredDesignTypes` 声明当前 Feature 需要哪些设计类型，该集合不表达顺序。
 
-以下字段**不放入** frontmatter，避免双写与漂移：
+`scripts/devsphere-design.js publish` 在当前 Lint、完整 Checklist Review 和人工设计批准都绑定同一 Draft hash 后，将 Draft 原样复制成 Artifact。发布后两者的字节与 hash 必须一致，并触发顶层状态同步。
 
-- `status` —— 唯一事实源是 `state.json`（见 CLAUDE.md）。复制到 frontmatter 必然产生同步 bug。
-- `ownerAgent` —— 由 stage→agent 映射确定（`scripts/workflows/feature-workflow.js` `getDesignAgent`）。
-- `artifactType` —— 由文件名确定。
-- `taskId` —— 已在 `state.json` 和正文标题中。
-- `dependsOn` —— 设计阶段顺序已固化在 resolver 与 `feature-design` skill 中。
-- `evidenceRefs` / `decisionRefs` / `assumptionRefs` / `riskRefs` —— 属于正文相应章节，正文是事实源。
+状态、owner、依赖、Evidence/Decision 引用和内容 hash 不手填进 frontmatter：
 
-## 4. 未来扩展字段（待消费者出现再加）
+- 当前设计活动从 Work、Draft 和 Artifact 事实推导；
+- 设计类型之间没有固定顺序或强制上游组合；
+- Draft/content hash 由脚本计算；
+- Evidence/Decision 引用属于正文；
+- 相关活动只读正式 Artifact，不把 Work 当作合同。
 
-当 registry / hash / approval 脚本需要时按需增加。**不在当前模板预置**，避免无人消费的投机性结构：
-
-- `contentHash` —— 内容指纹，由脚本计算（绝不在 frontmatter 手填）。
-- `dependsOn` —— 仅当依赖图需要脱离固定 stage 顺序时。
-- `*Refs`（evidence/decision/assumption/risk）—— 仅当正文引用不足以满足追溯脚本时。
-
-增加任何字段的原则：**先有消费者脚本，再加字段。**
-
-## 5. Registry 结构（未来脚本输出示例）
-
-未来 `scripts/devsphere-artifact.js`（**P0 不实现**）扫描任务目录下所有 artifact frontmatter，产出 registry。
-
-**位置：** `<task-path>/artifacts/artifact-registry.json`
-
-```json
-{
-  "taskId": "feat-123",
-  "artifacts": {
-    "BD-feat-123": {
-      "artifactId": "BD-feat-123",
-      "path": "artifacts/business-design.md",
-      "version": "0.2.0",
-      "contentHash": "sha256:...",
-      "updatedAt": "2026-07-08T10:00:00Z"
-    },
-    "SD-feat-123": {
-      "artifactId": "SD-feat-123",
-      "path": "artifacts/solution-design.md",
-      "version": "0.1.0",
-      "contentHash": "sha256:...",
-      "updatedAt": "2026-07-08T11:00:00Z"
-    }
-  }
-}
-```
-
-## 6. 消费者
-
-| 消费者 | 使用字段 | 状态 |
-|--------|---------|------|
-| 评审矩阵 issue 引用（review-matrix） | `artifactId`, `version` | P0-AST-004 引入 |
-| 审批记录锁定（approval） | `artifactId`, `contentHash`（未来） | 当前按路径 + hash 校验 |
-| registry 脚本 | `artifactId`, `version`, `contentHash` | 未来，P0 不实现 |
+总体设计就绪由外层 Workflow 根据 `requiredDesignTypes` 和每份 Artifact 的人工批准判断；不存在复制正文的综合 Artifact。
