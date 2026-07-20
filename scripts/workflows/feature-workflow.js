@@ -34,9 +34,9 @@ function resolveNextAction(taskPath, state) {
           baselinePath: 'inputs/requirement.md',
         });
     case 'clarified':
-      return makeAction('run_skill', state, null, null, 'feature-assess', [],
-        'Requirement clarification is complete.', ['inputs/requirement.md']);
-    case 'assessed':
+      return makeAction('run_skill', state, 'design', null, 'feature-design', [],
+        'The approved Requirement Baseline is ready for collaborative Feature Design.',
+        ['inputs/requirement.md']);
     case 'designing':
       return makeAction('run_skill', state, 'design', null, 'feature-design', [],
         'Feature Design runs in the main session, recovers the current design activity from workspace facts, and applies one shared design process.');
@@ -70,7 +70,7 @@ function resolveNextAction(taskPath, state) {
   }
 }
 
-function setTaskStatus(workspaceRoot, newStatus, workflowMode, humanGateStages, ciCdRiskRaw) {
+function setTaskStatus(workspaceRoot, newStatus) {
   const current = readCurrentTask(workspaceRoot);
   if (!current || !current.activeTaskId) throw new Error('No active task');
   const taskPath = getTaskPath(workspaceRoot);
@@ -81,8 +81,7 @@ function setTaskStatus(workspaceRoot, newStatus, workflowMode, humanGateStages, 
   }
   const allowedTransitions = {
     initialized: ['clarified'],
-    clarified: ['assessed'],
-    assessed: ['designing'],
+    clarified: ['designing'],
     designing: ['design_ready'],
   };
   if (newStatus && newStatus !== state.status && !(allowedTransitions[state.status] || []).includes(newStatus)) {
@@ -93,26 +92,20 @@ function setTaskStatus(workspaceRoot, newStatus, workflowMode, humanGateStages, 
     if (!ready.valid) throw new Error(ready.issues.join('; '));
   }
   if (newStatus) state.status = newStatus;
-  if (workflowMode) state.workflowMode = workflowMode;
-  if (humanGateStages && humanGateStages.length) state.humanGateStages = humanGateStages;
-  if (ciCdRiskRaw !== undefined) state.ciCdRisk = ciCdRiskRaw === 'true';
   writeState(taskPath, state);
   return { synced: true, status: state.status };
 }
 
 function main() {
-  const [command, workspaceRoot, newStatus, workflowMode, humanGateRaw, ciCdRiskRaw] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const [command, workspaceRoot, newStatus] = args;
   try {
     let result;
     if (command === 'set-task-status') {
-      result = setTaskStatus(
-        workspaceRoot,
-        newStatus,
-        workflowMode,
-        humanGateRaw ? humanGateRaw.split(',') : [],
-        ciCdRiskRaw,
-      );
+      if (args.length !== 3) throw new Error('Usage: set-task-status <workspaceRoot> <newStatus>');
+      result = setTaskStatus(workspaceRoot, newStatus);
     } else if (command === 'sync-design-status') {
+      if (args.length !== 2) throw new Error('Usage: sync-design-status <workspaceRoot>');
       const taskPath = getTaskPath(workspaceRoot);
       if (!taskPath) throw new Error('No active task');
       result = syncDesignState(taskPath);

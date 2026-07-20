@@ -15,7 +15,7 @@ test('feature-design exposes five outcome tasks and keeps semantic analysis in t
     /完成并确认核心设计/,
     /形成可评审.*Draft/,
     /独立 Review.*修订/s,
-    /发布 Design Baseline.*同步状态/s,
+    /发布 Design Baseline/,
     /先调查，再提问/,
     /design tree/i,
     /frontier/i,
@@ -41,7 +41,7 @@ test('feature-design progressively loads one Design Guide and Spec without stage
   assert.doesNotMatch(skill, /references\/stages|stage-contracts|current-stage|init-stage|inspect-stage|固定上游/);
 });
 
-test('feature-design keeps isolated review simple and state sync explicit', () => {
+test('feature-design keeps isolated review simple and leaves top-level state to workflow', () => {
   const skill = read('skills/feature-design/SKILL.md');
   assert.match(skill, /每份适用 Checklist.*新的.*隔离.*Reviewer/s);
   assert.match(skill, /评审规则和每个检查项/);
@@ -50,7 +50,9 @@ test('feature-design keeps isolated review simple and state sync explicit', () =
   assert.match(skill, /record-review/);
   assert.match(skill, /approve-current-design/);
   assert.match(skill, /publish/);
-  assert.match(skill, /sync-state/);
+  assert.doesNotMatch(skill, /sync-state/);
+  assert.doesNotMatch(skill, /完成状态同步|状态同步成功/);
+  assert.match(skill, /当前 Design Baseline 已获用户批准并发布/);
   assert.doesNotMatch(skill, /plan-reviews|record-reviews|allowedReads|disposition|plan-cross-review|record-cross-review/);
 });
 

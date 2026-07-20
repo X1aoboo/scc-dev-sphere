@@ -3,12 +3,12 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const { makeTask } = require('./helpers');
 const { readState, writeState } = require('../devsphere-state');
 const { resolveNextAction } = require('../workflows/feature-workflow');
 
-test('initialized routes to feature-clarify before assessment', () => {
+test('initialized routes to feature-clarify before design', () => {
   const { taskPath } = makeTask();
   const action = resolveNextAction(taskPath, readState(taskPath));
 
@@ -25,8 +25,7 @@ test('initialized routes to feature-clarify before assessment', () => {
   assert.match(action.reason, /clarif/i);
 });
 
-test('clarified routes to feature-assess on status alone', () => {
-  // Completeness is judged inside feature-clarify; routing here is status-only.
+test('clarified routes directly to feature-design', () => {
   const { taskPath } = makeTask();
   const state = readState(taskPath);
   state.status = 'clarified';
@@ -34,26 +33,41 @@ test('clarified routes to feature-assess on status alone', () => {
   const action = resolveNextAction(taskPath, state);
 
   assert.deepStrictEqual(action.kind, 'run_skill');
-  assert.deepStrictEqual(action.skill, 'feature-assess');
+  assert.deepStrictEqual(action.skill, 'feature-design');
   assert.deepStrictEqual(action.agents, []);
   assert.deepStrictEqual(action.requiredArtifacts, ['inputs/requirement.md']);
-  assert.match(action.reason, /clarif/i);
+  assert.match(action.reason, /design/i);
 });
 
-test('set-task-status preserves the full assessed CLI form', () => {
+test('set-task-status starts design without legacy mode fields', () => {
   const { workspaceRoot, taskPath } = makeTask();
   const initial = readState(taskPath);
   initial.status = 'clarified';
   writeState(taskPath, initial);
 
-  execFileSync('node', [
+  const result = spawnSync('node', [
     path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
-    'set-task-status', workspaceRoot, 'assessed', 'collaborative-design', 'businessDesign,testDesign', 'true',
+    'set-task-status', workspaceRoot, 'designing',
   ], { encoding: 'utf-8' });
+  assert.strictEqual(result.status, 0, result.stderr);
 
   const state = readState(taskPath);
-  assert.strictEqual(state.status, 'assessed');
-  assert.strictEqual(state.workflowMode, 'collaborative-design');
-  assert.deepStrictEqual(state.humanGateStages, ['businessDesign', 'testDesign']);
-  assert.strictEqual(state.ciCdRisk, true);
+  assert.strictEqual(state.status, 'designing');
+  assert.strictEqual(state.workflowMode, undefined);
+  assert.strictEqual(state.humanGateStages, undefined);
+  assert.strictEqual(state.ciCdRisk, undefined);
+});
+
+test('set-task-status rejects legacy assessment arguments', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const initial = readState(taskPath);
+  initial.status = 'clarified';
+  writeState(taskPath, initial);
+
+  const result = spawnSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'designing', 'auto-design',
+  ], { encoding: 'utf-8' });
+  assert.notStrictEqual(result.status, 0);
+  assert.match(result.stderr, /usage|arguments/i);
 });

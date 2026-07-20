@@ -3,15 +3,14 @@
 ## Feature golden path
 
 ```text
-feature-init → feature-clarify → feature-assess
-→ feature-design → feature-approve
+feature-init → feature-clarify → feature-design → feature-approve
 → feature-plan-implementation → feature-implement → feature-verify
 ```
 
 顶层状态：
 
 ```text
-initialized → clarified → assessed → designing → design_ready
+initialized → clarified → designing → design_ready
 → approved_for_implementation → implementation_planned
 → implementing → verification_ready → completed
 ```
@@ -28,7 +27,7 @@ initialized → clarified → assessed → designing → design_ready
 → 动态分段并取得用户确认
 → Draft 与 Lint
 → 隔离 Review 与完整复评
-→ 人工批准、Baseline 和状态同步
+→ 人工批准并发布 Baseline
 ```
 
 当前活动优先从唯一未完成 Work/Draft 推断；多个候选、Draft/Baseline 冲突或证据不足时由用户确认。设计类型之间没有固定顺序和强制上游 Artifact 组合，相关正式 Artifact 按当前目标加载。
@@ -37,7 +36,7 @@ initialized → clarified → assessed → designing → design_ready
 
 每个适用 Checklist 使用一个新的隔离 Reviewer。Reviewer 完整应用 Checklist 内的评审规则和检查项，直接把 Markdown 结论返回主会话。语义修改使全部适用 Review 失效；纯格式修正只重新 Lint。
 
-每个设计活动的 Baseline 必须绑定当前 Draft、Lint、Review 和人工批准。发布后状态同步能力根据 `requiredDesignTypes` 判断保持 `designing` 或进入 `design_ready`。总体人工批准后才进入实现规划。
+每个设计活动的 Baseline 必须绑定当前 Draft、Lint、Review 和人工批准。每份 Baseline 发布后返回 Workflow，由 Workflow 根据 `requiredDesignTypes` 判断保持 `designing` 或进入 `design_ready`。总体人工批准后才进入实现规划。
 
 ## Failure handling
 

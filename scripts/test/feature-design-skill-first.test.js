@@ -17,6 +17,7 @@ const {
   publish,
   reopenDesign,
   designReady,
+  syncDesignState,
   draftPath,
   artifactPath,
   sha256File,
@@ -116,7 +117,7 @@ function setRequired(taskPath, designTypes) {
   const statePath = path.join(taskPath, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   state.requiredDesignTypes = designTypes;
-  state.status = 'assessed';
+  state.status = 'designing';
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
 }
 
@@ -145,6 +146,9 @@ test('workspace stores required design types but no internal design cursor', () 
   const { taskPath } = makeTask();
   const state = JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8'));
   assert.deepStrictEqual(state.requiredDesignTypes, ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign']);
+  assert.strictEqual(state.workflowMode, undefined);
+  assert.strictEqual(state.humanGateStages, undefined);
+  assert.strictEqual(state.ciCdRisk, undefined);
   assert.strictEqual(state.currentDesignType, undefined);
   assert.strictEqual(state.stages, undefined);
 });
@@ -246,23 +250,26 @@ test('semantic revision invalidates review while formatting-only change can refr
   assert.strictEqual(refreshed.draftHash, sha256File(draftPath(taskPath, 'businessDesign')));
 });
 
-test('publish copies the approved Draft byte-for-byte and synchronizes state', () => {
+test('publish copies the approved Draft byte-for-byte without changing top-level state', () => {
   const { taskPath } = makeTask();
   setRequired(taskPath, ['businessDesign']);
   const result = completeBusiness(taskPath);
   assert.strictEqual(fs.readFileSync(result.artifactPath, 'utf8'), VALID_DRAFT);
-  assert.strictEqual(result.state.status, 'design_ready');
+  assert.strictEqual(result.state, undefined);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'designing');
+  assert.strictEqual(syncDesignState(taskPath).status, 'design_ready');
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'design_ready');
 });
 
-test('reopen operates on one independent design and returns the task to designing', () => {
+test('reopen operates on one independent design without changing top-level state', () => {
   const { taskPath } = makeTask();
   setRequired(taskPath, ['businessDesign']);
   completeBusiness(taskPath);
   const reopened = reopenDesign(taskPath, 'businessDesign');
   assert.ok(fs.existsSync(reopened.historyFile));
   assert.match(fs.readFileSync(reopened.draft, 'utf8'), /version: "2\.0\.0"/);
-  assert.strictEqual(reopened.state.status, 'designing');
+  assert.strictEqual(reopened.state, undefined);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'designing');
   assert.strictEqual(designReady(taskPath).valid, false);
 });
 

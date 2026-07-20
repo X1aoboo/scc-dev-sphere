@@ -14,7 +14,6 @@
 ```text
 initialized
 → clarified
-→ assessed
 → designing
 → design_ready
 → approved_for_implementation
@@ -24,7 +23,7 @@ initialized
 → completed
 ```
 
-顶层 `state.json` 保存这些稳定状态、任务级设置和外层要求的 `requiredDesignTypes`，不保存设计活动内部游标。
+顶层 `state.json` 保存这些稳定状态和外层要求的 `requiredDesignTypes`，不保存设计活动内部游标。
 
 `designing` 内部由 `feature-design` 在主会话完成当前一个设计活动：
 
@@ -33,7 +32,7 @@ initialized
 → 核心语义分析与用户确认
 → Draft / Lint
 → isolated Checklist Review
-→ Baseline / 状态同步
+→ Baseline
 ```
 
 业务、方案、实现和测试设计是独立设计类型，共享同一过程。外层 Workflow 决定当前任务需要哪些类型；类型集合不表达固定顺序或强制依赖。
@@ -90,7 +89,7 @@ work/<design-slug>/draft.md
 - `publish` 原样复制最终批准 Draft，Artifact 内容必须与 Draft 完全一致。
 - Baseline 后显式重开会保留历史版本并递增正式版本。
 
-发布后状态同步能力根据外层 `requiredDesignTypes` 判断保持 `designing` 或进入 `design_ready`。总体批准读取当前要求的 Baseline 集合，不依赖综合设计正文或 Review Matrix。
+每份 Baseline 发布后返回 Workflow，由 Workflow 根据外层 `requiredDesignTypes` 判断保持 `designing` 或进入 `design_ready`。总体批准读取当前要求的 Baseline 集合，不依赖综合设计正文或 Review Matrix。
 
 ## Knowledge、Evidence 与 Decision
 
@@ -138,7 +137,7 @@ node scripts/devsphere-design.js record-review <task-path> <design-type> '<summa
 node scripts/devsphere-design.js approve-current-design <task-path> <design-type> '<approval-json>'
 node scripts/devsphere-design.js publish <task-path> <design-type>
 node scripts/devsphere-design.js reopen <task-path> <design-type>
-node scripts/devsphere-design.js sync-state <task-path>
+node scripts/workflows/feature-workflow.js sync-design-status <workspace-root>
 
 # 总体就绪与批准
 node scripts/devsphere-design.js design-ready <task-path>

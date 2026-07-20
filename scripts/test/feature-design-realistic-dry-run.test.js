@@ -13,6 +13,7 @@ const {
   recordReview,
   approveCurrentDesign,
   publish,
+  syncDesignState,
   inspectWorkspace,
 } = require('../devsphere-design');
 const { approveDesign } = require('../devsphere-approval');
@@ -175,7 +176,7 @@ test('tradeoff-rich feature baselines independent design activities in arbitrary
   const { taskPath } = makeTask({ taskId: 'FEAT-DRY-001' });
   const statePath = path.join(taskPath, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  state.status = 'assessed';
+  state.status = 'designing';
   state.requiredDesignTypes = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
 
@@ -191,9 +192,10 @@ test('tradeoff-rich feature baselines independent design activities in arbitrary
       notApplicable: [],
     }).status, 'pass');
     approveCurrentDesign(taskPath, designType, { approvedBy: 'human', acceptedRisks: [] });
-    const result = publish(taskPath, designType);
+    publish(taskPath, designType);
     assert.strictEqual(fs.readFileSync(artifactPath(taskPath, designType), 'utf8'), DRAFTS[designType]);
-    if (designType !== 'solutionDesign') assert.strictEqual(result.state.status, 'designing');
+    const synced = syncDesignState(taskPath);
+    if (designType !== 'solutionDesign') assert.strictEqual(synced.status, 'designing');
   }
 
   assert.strictEqual(inspectWorkspace(taskPath).recovery, 'needs_design_selection');

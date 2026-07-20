@@ -80,7 +80,7 @@ test('generic design_ready transition uses the persisted required design set', (
 
 test('sync-design-status is idempotent and derives status from workspace facts', () => {
   const { workspaceRoot, taskPath } = makeTask();
-  configure(taskPath, ['implementationDesign'], 'assessed');
+  configure(taskPath, ['implementationDesign'], 'designing');
   let result = spawnSync(process.execPath, [workflowScript, 'sync-design-status', workspaceRoot], { encoding: 'utf8' });
   assert.strictEqual(result.status, 0, result.stderr);
   assert.strictEqual(JSON.parse(result.stdout).status, 'designing');

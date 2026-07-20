@@ -514,7 +514,7 @@ function syncDesignState(taskPath) {
   if (!state) throw new Error('State file not found');
   const previousStatus = state.status;
   const ready = designReady(taskPath);
-  if (['assessed', 'designing'].includes(state.status)) {
+  if (state.status === 'designing') {
     state.status = ready.valid ? 'design_ready' : 'designing';
   } else if (['design_ready', 'approved_for_implementation'].includes(state.status) && !ready.valid) {
     state.status = 'designing';
@@ -553,7 +553,6 @@ function publish(taskPath, designType) {
       hash: sha256File(target),
       version: draft.version,
       idempotent: true,
-      state: syncDesignState(taskPath),
     };
   }
   fs.copyFileSync(source, target);
@@ -563,7 +562,6 @@ function publish(taskPath, designType) {
     artifactPath: target,
     hash: sha256File(target),
     version: draft.version,
-    state: syncDesignState(taskPath),
   };
 }
 
@@ -598,7 +596,7 @@ function reopenDesign(taskPath, designType) {
   unlinkIfExists(lintPath(taskPath, designType));
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
   unlinkIfExists(approvalPath(taskPath, designType));
-  return { designType, historyFile: history, draft: draftPath(taskPath, designType), state: syncDesignState(taskPath) };
+  return { designType, historyFile: history, draft: draftPath(taskPath, designType) };
 }
 
 function parseJSONArg(raw, name) {

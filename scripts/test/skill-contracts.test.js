@@ -92,11 +92,8 @@ test('feature-init preserves the original proposal and routes users to clarifica
   assert.match(skill, /feature-clarify/i);
 });
 
-test('feature-assess accepts only clarified tasks', () => {
-  const skill = readSkill('feature-assess');
-  assert.match(skill, /status !== 'clarified'/i);
-  assert.match(skill, /MUST NOT assess/i);
-  assert.match(skill, /feature-clarify/i);
+test('feature-assess is removed from the plugin surface', () => {
+  assert.strictEqual(fs.existsSync(path.join(root, 'skills', 'feature-assess', 'SKILL.md')), false);
 });
 
 test('workflow executes every no-Agent action in the main session', () => {
@@ -110,6 +107,8 @@ test('workflow executes every no-Agent action in the main session', () => {
   assert.match(section[0], /expectedArtifacts/);
   assert.match(section[0], /nextAction\.args/);
   assert.match(section[0], /调用 instruction/i);
+  assert.match(section[0], /feature-design/);
+  assert.match(section[0], /set-task-status \$\{CLAUDE_PROJECT_DIR\} designing/);
 });
 
 test('workflow owns clarified state sync only after the approved baseline completion fact', () => {
@@ -120,4 +119,14 @@ test('workflow owns clarified state sync only after the approved baseline comple
   assert.match(workflow, /仅当它明确返回“Requirement Baseline 已经用户批准并发布”时/);
   assert.match(workflow, /set-task-status \$\{CLAUDE_PROJECT_DIR\} clarified/);
   assert.match(workflow, /暂停等待用户回答、Review 或最终批准，不得更新状态/);
+});
+
+test('workflow owns design entry and completion state synchronization', () => {
+  const design = readSkill('feature-design');
+  const workflow = readSkill('workflow');
+  assert.doesNotMatch(design, /sync-state/);
+  assert.match(design, /当前 Design Baseline 已获用户批准并发布/);
+  assert.match(workflow, /set-task-status \$\{CLAUDE_PROJECT_DIR\} designing/);
+  assert.match(workflow, /当前 Design Baseline 已获用户批准并发布/);
+  assert.match(workflow, /sync-design-status \$\{CLAUDE_PROJECT_DIR\}/);
 });

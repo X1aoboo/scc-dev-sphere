@@ -42,8 +42,6 @@ function initState(taskPath, opts = {}) {
   const state = {
     taskId: opts.taskId || path.basename(taskPath),
     taskType: 'feature',
-    workflowMode: opts.workflowMode || 'auto-design',
-    humanGateStages: opts.humanGateStages || [],
     requiredDesignTypes: opts.requiredDesignTypes || DEFAULT_REQUIRED_DESIGN_TYPES,
     status: 'initialized',
   };
@@ -83,8 +81,8 @@ function main() {
       case 'create-feature-task': {
         const workspaceRoot = args[1];
         const taskId = args[2];
-        const workflowMode = args[3] || 'auto-design';
-        const taskPath = createFeatureTask(workspaceRoot, taskId, { workflowMode });
+        if (args.length !== 3) throw new Error('Usage: create-feature-task <workspaceRoot> <taskId>');
+        const taskPath = createFeatureTask(workspaceRoot, taskId);
         process.stdout.write(JSON.stringify({ taskPath }));
         break;
       }

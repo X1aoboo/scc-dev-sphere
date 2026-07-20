@@ -37,7 +37,7 @@ function checkStateAdvance(taskPath, targetStatus) {
   const state = readState(taskPath);
   if (!state) return { allowed: false, reason: 'State file not found.' };
   const transitions = {
-    initialized: ['clarified'], clarified: ['assessed'], assessed: ['designing'],
+    initialized: ['clarified'], clarified: ['designing'],
     designing: ['design_ready', 'blocked'], design_ready: ['approved_for_implementation', 'designing'],
     approved_for_implementation: ['implementation_planned', 'designing'], implementation_planned: ['implementing'],
     implementing: ['verification_ready'], verification_ready: ['completed', 'implementing', 'blocked'],

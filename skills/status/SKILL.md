@@ -13,4 +13,4 @@ description: 只读展示当前任务顶层状态、Design Baselines、未完成
 4. 读取 `approvals/design-final-approval.json`（存在时）。
 5. 运行 `devsphere-workflow.js <workspaceRoot>`，只展示顶层下一步建议。
 
-输出包含任务 ID、workflowMode、整体状态、requiredDesignTypes、各 Design Baseline 版本/hash、当前 Work/Draft/Lint/Review、接受风险、总体批准和下一步。设计类型按名称展示，不暗示固定执行顺序。
+输出包含任务 ID、整体状态、requiredDesignTypes、各 Design Baseline 版本/hash、当前 Work/Draft/Lint/Review、接受风险、总体批准和下一步。设计类型按名称展示，不暗示固定执行顺序。

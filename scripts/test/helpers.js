@@ -9,7 +9,6 @@ function makeTask(opts = {}) {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-test-'));
   const taskId = opts.taskId || 'FEAT-TEST-001';
   createFeatureTask(workspaceRoot, taskId, {
-    workflowMode: opts.workflowMode || 'strict-human-loop',
     designRevisionLimit: opts.designRevisionLimit,
   });
   const taskPath = path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', taskId);
