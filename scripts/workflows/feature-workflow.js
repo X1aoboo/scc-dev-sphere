@@ -3,7 +3,7 @@
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
 const { designReady, syncDesignState } = require('../devsphere-design');
 
-function makeAction(kind, state, stage, target, skill, agents, reason, required = [], expected = []) {
+function makeAction(kind, state, stage, target, skill, agents, reason, required = [], expected = [], args = {}) {
   return {
     kind,
     taskType: 'feature',
@@ -12,7 +12,7 @@ function makeAction(kind, state, stage, target, skill, agents, reason, required 
     stage: stage || null,
     target: target || null,
     skill: skill || null,
-    args: {},
+    args,
     agents: agents || [],
     reason,
     requiredArtifacts: required,
@@ -25,7 +25,14 @@ function resolveNextAction(taskPath, state) {
   switch (state.status) {
     case 'initialized':
       return makeAction('run_skill', state, null, null, 'feature-clarify', [],
-        'Clarify and confirm the requirement before assessment.', [], ['inputs/requirement.md']);
+        'Clarify the existing proposal and publish an approved Requirement Baseline before design.',
+        ['inputs/proposal.md'],
+        ['inputs/requirement.md'],
+        {
+          proposalPath: 'inputs/proposal.md',
+          draftPath: 'work/requirement-draft.md',
+          baselinePath: 'inputs/requirement.md',
+        });
     case 'clarified':
       return makeAction('run_skill', state, null, null, 'feature-assess', [],
         'Requirement clarification is complete.', ['inputs/requirement.md']);

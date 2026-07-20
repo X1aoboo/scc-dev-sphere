@@ -84,9 +84,11 @@ test('requirement reviewer reports only blocking or advisory findings without ed
   assert.match(reviewer, /静默加入用户未确认的需求假设/);
 });
 
-test('feature-init writes requirement.md and routes users to clarification', () => {
+test('feature-init preserves the original proposal and routes users to clarification', () => {
   const skill = readSkill('feature-init');
-  assert.match(skill, /inputs\/requirement\.md/i);
+  assert.match(skill, /inputs\/proposal\.md/i);
+  assert.match(skill, /完成标准:[^\n]*inputs\/proposal\.md/i);
+  assert.doesNotMatch(skill, /写入 `inputs\/requirement\.md`/i);
   assert.match(skill, /feature-clarify/i);
 });
 
@@ -102,6 +104,12 @@ test('workflow executes every no-Agent action in the main session', () => {
   const section = skill.match(/#### 无 Agent 场景([\s\S]*?)(?=\n#### )/);
   assert.ok(section);
   assert.match(section[0], /main 会话中直接执行 `nextAction\.skill`/i);
+  assert.match(section[0], /taskId/);
+  assert.match(section[0], /taskPath/);
+  assert.match(section[0], /requiredArtifacts/);
+  assert.match(section[0], /expectedArtifacts/);
+  assert.match(section[0], /nextAction\.args/);
+  assert.match(section[0], /调用 instruction/i);
 });
 
 test('workflow owns clarified state sync only after the approved baseline completion fact', () => {

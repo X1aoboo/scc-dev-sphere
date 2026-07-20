@@ -15,7 +15,13 @@ test('initialized routes to feature-clarify before assessment', () => {
   assert.deepStrictEqual(action.kind, 'run_skill');
   assert.deepStrictEqual(action.skill, 'feature-clarify');
   assert.deepStrictEqual(action.agents, []);
+  assert.deepStrictEqual(action.requiredArtifacts, ['inputs/proposal.md']);
   assert.deepStrictEqual(action.expectedArtifacts, ['inputs/requirement.md']);
+  assert.deepStrictEqual(action.args, {
+    proposalPath: 'inputs/proposal.md',
+    draftPath: 'work/requirement-draft.md',
+    baselinePath: 'inputs/requirement.md',
+  });
   assert.match(action.reason, /clarif/i);
 });
 

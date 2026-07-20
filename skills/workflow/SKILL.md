@@ -127,7 +127,17 @@ resolver 会：
 
 #### 无 Agent 场景（agents 为空）
 
-在 main 会话中直接执行 `nextAction.skill`。完成后根据输出继续派发。
+在 main 会话中直接执行 `nextAction.skill`。调用前从当前任务上下文取得 `taskId`，并从 `.devsphere/current-task.json` 取得 `taskPath`；不得要求被调用 Skill 自行猜测当前任务。
+
+把以下结构化上下文转换为本次 Skill 的调用 instruction：
+
+- `taskId`
+- `taskPath`
+- `nextAction.requiredArtifacts`
+- `nextAction.expectedArtifacts`
+- `nextAction.args`
+
+instruction 应说明本次需要读取的产物、工作产物路径和正式输出路径，但不得把整段命令字符串放进 `nextAction.args`，不得通过 Shell 调用 Skill，也不得让 resolver 执行动作。完成后根据 Skill 输出继续派发。
 
 #### 单 Agent 场景（agents 含 1 个元素）
 
