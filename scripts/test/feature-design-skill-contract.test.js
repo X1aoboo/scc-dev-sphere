@@ -30,6 +30,52 @@ test('feature-design exposes five outcome tasks and keeps semantic analysis in t
   assert.doesNotMatch(skill, /businessDesign\s*→\s*solutionDesign|第一个缺失 Artifact|nextAction|Review Matrix/i);
 });
 
+test('feature-design maintains Evidence and Decision as atomic non-gating side effects', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  const taskHarness = skill.match(/## 执行任务([\s\S]*?)## 1\./)[1];
+  const designModel = skill.match(/### 建立当前设计模型([\s\S]*?)### 运行语义分析循环/)[1];
+
+  assert.strictEqual((taskHarness.match(/^\d\. \*\*/gm) || []).length, 5);
+  assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*.*Evidence\/Decision.*已登记.*写入失败.*已揭示/s);
+  assert.match(taskHarness, /4\. \*\*独立 Review 并修订至满足发布条件\*\*.*Review.*新知识.*新取舍.*维护/s);
+  assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 1);
+  assert.match(skill, /knowledge-query.*候选.*主会话.*采用.*支持或改变.*设计/s);
+  assert.match(skill, /合理替代方案.*残余风险.*用户.*明确确认/s);
+  assert.match(skill, /原子副作用.*不进入.*设计模型/s);
+  assert.match(skill, /不要.*写入结果.*ID.*supersedes.*回写.*work notes/s);
+  assert.match(skill, /notes.*事实.*已确认设计.*开放事项/s);
+  assert.match(skill, /成功.*静默.*失败.*揭示/s);
+  assert.match(skill, /不.*Draft.*Lint.*Review.*批准.*发布.*门禁/s);
+  assert.doesNotMatch(designModel, /EV\/DEC ID|Evidence ID|Decision ID/);
+});
+
+test('feature-design colocates exact persistence commands with Task 2 semantic events', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  const task2 = skill.match(/## 2\. 完成并确认核心设计([\s\S]*?)## 3\./)[1];
+
+  assert.match(task2, /knowledge-query.*候选.*采用.*立即登记.*Evidence/s);
+  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record <workspaceRoot> <<'JSON'/);
+  assert.match(task2, /<evidence-json>\nJSON/);
+  assert.match(task2, /用户.*确认.*实质取舍.*立即登记.*Decision/s);
+  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/devsphere-decisions\.js add <taskPath> <slug> '<decision-json>'/);
+  assert.match(task2, /evidence.*实际.*EV ID.*空数组/s);
+  assert.match(task2, /所有.*已触发.*维护动作.*成功.*失败.*揭示/s);
+  assert.doesNotMatch(skill, /devsphere-decisions\.js init/);
+});
+
+test('feature-design maintains only semantic knowledge introduced by Review', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  const task4 = skill.match(/## 4\. 隔离 Review 并修订([\s\S]*?)## 5\./)[1];
+
+  assert.match(task4, /Reviewer finding.*不.*Evidence/s);
+  assert.match(task4, /知识缺口.*knowledge-query.*采用.*Evidence/s);
+  assert.match(task4, /用户.*确认.*新.*实质取舍.*Decision/s);
+  assert.match(task4, /supersedes.*当前有效/s);
+  assert.match(task4, /排版|措辞/);
+  assert.doesNotMatch(task4, /register-evidence-record|devsphere-decisions\.js add/);
+  assert.doesNotMatch(skill, /固定.*Evidence\/Decision.*章节|Evidence\/Decision.*状态机|第六个.*任务/);
+});
+
 test('feature-design progressively loads one Design Guide and Spec without stage orchestration', () => {
   const skill = read('skills/feature-design/SKILL.md');
   assert.match(skill, /inspect-workspace/);

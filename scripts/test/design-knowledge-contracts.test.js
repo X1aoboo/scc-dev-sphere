@@ -9,6 +9,7 @@ const {
   initDecisions,
   addDecision,
   readDecisions,
+  writeDecisions,
 } = require('../devsphere-decisions');
 const {
   mergeCandidateResults,
@@ -16,10 +17,8 @@ const {
   readRegistry,
 } = require('../knowledge-query');
 
-test('Decision stores substantive trade-offs without pending status, askMode, categories, or fixed option counts', () => {
-  const { taskPath, taskId } = makeTask();
-  initDecisions(taskPath, 'business-design', taskId, 'businessDesign');
-  const decision = addDecision(taskPath, 'business-design', {
+function decisionInput(overrides = {}) {
+  return {
     context: '审批撤回会改变状态模型',
     userInput: '只允许提交人在审批前撤回',
     candidates: ['审批前可撤回', '始终不可撤回', '任意时刻撤回'],
@@ -27,14 +26,106 @@ test('Decision stores substantive trade-offs without pending status, askMode, ca
     finalDecision: '审批前可撤回',
     rationale: '兼顾纠错与审批稳定性',
     impact: '业务状态增加已撤回终态',
-    evidence: ['EV-001'],
-  });
+    evidence: [],
+    ...overrides,
+  };
+}
+
+test('Decision add auto-initializes from task state and stores a normalized immutable record', () => {
+  const { taskPath, taskId } = makeTask();
+  const decision = addDecision(taskPath, 'business-design', decisionInput({ evidence: ['EV-001'] }));
+  const document = readDecisions(taskPath, 'business-design');
 
   assert.strictEqual(decision.id, 'BD-DEC-001');
+  assert.deepStrictEqual(decision.supersedes, []);
   assert.strictEqual(decision.status, undefined);
   assert.strictEqual(decision.askMode, undefined);
   assert.strictEqual(decision.category, undefined);
-  assert.strictEqual(readDecisions(taskPath, 'business-design').decisions.length, 1);
+  assert.strictEqual(document.taskId, taskId);
+  assert.strictEqual(document.stage, 'businessDesign');
+  assert.strictEqual(document.decisions.length, 1);
+});
+
+test('Decision add appends to an existing document and explicit init remains compatible', () => {
+  const { taskPath, taskId } = makeTask();
+  initDecisions(taskPath, 'solution-design', taskId, 'solutionDesign');
+  const first = addDecision(taskPath, 'solution-design', decisionInput({ finalDecision: '使用同步调用' }));
+  const snapshot = JSON.parse(JSON.stringify(first));
+  const second = addDecision(taskPath, 'solution-design', decisionInput({ finalDecision: '使用异步事件' }));
+  const document = readDecisions(taskPath, 'solution-design');
+
+  assert.strictEqual(second.id, 'SD-DEC-002');
+  assert.strictEqual(document.decisions.length, 2);
+  assert.deepStrictEqual(document.decisions[0], snapshot);
+});
+
+test('legacy Decision records without supersedes remain readable and effective', () => {
+  const { taskPath, taskId } = makeTask();
+  const legacy = {
+    id: 'BD-DEC-001',
+    ...decisionInput(),
+    recordedAt: '2026-01-01T00:00:00.000Z',
+  };
+  delete legacy.supersedes;
+  writeDecisions(taskPath, 'business-design', {
+    stage: 'businessDesign',
+    taskId,
+    decisions: [legacy],
+  });
+
+  const next = addDecision(taskPath, 'business-design', decisionInput({
+    finalDecision: '采用新状态机',
+    supersedes: ['BD-DEC-001'],
+  }));
+  const document = readDecisions(taskPath, 'business-design');
+
+  assert.deepStrictEqual(document.decisions[0], legacy);
+  assert.deepStrictEqual(next.supersedes, ['BD-DEC-001']);
+});
+
+test('a Decision can supersede multiple currently effective records without mutating history', () => {
+  const { taskPath } = makeTask();
+  const first = addDecision(taskPath, 'test-design', decisionInput({ finalDecision: '逐层验证' }));
+  const second = addDecision(taskPath, 'test-design', decisionInput({ finalDecision: '关键链路回归' }));
+  const historyBefore = JSON.parse(JSON.stringify(readDecisions(taskPath, 'test-design').decisions));
+  const replacement = addDecision(taskPath, 'test-design', decisionInput({
+    finalDecision: '统一风险驱动验证',
+    supersedes: [first.id, second.id],
+  }));
+  const document = readDecisions(taskPath, 'test-design');
+
+  assert.deepStrictEqual(replacement.supersedes, [first.id, second.id]);
+  assert.deepStrictEqual(document.decisions.slice(0, 2), historyBefore);
+  for (const historical of document.decisions.slice(0, 2)) {
+    assert.strictEqual(historical.status, undefined);
+    assert.strictEqual(historical.active, undefined);
+    assert.strictEqual(historical.obsolete, undefined);
+  }
+});
+
+test('Decision supersedes rejects nonexistent, duplicate, cross-stage, and historical targets', () => {
+  const { taskPath } = makeTask();
+  const first = addDecision(taskPath, 'implementation-design', decisionInput());
+
+  assert.throws(() => addDecision(taskPath, 'implementation-design', decisionInput({
+    supersedes: ['IMPL-DEC-999'],
+  })), /does not exist/i);
+  assert.throws(() => addDecision(taskPath, 'implementation-design', decisionInput({
+    supersedes: [first.id, first.id],
+  })), /duplicate/i);
+  assert.throws(() => addDecision(taskPath, 'implementation-design', decisionInput({
+    supersedes: ['SD-DEC-001'],
+  })), /current design type/i);
+
+  addDecision(taskPath, 'implementation-design', decisionInput({
+    finalDecision: '新方案',
+    supersedes: [first.id],
+  }));
+  assert.throws(() => addDecision(taskPath, 'implementation-design', decisionInput({
+    finalDecision: '再次替代历史记录',
+    supersedes: [first.id],
+  })), /not currently effective/i);
+  assert.strictEqual(readDecisions(taskPath, 'implementation-design').decisions.length, 2);
 });
 
 test('Decision persistence never gates Draft or Artifact paths', () => {

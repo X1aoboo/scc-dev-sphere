@@ -2,13 +2,24 @@
 'use strict';
 
 const path = require('path');
-const { readJSON, writeJSON } = require('./devsphere-state');
+const {
+  readJSON,
+  writeJSON,
+  readState,
+} = require('./devsphere-state');
 
 const SLUG_PREFIX = {
   'business-design': 'BD',
   'solution-design': 'SD',
   'implementation-design': 'IMPL',
   'test-design': 'TD',
+};
+
+const SLUG_STAGE = {
+  'business-design': 'businessDesign',
+  'solution-design': 'solutionDesign',
+  'implementation-design': 'implementationDesign',
+  'test-design': 'testDesign',
 };
 
 const REQUIRED_FIELDS = [
@@ -59,6 +70,12 @@ function validateDecisionInput(input) {
   if (!Array.isArray(input.evidence) || input.evidence.some(item => typeof item !== 'string')) {
     throw new Error('Decision evidence must be an EV ID array');
   }
+  if (input.supersedes !== undefined && (
+    !Array.isArray(input.supersedes)
+    || input.supersedes.some(item => typeof item !== 'string' || !item.trim())
+  )) {
+    throw new Error('Decision supersedes must be a non-empty string array when provided');
+  }
 }
 
 function nextDecisionId(decisions, slug) {
@@ -71,20 +88,70 @@ function nextDecisionId(decisions, slug) {
   return `${prefix}-DEC-${String(max + 1).padStart(3, '0')}`;
 }
 
+function loadDecisionsForAdd(taskPath, slug) {
+  if (!taskPath || !SLUG_PREFIX[slug]) {
+    throw new Error('addDecision requires taskPath and a known slug');
+  }
+  const existing = readDecisions(taskPath, slug);
+  if (existing) return existing;
+
+  const state = readState(taskPath);
+  if (!state || typeof state.taskId !== 'string' || !state.taskId.trim()) {
+    throw new Error(`Cannot initialize Decision document without valid task state at ${taskPath}`);
+  }
+  return {
+    stage: SLUG_STAGE[slug],
+    taskId: state.taskId,
+    decisions: [],
+  };
+}
+
+function normalizeSupersedes(input) {
+  return input.supersedes === undefined ? [] : [...input.supersedes];
+}
+
+function validateSupersedes(decisions, slug, supersedes) {
+  const unique = new Set(supersedes);
+  if (unique.size !== supersedes.length) {
+    throw new Error('Decision supersedes contains duplicate targets');
+  }
+
+  const expectedPrefix = `${SLUG_PREFIX[slug]}-DEC-`;
+  const byId = new Map(decisions.map(decision => [decision.id, decision]));
+  const supersededIds = new Set(
+    decisions.flatMap(decision => Array.isArray(decision.supersedes) ? decision.supersedes : []),
+  );
+
+  for (const targetId of supersedes) {
+    if (!targetId.startsWith(expectedPrefix)) {
+      throw new Error(`Decision supersedes target is not from the current design type: ${targetId}`);
+    }
+    if (!byId.has(targetId)) {
+      throw new Error(`Decision supersedes target does not exist: ${targetId}`);
+    }
+    if (supersededIds.has(targetId)) {
+      throw new Error(`Decision supersedes target is not currently effective: ${targetId}`);
+    }
+  }
+}
+
 function addDecision(taskPath, slug, input) {
   validateDecisionInput(input);
-  const data = readDecisions(taskPath, slug);
-  if (!data) throw new Error(`Decision document not initialized for ${slug}`);
+  const data = loadDecisionsForAdd(taskPath, slug);
+  if (!Array.isArray(data.decisions)) throw new Error(`Invalid Decision document for ${slug}`);
+  const supersedes = normalizeSupersedes(input);
+  validateSupersedes(data.decisions, slug, supersedes);
   const decision = {
     id: nextDecisionId(data.decisions, slug),
     context: input.context,
     userInput: input.userInput,
-    candidates: input.candidates,
+    candidates: [...input.candidates],
     recommendation: input.recommendation,
     finalDecision: input.finalDecision,
     rationale: input.rationale,
     impact: input.impact,
-    evidence: input.evidence,
+    evidence: [...input.evidence],
+    supersedes,
     recordedAt: new Date().toISOString(),
   };
   data.decisions.push(decision);
