@@ -17,6 +17,12 @@ test('feature-clarify uses a dynamic requirement model and investigates queryabl
   assert.match(skill, /重算整体需求理解和 frontier/i);
   assert.match(skill, /可查询事实[\s\S]*主动使用/);
   assert.match(skill, /knowledge-query/);
+  assert.match(skill, /调用 `knowledge-query` Agent/);
+  assert.match(skill, /用自然语言说明要查明什么以及必要背景/);
+  assert.match(skill, /等待查询完成，只使用它返回的最终结果/);
+  assert.match(skill, /不写入文件/);
+  assert.doesNotMatch(skill, /`knowledge-query` Skill/);
+  assert.doesNotMatch(skill, /knowledge-query[^\n]*(?:workspaceRoot|knowledgeQueryScriptPath|`topic`|`purpose`)/);
   assert.match(skill, /gap/i);
 });
 
@@ -62,13 +68,40 @@ test('feature-clarify supports user-authorized deferral without silent assumptio
   assert.match(skill, /不得静默假设答案/);
 });
 
-test('knowledge-query delegates enabled sources to nested read-only subagents', () => {
-  const skill = readSkill('knowledge-query');
-  const prompt = fs.readFileSync(path.join(root, 'skills', 'knowledge-query', 'subagent-prompt.md'), 'utf8');
-  assert.match(skill, /为每个可用数据源创建嵌套、只读的数据源 Subagent/);
-  assert.match(prompt, /为每个可用来源创建一个嵌套、只读的数据源 Subagent/);
-  assert.match(prompt, /只能读取配置允许的目标/);
-  assert.match(prompt, /不询问用户、不写文件、不做设计决定/);
+test('knowledge-query handles one natural-language request, queries every source, and returns one concise result', () => {
+  const agent = fs.readFileSync(path.join(root, 'agents', 'knowledge-query.md'), 'utf8');
+  assert.match(agent, /^name: knowledge-query$/m);
+  assert.match(agent, /^model: sonnet$/m);
+  assert.match(agent, /^effort: high$/m);
+  assert.match(agent, /^background: false$/m);
+  for (const tool of ['Agent', 'Write', 'Edit', 'NotebookEdit', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) {
+    assert.match(agent, new RegExp(`^  - ${tool}$`, 'm'));
+  }
+  assert.match(agent, /^## 工作流$/m);
+  for (const heading of [
+    '步骤1：了解要查的问题',
+    '步骤2：读取来源配置',
+    '步骤3：查询所有可用来源',
+    '步骤4：汇总各来源的结果',
+    '步骤5：整理最终结果',
+    '步骤6：返回结果',
+  ]) assert.match(agent, new RegExp(`^### ${heading}$`, 'm'));
+  assert.strictEqual((agent.match(/^完成条件：/gm) || []).length, 6);
+  assert.match(agent, /输入是自然语言说明/);
+  assert.match(agent, /同一个问题可以包含多个相关的小问题/);
+  assert.match(agent, /明确要查什么、需要查到什么范围/);
+  assert.match(agent, /\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/knowledge-query\.js/);
+  assert.doesNotMatch(agent, /knowledgeQueryScriptPath|<knowledgeQueryScriptPath>|必须提供：[\s\S]*(?:`topic`|`purpose`)/);
+  assert.match(agent, /每个来源的结果整理为 `\{source, claims, gaps\}`/);
+  assert.doesNotMatch(agent, /必须提供：[\s\S]*`workspaceRoot`/);
+  assert.match(agent, /只保留在当前 Agent 的上下文中/);
+  assert.match(agent, /merge-results/);
+  assert.match(agent, /stdin\/stdout.*不创建或修改文件/s);
+  assert.match(agent, /只返回步骤5生成的 JSON/);
+  assert.match(agent, /没有询问用户.*修改配置.*写入 Evidence 或 Decision.*写查询文件.*没有调用其他 Agent/s);
+  assert.strictEqual(fs.existsSync(path.join(root, 'skills', 'knowledge-query', 'SKILL.md')), false);
+  assert.strictEqual(fs.existsSync(path.join(root, 'skills', 'knowledge-query', 'subagent-prompt.md')), false);
+  assert.strictEqual(fs.existsSync(path.join(root, 'config', 'knowledge-sources.json')), true);
 });
 
 test('feature-clarify exposes bundled side effects as candidate scope expansion', () => {

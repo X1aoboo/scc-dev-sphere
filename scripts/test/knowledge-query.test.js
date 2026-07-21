@@ -9,6 +9,34 @@ const { makeTask } = require('./helpers');
 
 const script = path.join(__dirname, '..', 'knowledge-query.js');
 
+test('read-config uses the relocated plugin default without creating workspace state', () => {
+  const workspaceRoot = fs.mkdtempSync('/tmp/ds-knowledge-config-');
+  const result = spawnSync(process.execPath, [script, 'read-config', workspaceRoot], { encoding: 'utf8' });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.deepStrictEqual(output.priority, ['skill', 'local', 'repo', 'mcp', 'web']);
+  assert.strictEqual(output._source.priority, 'plugin-default');
+  assert.strictEqual(fs.existsSync(path.join(workspaceRoot, '.devsphere')), false);
+});
+
+test('merge-results is a stdin/stdout-only transformation', () => {
+  const workspaceRoot = fs.mkdtempSync('/tmp/ds-knowledge-merge-');
+  const input = [
+    { source: { type: 'repo', reference: 'src/a.js' }, claims: [{ key: 'timeout', text: '30s' }], gaps: [] },
+    { source: { type: 'local', reference: 'ops.md' }, claims: [{ key: 'timeout', text: '60s' }], gaps: ['No rollback policy'] },
+  ];
+  const result = spawnSync(process.execPath, [script, 'merge-results', workspaceRoot], {
+    input: JSON.stringify(input), encoding: 'utf8',
+  });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout);
+  assert.strictEqual(output.conflicts.length, 1);
+  assert.deepStrictEqual(output.gaps, ['No rollback policy']);
+  assert.deepStrictEqual(fs.readdirSync(workspaceRoot), []);
+});
+
 test('main-session Evidence registration persists one multi-source topic under the active task', () => {
   const { workspaceRoot, taskPath } = makeTask();
   const input = {

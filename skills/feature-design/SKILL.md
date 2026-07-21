@@ -71,14 +71,14 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 - 暂定理解及可能推翻它的假设；
 - 开放事项、关键取舍和残余风险。
 
-能从项目或知识源查到的事实由你调查。只有用户掌握的上下文和真正需要用户承担的设计决策才提问。独立知识主题可调用 `knowledge-query`(创建独立subagent)；`gap` 只表示当前来源没有答案。
+能从项目或知识源查到的事实由你调查。只有用户掌握的上下文和真正需要用户承担的设计决策才提问。需要查资料时，调用 `knowledge-query` Agent，用自然语言说明要查明什么以及必要的设计背景。等待查询完成，只使用它返回的最终结果。彼此无关的问题可以分别查询。`gap` 只表示当前来源没有答案。
 
 ### 在语义事件后立即持久化
 
 当 `knowledge-query` 候选被主会话采用，并且实际支持或改变当前设计时，立即登记一条 Evidence：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence-record <workspaceRoot> <<'JSON'
+node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence-record ${CLAUDE_PROJECT_DIR} <<'JSON'
 <evidence-json>
 JSON
 ```
@@ -145,23 +145,20 @@ Lint 只检查 frontmatter、核心章节、适用性说明、占位符和格式
 
 根据 Design Guide 的 Checklist 导航和当前 Draft 判断适用性。适用性不明确时执行；明确不适用时向用户说明理由。此时才读取每份适用的 `references/review-checklists/<checklist-id>.md`。
 
-为当前冻结 Draft 创建一个新的、会话隔离的 `design-reviewer` Agent。只委派一次并以前台方式等待结果，由它在自己的上下文中串行执行全部适用 Checklist。向它提供：
+调用 `design-reviewer` Agent 评审当前冻结的 Draft，并等待它完成。Reviewer 在单独的上下文中依次执行全部适用 Checklist。向它提供：
 
 - `<taskPath>`、当前 `designType`，以及由 design type 和 semantic hash 组成的 `reviewKey`；
 - 冻结 Draft 的路径、Draft hash 和 semantic hash；
 - 全部适用 Checklist 的 ID 与路径，以及明确不适用项的理由；
 - Checklist 判断所必需的相关正式 Artifact 或事实材料；
 - `reviewScriptPath=${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js`；
-- `knowledgeQueryScriptPath=${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js`；
 - `mode=full-review`。
-
-`design-reviewer` 对 Draft 和正式 Artifact 保持只读，按需使用预加载的 `knowledge-query` 调查 Checklist 判断所缺的外部事实；查询结果只服务本轮评审，不单独持久化。它使用内部 Task 投影 Checklist 执行进度，统一调用 `record-review` 维护 `work/<slug>/review.json`，最后返回包含每份 Checklist 结论和必要 findings 的轻量 Markdown。它不创建嵌套 Review Agent；`knowledge-query` 所需的只读查询 Subagent 是唯一例外。
 
 收到结果后由主会话分析重复、关联和冲突，向用户说明对 Confirmed Design 的影响，再讨论修订。所有 blocking findings 必须关闭；advisory 和残余 risk 必须向用户揭示并形成明确处理结论。主会话可以读取 Review 状态，但不创建、修改或刷新 Review 摘要。
 
-Reviewer finding 本身不直接登记为 Evidence/Decision。finding 暴露知识缺口时，由主会话调查或调用 `knowledge-query`，只有随后被采用的知识结论才按任务 2 的合同登记 Evidence。finding 促使用户确认新的实质取舍时，按任务 2 的合同新增 Decision；新取舍推翻既有决定时，用 `supersedes` 引用被替代的当前有效 Decision。纯排版、措辞和不改变语义的修订不产生新记录。
+Reviewer finding 本身不直接登记为 Evidence/Decision。finding 暴露知识缺口时，由主会话调查或调用 `knowledge-query` Agent，只有随后被采用的知识结论才按任务 2 的合同登记 Evidence。finding 促使用户确认新的实质取舍时，按任务 2 的合同新增 Decision；新取舍推翻既有决定时，用 `supersedes` 引用被替代的当前有效 Decision。纯排版、措辞和不改变语义的修订不产生新记录。
 
-Draft 发生语义修改时，重新运行 Lint，并创建新的 `design-reviewer` 对全部适用 Checklist 完整复评。纯排版、错别字或不改变含义的修正重新 Lint 后，以同样输入委派 `design-reviewer`，但传入 `mode=format-refresh`，由它调用确定性刷新命令，不重新执行 Checklist。
+Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-reviewer` 完整评审全部适用 Checklist。纯排版、错别字或不改变含义的修正重新 Lint 后，以同样输入调用 `design-reviewer`，但传入 `mode=format-refresh`，由它运行刷新命令，不重新执行 Checklist。
 
 临时摘要只保存 Draft hash、Checklist 结论、必要 findings 和明确不适用理由，由 `design-reviewer` 独占维护。
 

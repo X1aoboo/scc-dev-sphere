@@ -6,7 +6,7 @@
 
 ## 运行要求
 
-- Claude Code `2.1.172` 或更高版本。Knowledge Query 依赖该版本支持的嵌套 Subagent；不提供旧版本 fallback。
+- Claude Code `2.1.172` 或更高版本。
 - Node.js，用于运行 `scripts/*.js` 合同脚本。
 
 ## Feature 生命周期
@@ -85,7 +85,7 @@ work/<design-slug>/draft.md
 - Lint 只检查 frontmatter、固定章节与标题层级、适用的确定性声明、占位符和明显格式，不判断专业质量。
 - Lint 始终根据当前 Draft 实时计算，不持久化检查结果。
 - `design-reviewer` 接收冻结 Draft、hash、全部适用 Checklist 和必要正式材料，在隔离上下文中串行完整评审。
-- `design-reviewer` 按需调用 `knowledge-query`，用内部 Task 投影进度，统一维护临时 Review 摘要；只返回有实际影响的 `blocking`、`advisory`、`risk`，没有问题直接通过。
+- `design-reviewer` 在需要补充外部事实时调用 `knowledge-query` Agent，用内部 Task 显示进度并维护临时 Review 摘要；只返回有实际影响的 `blocking`、`advisory`、`risk`，没有问题直接通过。
 - 语义修改改变 hash 并使当前活动全部适用 Review 失效；纯空白/注释格式变化可以在重新 Lint 后刷新 Review hash。
 - `publish` 原样复制最终批准 Draft，Artifact 内容必须与 Draft 完全一致。
 - 当前 Review 摘要只服务于批准和首次发布，Baseline 发布后删除。
@@ -95,7 +95,7 @@ work/<design-slug>/draft.md
 
 ## Knowledge、Evidence 与 Decision
 
-Knowledge Query 按独立主题创建 Query Subagent；Query 可为生效配置中的每个数据源创建嵌套只读 Subagent。查询返回候选知识、来源、冲突和 gap，不询问用户、不写 Evidence、不做设计决定。
+需要查资料时，主会话或 Reviewer 用自然语言调用 `knowledge-query` Agent。它理解问题后查询配置中的 Skill、Local、Repo、MCP 和 Web 来源，在自己的上下文中汇总并精简结果，最后只返回整理后的 JSON。它不调用其他 Agent，也不写查询文件、Evidence 或 Decision。
 
 主会话只登记实际支持或改变设计的结果：一条 Evidence 对应一个主题，可包含多个带 `S1/S2/...` 局部标记的来源，也可包含用户来源和冲突信息。
 

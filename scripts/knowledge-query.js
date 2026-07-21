@@ -7,7 +7,7 @@ const path = require('path');
 const { getTaskPath } = require('./devsphere-state');
 
 const REPO_ROOT = path.join(__dirname, '..');
-const SKILL_DEFAULT_CONFIG = path.join(REPO_ROOT, 'skills', 'knowledge-query', 'knowledge-sources.json');
+const DEFAULT_CONFIG = path.join(REPO_ROOT, 'config', 'knowledge-sources.json');
 
 // --- Core I/O ---
 
@@ -37,9 +37,9 @@ function getWorkspaceConfigPath(workspaceRoot) {
 
 // --- Config operations ---
 
-// 两层 fallback: workspace config > skill default
+// 两层 fallback: workspace config > plugin default
 function getEffectiveConfig(workspaceRoot) {
-  const defaultCfg = readJSON(SKILL_DEFAULT_CONFIG);
+  const defaultCfg = readJSON(DEFAULT_CONFIG);
   const workspaceCfg = readJSON(getWorkspaceConfigPath(workspaceRoot));
 
   const effective = {
@@ -58,7 +58,7 @@ function getEffectiveConfig(workspaceRoot) {
       effective._source[`sources.${src}`] = 'workspace';
     } else if (defSrc !== undefined) {
       effective.sources[src] = defSrc;
-      effective._source[`sources.${src}`] = 'skill-default';
+      effective._source[`sources.${src}`] = 'plugin-default';
     }
   }
 
@@ -70,7 +70,7 @@ function getEffectiveConfig(workspaceRoot) {
     effective._source['priority'] = 'workspace';
   } else if (defPriority && Array.isArray(defPriority)) {
     effective.priority = defPriority;
-    effective._source['priority'] = 'skill-default';
+    effective._source['priority'] = 'plugin-default';
   }
 
   return effective;
@@ -131,7 +131,7 @@ function updateConfig(workspaceRoot, key, value) {
   let wsCfg = readJSON(wsPath);
   if (!wsCfg) {
     // Clone from default config
-    wsCfg = JSON.parse(JSON.stringify(readJSON(SKILL_DEFAULT_CONFIG)));
+    wsCfg = JSON.parse(JSON.stringify(readJSON(DEFAULT_CONFIG)));
   }
   setNested(wsCfg, key, value);
   writeJSON(wsPath, wsCfg);
@@ -145,7 +145,7 @@ function addConfigItem(workspaceRoot, field, item) {
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
   if (!wsCfg) {
-    wsCfg = JSON.parse(JSON.stringify(readJSON(SKILL_DEFAULT_CONFIG)));
+    wsCfg = JSON.parse(JSON.stringify(readJSON(DEFAULT_CONFIG)));
   }
   const parts = field.split('.');
   let current = wsCfg;

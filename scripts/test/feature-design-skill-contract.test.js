@@ -54,7 +54,7 @@ test('feature-design colocates exact persistence commands with Task 2 semantic e
   const task2 = skill.match(/## (?:步骤)?2\. 完成并确认核心设计([\s\S]*?)## (?:步骤)?3\./)[1];
 
   assert.match(task2, /knowledge-query.*候选.*采用.*立即登记.*Evidence/s);
-  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record <workspaceRoot> <<'JSON'/);
+  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record \$\{CLAUDE_PROJECT_DIR\} <<'JSON'/);
   assert.match(task2, /<evidence-json>\nJSON/);
   assert.match(task2, /用户.*确认.*实质取舍.*立即登记.*Decision/s);
   assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/devsphere-decisions\.js add <taskPath> <slug> '<decision-json>'/);
@@ -68,7 +68,7 @@ test('feature-design maintains only semantic knowledge introduced by Review', ()
   const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
 
   assert.match(task4, /Reviewer finding.*不.*Evidence/s);
-  assert.match(task4, /知识缺口.*knowledge-query.*采用.*Evidence/s);
+  assert.match(task4, /知识缺口.*调用 `knowledge-query` Agent.*采用.*Evidence/s);
   assert.match(task4, /用户.*确认.*新.*实质取舍.*Decision/s);
   assert.match(task4, /supersedes.*当前有效/s);
   assert.match(task4, /排版|措辞/);
@@ -89,13 +89,10 @@ test('feature-design progressively loads one Design Guide and Spec without stage
 
 test('feature-design delegates one centralized review and leaves top-level state to workflow', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  assert.match(skill, /一个新的、会话隔离的 `design-reviewer` Agent/);
-  assert.match(skill, /只委派一次并以前台方式等待结果/);
-  assert.match(skill, /只委派一次.*串行执行全部适用 Checklist/s);
-  assert.match(skill, /内部 Task.*Checklist.*执行进度/s);
-  assert.match(skill, /统一调用 `record-review`/);
+  assert.match(skill, /调用 `design-reviewer` Agent.*等待它完成/s);
+  assert.match(skill, /单独的上下文中依次执行全部适用 Checklist/);
   assert.match(skill, /主会话.*不创建、修改或刷新 Review 摘要/s);
-  assert.match(skill, /语义修改.*全部适用 Checklist 完整复评/s);
+  assert.match(skill, /语义修改.*完整评审全部适用 Checklist/s);
   assert.match(skill, /mode=format-refresh/);
   assert.doesNotMatch(skill, /为每份适用 Checklist 创建.*Reviewer/);
   assert.doesNotMatch(skill, /node .*record-review/);
@@ -105,6 +102,17 @@ test('feature-design delegates one centralized review and leaves top-level state
   assert.doesNotMatch(skill, /完成状态同步|状态同步成功/);
   assert.match(skill, /当前 Design Baseline 已获用户批准并发布/);
   assert.doesNotMatch(skill, /plan-reviews|record-reviews|allowedReads|disposition|plan-cross-review|record-cross-review/);
+});
+
+test('feature-design sends natural-language questions to knowledge-query and keeps adoption in main', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  assert.match(skill, /调用 `knowledge-query` Agent/);
+  assert.match(skill, /用自然语言说明要查明什么以及必要的设计背景/);
+  assert.match(skill, /等待查询完成，只使用它返回的最终结果/);
+  assert.match(skill, /彼此无关的问题可以分别查询/);
+  assert.match(skill, /knowledge-query.*候选.*主会话.*采用/s);
+  assert.doesNotMatch(skill, /workspaceRoot|knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
+  assert.doesNotMatch(skill, /创建独立subagent|Query\/Data Source Subagent|预加载的 `knowledge-query`/);
 });
 
 test('Design Guides contain professional differences and Specs remain independent contracts', () => {
@@ -261,7 +269,11 @@ test('design-reviewer is the single review contract with bounded tools and task 
   assert.match(agent, /^name: design-reviewer$/m);
   assert.match(agent, /^model: sonnet$/m);
   assert.match(agent, /^effort: high$/m);
-  assert.match(agent, /scc-dev-sphere:knowledge-query/);
+  assert.match(agent, /调用 `knowledge-query` Agent/);
+  assert.match(agent, /用自然语言说明 Checklist 判断所需查明的事实和必要背景/);
+  assert.match(agent, /等待查询完成，只使用它返回的最终结果/);
+  assert.doesNotMatch(agent, /knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
+  assert.doesNotMatch(agent, /^skills:/m);
   for (const tool of ['Read', 'Glob', 'Grep', 'Bash', 'Agent', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) {
     assert.match(agent, new RegExp(`^  - ${tool}$`, 'm'));
   }
@@ -278,12 +290,11 @@ test('design-reviewer is the single review contract with bounded tools and task 
   assert.match(agent, /步骤2：串行执行 Checklist[\s\S]*始终只有正在实际评审的一项处于 `in_progress`/);
   assert.match(agent, /不得从 `pending` 直接完成/);
   assert.match(agent, /不重复提交相同状态/);
-  assert.match(agent, /知识查询.*当前 Checklist Task 保持 `in_progress`/s);
-  assert.match(agent, /`knowledgeQueryScriptPath`.*不得自行猜测脚本位置/s);
+  assert.match(agent, /knowledge-query.*当前 Checklist Task 保持 `in_progress`/s);
+  assert.match(agent, /Reviewer 不把 Checklist 评审交给其他 Agent/);
   assert.match(agent, /record-review/);
   assert.match(agent, /refresh-format-review/);
   assert.match(agent, /Task 更新为 `deleted`/);
-  assert.match(agent, /不委派 Checklist Review/);
   assert.match(agent, /不与用户交互/);
   assert.match(agent, /不修改 Draft、Artifact、Approval 或 Feature 状态/);
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-review/SKILL.md')), false);
