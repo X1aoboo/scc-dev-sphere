@@ -12,7 +12,6 @@ const {
   writeDecisions,
 } = require('../devsphere-decisions');
 const {
-  mergeCandidateResults,
   registerEvidenceRecord,
   readRegistry,
 } = require('../knowledge-query');
@@ -133,19 +132,6 @@ test('Decision persistence never gates Draft or Artifact paths', () => {
   initDecisions(taskPath, 'business-design', 'X', 'businessDesign');
   const source = fs.readFileSync(path.join(__dirname, '..', 'devsphere-design.js'), 'utf8');
   assert.doesNotMatch(source, /countGatedPending|listGatedPending|askMode|pending decision/);
-});
-
-test('Knowledge Query merges duplicate claims while preserving unique claims, conflicts, sources, and gaps', () => {
-  const merged = mergeCandidateResults([
-    { source: { type: 'repo', reference: 'src/a.js' }, claims: [{ key: 'timeout', text: 'Timeout is 30s' }], gaps: [] },
-    { source: { type: 'local', reference: 'ops.md' }, claims: [{ key: 'timeout', text: 'Timeout is 30s' }, { key: 'owner', text: 'Team A' }], gaps: ['No rollback policy'] },
-    { source: { type: 'web', reference: 'vendor docs' }, claims: [{ key: 'timeout', text: 'Timeout is 60s' }], gaps: [] },
-  ]);
-
-  assert.strictEqual(merged.candidates.length, 2);
-  assert.strictEqual(merged.candidates.find(item => item.key === 'timeout').sources.length, 2);
-  assert.strictEqual(merged.conflicts.length, 1);
-  assert.deepStrictEqual(merged.gaps, ['No rollback policy']);
 });
 
 test('only the main session registers adopted multi-source Evidence with local source markers, including user input', () => {

@@ -39,7 +39,7 @@ test('feature-design maintains Evidence and Decision as atomic non-gating side e
   assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*.*Evidence\/Decision.*已登记.*写入失败.*已揭示/s);
   assert.match(taskHarness, /4\. \*\*集中 Review 并修订至满足发布条件\*\*.*Review.*新知识.*新取舍.*维护/s);
   assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 1);
-  assert.match(skill, /knowledge-query.*候选.*主会话.*采用.*支持或改变.*设计/s);
+  assert.match(skill, /knowledge-query.*附来源的知识结论.*主会话.*采用.*支持或改变.*设计/s);
   assert.match(skill, /合理替代方案.*残余风险.*用户.*明确确认/s);
   assert.match(skill, /原子副作用.*不进入.*设计模型/s);
   assert.match(skill, /不要.*写入结果.*ID.*supersedes.*回写.*work notes/s);
@@ -53,7 +53,7 @@ test('feature-design colocates exact persistence commands with Task 2 semantic e
   const skill = read('skills/feature-design/SKILL.md');
   const task2 = skill.match(/## (?:步骤)?2\. 完成并确认核心设计([\s\S]*?)## (?:步骤)?3\./)[1];
 
-  assert.match(task2, /knowledge-query.*候选.*采用.*立即登记.*Evidence/s);
+  assert.match(task2, /knowledge-query.*附来源的知识结论.*采用.*立即登记.*Evidence/s);
   assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record \$\{CLAUDE_PROJECT_DIR\} <<'JSON'/);
   assert.match(task2, /<evidence-json>\nJSON/);
   assert.match(task2, /用户.*确认.*实质取舍.*立即登记.*Decision/s);
@@ -110,7 +110,7 @@ test('feature-design sends natural-language questions to knowledge-query and kee
   assert.match(skill, /用自然语言说明要查明什么以及必要的设计背景/);
   assert.match(skill, /等待查询完成，只使用它返回的最终结果/);
   assert.match(skill, /彼此无关的问题可以分别查询/);
-  assert.match(skill, /knowledge-query.*候选.*主会话.*采用/s);
+  assert.match(skill, /knowledge-query.*附来源的知识结论.*主会话.*采用/s);
   assert.doesNotMatch(skill, /workspaceRoot|knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
   assert.doesNotMatch(skill, /创建独立subagent|Query\/Data Source Subagent|预加载的 `knowledge-query`/);
 });

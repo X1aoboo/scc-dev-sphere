@@ -95,7 +95,7 @@ work/<design-slug>/draft.md
 
 ## Knowledge、Evidence 与 Decision
 
-需要查资料时，主会话或 Reviewer 用自然语言调用 `knowledge-query` Agent。它理解问题后查询配置中的 Skill、Local、Repo、MCP 和 Web 来源，在自己的上下文中汇总并精简结果，最后只返回整理后的 JSON。它不调用其他 Agent，也不写查询文件、Evidence 或 Decision。
+需要查资料时，主会话或 Reviewer 用自然语言调用 `knowledge-query` Agent。它根据问题和来源描述按需查询配置中的 Skill、Local、Repo、MCP 和 Web 来源，信息不足时扩展相关来源，最后返回附最小来源的自然语言结果。它不调用其他 Agent，也不写查询文件、Evidence 或 Decision。
 
 主会话只登记实际支持或改变设计的结果：一条 Evidence 对应一个主题，可包含多个带 `S1/S2/...` 局部标记的来源，也可包含用户来源和冲突信息。
 
@@ -158,7 +158,7 @@ git diff --check
 git status --short --untracked-files=all
 ```
 
-合同测试覆盖顶层 Workflow、工作空间事实驱动的设计活动识别、恢复不确定性、Spec/Lint、Draft hash、Reviewer 隔离、完整复评、原样发布、状态同步、Evidence/Decision、Knowledge 多源汇总，以及旧控制路径不再进入插件表面。
+合同测试覆盖顶层 Workflow、工作空间事实驱动的设计活动识别、恢复不确定性、Spec/Lint、Draft hash、Reviewer 隔离、完整复评、原样发布、状态同步、Evidence/Decision、Knowledge 按需查询，以及旧控制路径不再进入插件表面。
 
 ## License
 
