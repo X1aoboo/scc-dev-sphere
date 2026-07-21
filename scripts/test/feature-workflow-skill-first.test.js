@@ -15,6 +15,7 @@ const {
   designReady,
   syncDesignState,
 } = require('../devsphere-design');
+const { validateDesignEntry } = require('../workflows/feature-workflow');
 const { approveDesign, validateDesignReady } = require('../devsphere-approval');
 
 const workflowScript = path.join(__dirname, '..', 'workflows', 'feature-workflow.js');
@@ -43,26 +44,40 @@ function baseline(taskPath, designType) {
   }), 'utf8');
 }
 
-test('top-level workflow routes to the generic feature-design skill without a design cursor', () => {
+test('top-level workflow dispatches the current design type without persisting a design cursor', () => {
   const { taskPath } = makeTask();
   const state = { taskId: 'X', taskType: 'feature', status: 'designing', requiredDesignTypes: ['testDesign'] };
   const action = resolveNextAction(taskPath, state);
   assert.strictEqual(action.skill, 'feature-design');
   assert.strictEqual(action.stage, 'design');
-  assert.strictEqual(action.args.designType, undefined);
+  assert.strictEqual(action.args.designType, 'testDesign');
   assert.ok(!JSON.stringify(action).includes('businessDesign'));
 });
 
-test('required design types are an unordered outer policy set', () => {
+test('outer workflow derives the next required design type in the fixed sequence', () => {
   const { taskPath } = makeTask();
-  configure(taskPath, ['testDesign', 'businessDesign']);
-  baseline(taskPath, 'testDesign');
-  assert.strictEqual(designReady(taskPath).valid, false);
-  assert.strictEqual(syncDesignState(taskPath).status, 'designing');
+  configure(taskPath, ['testDesign', 'businessDesign', 'implementationDesign', 'solutionDesign']);
+  assert.strictEqual(resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8'))).args.designType, 'businessDesign');
 
   baseline(taskPath, 'businessDesign');
-  assert.strictEqual(designReady(taskPath).valid, true);
-  assert.strictEqual(syncDesignState(taskPath).status, 'design_ready');
+  assert.strictEqual(resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8'))).args.designType, 'solutionDesign');
+  baseline(taskPath, 'solutionDesign');
+  assert.strictEqual(resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8'))).args.designType, 'implementationDesign');
+  baseline(taskPath, 'implementationDesign');
+  assert.strictEqual(resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8'))).args.designType, 'testDesign');
+});
+
+test('outer workflow rejects Business and Solution entry until their Baselines are valid', () => {
+  const { taskPath } = makeTask();
+  configure(taskPath, ['businessDesign', 'solutionDesign']);
+  assert.throws(() => validateDesignEntry(taskPath, 'businessDesign'), /Requirement Baseline/i);
+
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved.', 'utf8');
+  assert.strictEqual(validateDesignEntry(taskPath, 'businessDesign').valid, true);
+  assert.throws(() => validateDesignEntry(taskPath, 'solutionDesign'), /business-design Baseline/i);
+
+  baseline(taskPath, 'businessDesign');
+  assert.strictEqual(validateDesignEntry(taskPath, 'solutionDesign').valid, true);
 });
 
 test('generic design_ready transition uses the persisted required design set', () => {

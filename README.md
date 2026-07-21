@@ -35,7 +35,7 @@ initialized
 → Baseline
 ```
 
-业务、方案、实现和测试设计是独立设计类型，共享同一过程。外层 Workflow 决定当前任务需要哪些类型；类型集合不表达固定顺序或强制依赖。
+业务、方案、实现和测试设计共享同一过程，但各自只负责当前专业设计。外层 Workflow 按 Requirement → Business → Solution → Implementation → Test 的固定顺序派发设计活动，并在正式进入每一阶段前校验上游 Baseline；`requiredDesignTypes` 只声明当前任务需要交付的 Baseline 集合，不保存阶段游标。
 
 ## Skill-first Feature Design
 

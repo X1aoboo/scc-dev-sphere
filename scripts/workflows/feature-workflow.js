@@ -1,7 +1,52 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { readCurrentTask, readState, writeState, getTaskPath } = require('../devsphere-state');
-const { designReady, syncDesignState } = require('../devsphere-design');
+const {
+  DESIGN_TYPES,
+  designReady,
+  inspectDesign,
+  readArtifactRef,
+  syncDesignState,
+} = require('../devsphere-design');
+
+const DESIGN_SEQUENCE = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
+const DESIGN_ENTRY_REQUIREMENTS = {
+  businessDesign: { kind: 'requirement', path: 'inputs/requirement.md' },
+  solutionDesign: { kind: 'design', designType: 'businessDesign', path: 'artifacts/business-design.md' },
+  implementationDesign: { kind: 'design', designType: 'solutionDesign', path: 'artifacts/solution-design.md' },
+  testDesign: { kind: 'design', designType: 'implementationDesign', path: 'artifacts/implementation-design.md' },
+};
+
+function nextRequiredDesignType(taskPath, state) {
+  const required = state.requiredDesignTypes || [];
+  return DESIGN_SEQUENCE.find(designType => required.includes(designType) && !readArtifactRef(taskPath, designType)) || null;
+}
+
+function validateDesignEntry(taskPath, designType) {
+  if (!DESIGN_TYPES[designType]) throw new Error(`Unknown design type: ${designType}`);
+  const state = readState(taskPath);
+  if (!state) throw new Error('State file not found');
+  if (state.status !== 'designing') {
+    throw new Error(`Design entry requires task status 'designing', got '${state.status}'`);
+  }
+
+  const requirement = DESIGN_ENTRY_REQUIREMENTS[designType];
+  if (requirement.kind === 'requirement') {
+    const baseline = path.join(taskPath, requirement.path);
+    if (!fs.existsSync(baseline) || !fs.readFileSync(baseline, 'utf8').trim()) {
+      throw new Error(`Requirement Baseline is missing or empty: ${requirement.path}`);
+    }
+  } else {
+    const upstream = inspectDesign(taskPath, requirement.designType);
+    if (upstream.recovery !== 'baseline_complete' || !upstream.approval.valid) {
+      throw new Error(`${DESIGN_TYPES[requirement.designType].slug} Baseline must be valid and human-approved before ${DESIGN_TYPES[designType].slug}`);
+    }
+  }
+
+  return { valid: true, designType, requiredBaseline: requirement.path };
+}
 
 function makeAction(kind, state, stage, target, skill, agents, reason, required = [], expected = [], args = {}) {
   return {
@@ -35,11 +80,19 @@ function resolveNextAction(taskPath, state) {
         });
     case 'clarified':
       return makeAction('run_skill', state, 'design', null, 'feature-design', [],
-        'The approved Requirement Baseline is ready for collaborative Feature Design.',
-        ['inputs/requirement.md']);
-    case 'designing':
+        'The approved Requirement Baseline is ready for Business Design.',
+        ['inputs/requirement.md'], [], { designType: 'businessDesign' });
+    case 'designing': {
+      const designType = nextRequiredDesignType(taskPath, state);
+      if (!designType) {
+        return makeAction('show_status', state, 'design', null, null, [],
+          'All required Design Baselines exist. Synchronize design status before continuing.');
+      }
+      const requirement = DESIGN_ENTRY_REQUIREMENTS[designType];
       return makeAction('run_skill', state, 'design', null, 'feature-design', [],
-        'Feature Design runs in the main session, recovers the current design activity from workspace facts, and applies one shared design process.');
+        `Continue the fixed design sequence with ${designType}; the outer workflow validates its upstream Baseline.`,
+        [requirement.path], [], { designType });
+    }
     case 'design_ready':
       return makeAction('run_skill', state, null, 'design-final', 'feature-approve', [],
         'The required Design Baseline set is ready for overall approval.',
@@ -109,6 +162,11 @@ function main() {
       const taskPath = getTaskPath(workspaceRoot);
       if (!taskPath) throw new Error('No active task');
       result = syncDesignState(taskPath);
+    } else if (command === 'validate-design-entry') {
+      if (args.length !== 3) throw new Error('Usage: validate-design-entry <workspaceRoot> <designType>');
+      const taskPath = getTaskPath(workspaceRoot);
+      if (!taskPath) throw new Error('No active task');
+      result = validateDesignEntry(taskPath, newStatus);
     } else {
       throw new Error(`Unknown command: ${command}`);
     }
@@ -121,4 +179,11 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { resolveNextAction, setTaskStatus };
+module.exports = {
+  DESIGN_SEQUENCE,
+  DESIGN_ENTRY_REQUIREMENTS,
+  nextRequiredDesignType,
+  validateDesignEntry,
+  resolveNextAction,
+  setTaskStatus,
+};

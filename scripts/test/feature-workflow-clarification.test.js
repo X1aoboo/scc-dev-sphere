@@ -36,6 +36,7 @@ test('clarified routes directly to feature-design', () => {
   assert.deepStrictEqual(action.skill, 'feature-design');
   assert.deepStrictEqual(action.agents, []);
   assert.deepStrictEqual(action.requiredArtifacts, ['inputs/requirement.md']);
+  assert.deepStrictEqual(action.args, { designType: 'businessDesign' });
   assert.match(action.reason, /design/i);
 });
 
