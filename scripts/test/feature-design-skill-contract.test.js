@@ -264,7 +264,7 @@ test('every Review Checklist is Chinese and defines applicability, rules, and co
   }
 });
 
-test('design-reviewer is the single review contract with bounded tools and task lifecycle', () => {
+test('design-reviewer is the single review contract with denied mutation and direct knowledge tools', () => {
   const agent = read('agents/design-reviewer.md');
   assert.match(agent, /^name: design-reviewer$/m);
   assert.match(agent, /^model: sonnet$/m);
@@ -274,27 +274,26 @@ test('design-reviewer is the single review contract with bounded tools and task 
   assert.match(agent, /等待查询完成，只使用它返回的最终结果/);
   assert.doesNotMatch(agent, /knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
   assert.doesNotMatch(agent, /^skills:/m);
-  for (const tool of ['Read', 'Glob', 'Grep', 'Bash', 'Agent', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) {
+  assert.match(agent, /^disallowedTools:$/m);
+  assert.doesNotMatch(agent, /^tools:$/m);
+  for (const tool of ['Write', 'Edit', 'NotebookEdit', 'Skill', 'WebSearch', 'WebFetch', 'AskUserQuestion', 'Workflow', 'mcp__\\*']) {
     assert.match(agent, new RegExp(`^  - ${tool}$`, 'm'));
   }
-  assert.doesNotMatch(agent, /^  - (Skill|Write|Edit|WebSearch|WebFetch)$/m);
+  assert.doesNotMatch(agent, /^  - (Agent|TaskCreate|TaskGet|TaskList|TaskUpdate|ToolSearch)$/m);
   assert.match(agent, /^background: false$/m);
   assert.match(agent, /^## 工作流$/m);
-  assert.match(agent, /^### 步骤1：根据 Checklist 创建任务$/m);
+  assert.match(agent, /^### 步骤1：读取并规划 Checklist 执行$/m);
   assert.match(agent, /^### 步骤2：串行执行 Checklist$/m);
   assert.match(agent, /^### 步骤3：维护并验证 Review 摘要$/m);
-  assert.match(agent, /^### 步骤4：完成任务、清理并返回$/m);
+  assert.match(agent, /^### 步骤4：返回 Review 结果$/m);
   assert.match(agent, /前一步完成条件未满足时，不进入下一步/);
-  assert.match(agent, /步骤1：根据 Checklist 创建任务[\s\S]*为每份适用 Checklist 创建一个 Task/);
   assert.strictEqual((agent.match(/^完成条件：/gm) || []).length, 4);
-  assert.match(agent, /步骤2：串行执行 Checklist[\s\S]*始终只有正在实际评审的一项处于 `in_progress`/);
-  assert.match(agent, /不得从 `pending` 直接完成/);
-  assert.match(agent, /不重复提交相同状态/);
-  assert.match(agent, /knowledge-query.*当前 Checklist Task 保持 `in_progress`/s);
+  assert.match(agent, /步骤2：串行执行 Checklist[\s\S]*同一时刻只评审一份 Checklist/);
+  assert.match(agent, /全部适用 Checklist 均须执行，不得跳过或遗漏/);
+  assert.match(agent, /knowledge-query.*视为正在评审当前 Checklist/s);
   assert.match(agent, /Reviewer 不把 Checklist 评审交给其他 Agent/);
   assert.match(agent, /record-review/);
   assert.match(agent, /refresh-format-review/);
-  assert.match(agent, /Task 更新为 `deleted`/);
   assert.match(agent, /不与用户交互/);
   assert.match(agent, /不修改 Draft、Artifact、Approval 或 Feature 状态/);
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-review/SKILL.md')), false);

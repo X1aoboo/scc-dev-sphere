@@ -186,7 +186,7 @@ Lint 只检查 frontmatter、核心章节、适用性说明、占位符和明显
 
 每轮冻结 Draft 创建一个新的隔离 `design-reviewer`。它只读取冻结 Draft、全部适用 Checklist，以及判断这些 Checklist 必需的相关正式 Artifact 或事实材料，在自己的上下文中串行完整执行。只有 Checklist 判断依赖缺失的外部事实时才按需调用 `knowledge-query`；不创建嵌套 Review Agent。
 
-`design-reviewer` 使用内部 Task 投影 Checklist 进度，完整应用所有评审规则和检查项，统一调用确定性命令维护 `work/<design-slug>/review.json`，再向主会话返回轻量 Markdown：通过，或包含位置、问题、实际影响和建议的 findings。主会话不维护 Review 文件，只分析重复、关联和冲突，与用户自然讨论并完成修订。
+`design-reviewer` 在自身推理中逐份跟踪 Checklist 进度（子代理无法使用主会话的 Task 工具），完整应用所有评审规则和检查项，统一调用确定性命令维护 `work/<design-slug>/review.json`，再向主会话返回轻量 Markdown：通过，或包含位置、问题、实际影响和建议的 findings。主会话不维护 Review 文件，只分析重复、关联和冲突，与用户自然讨论并完成修订。
 
 语义修订使当前 Draft 的全部适用 Review 失效；重新 Lint 后创建新的 `design-reviewer` 完整复评。纯排版、错别字和不改变含义的修正重新 Lint 后由它执行确定性格式刷新。所有 blocking finding 关闭、残余风险已向用户揭示且用户确认后，Review 才通过。
 
