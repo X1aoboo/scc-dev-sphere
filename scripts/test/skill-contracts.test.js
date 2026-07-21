@@ -44,6 +44,10 @@ test('feature-clarify enforces Draft review and verbatim user-approved baseline'
   assert.match(skill, /requirement-baseline\.md/);
   assert.match(skill, /requirement-reviewer\.md/);
   assert.match(skill, /全新的独立 Reviewer Subagent/);
+  assert.match(skill, /model=sonnet/);
+  assert.match(skill, /不与用户交互/);
+  assert.match(skill, /不修改 Draft/);
+  assert.match(skill, /评审结果仅返回主会话/);
   assert.match(skill, /需求语义变化[\s\S]*重新评审完整 Draft/);
   assert.match(skill, /用户批准后，将已评审 Draft 原样发布为 Requirement Baseline/);
   assert.match(skill, /用户批准前不得进入业务设计/);

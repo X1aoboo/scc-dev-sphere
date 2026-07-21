@@ -75,7 +75,7 @@ function resolveNextAction(taskPath, state) {
         ['inputs/requirement.md'],
         {
           proposalPath: 'inputs/proposal.md',
-          draftPath: 'work/requirement-draft.md',
+          draftPath: 'inputs/requirement-draft.md',
           baselinePath: 'inputs/requirement.md',
         });
     case 'clarified':

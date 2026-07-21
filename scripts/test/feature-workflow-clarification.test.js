@@ -19,7 +19,7 @@ test('initialized routes to feature-clarify before design', () => {
   assert.deepStrictEqual(action.expectedArtifacts, ['inputs/requirement.md']);
   assert.deepStrictEqual(action.args, {
     proposalPath: 'inputs/proposal.md',
-    draftPath: 'work/requirement-draft.md',
+    draftPath: 'inputs/requirement-draft.md',
     baselinePath: 'inputs/requirement.md',
   });
   assert.match(action.reason, /clarif/i);
