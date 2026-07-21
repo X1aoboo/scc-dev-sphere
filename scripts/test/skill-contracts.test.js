@@ -99,6 +99,23 @@ test('knowledge-query routes by relevance, expands on missing information, and r
   assert.strictEqual(fs.existsSync(path.join(root, 'config', 'knowledge-sources.json')), true);
 });
 
+test('knowledge-config queries, modifies, and adds knowledge sources through the deterministic CLI', () => {
+  const skill = readSkill('knowledge-config');
+  assert.match(skill, /^name: knowledge-config$/m);
+  assert.match(skill, /^description: 查询和维护项目知识源配置/m);
+  assert.match(skill, /^## 查询当前配置$/m);
+  assert.match(skill, /knowledge-query\.js" show-config "\$\{CLAUDE_PROJECT_DIR\}"/);
+  assert.match(skill, /knowledge-query\.js" read-config "\$\{CLAUDE_PROJECT_DIR\}"/);
+  assert.match(skill, /^## 修改已有配置$/m);
+  assert.match(skill, /update-config "\$\{CLAUDE_PROJECT_DIR\}" sources\.<type>\.enabled <true\|false>/);
+  assert.match(skill, /先用 `read-config` 确认来源存在/);
+  assert.match(skill, /^## 新增知识源$/m);
+  assert.match(skill, /upsert-source "\$\{CLAUDE_PROJECT_DIR\}" <type> "<target>"/);
+  assert.match(skill, /只有新来源出现在生效配置中且 `enabled=true` 时才算完成/);
+  assert.match(skill, /保持插件默认配置不变/);
+  assert.doesNotMatch(skill, /Write.*knowledge-sources\.json|Edit.*knowledge-sources\.json/);
+});
+
 test('feature-clarify exposes bundled side effects as candidate scope expansion', () => {
   const skill = readSkill('feature-clarify');
   assert.match(skill, /“顺便”“同时”“兼容”/);
