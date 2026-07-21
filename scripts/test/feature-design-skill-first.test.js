@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
 const { businessDraft } = require('./fixtures/business-design');
+const { implementationDraft } = require('./fixtures/implementation-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   DESIGN_TYPES,
@@ -218,6 +219,55 @@ test('solution lint enforces the fourteen chapters and all 4+1 views', () => {
     fail.checks.find(check => check.code === 'required subsection:4+1 架构视图/物理视图').result,
     'fail',
   );
+});
+
+test('implementation lint accepts feature context, repeated complete service units, and applicability coverage', () => {
+  const { taskPath } = makeTask();
+  writeDraft(
+    taskPath,
+    'implementationDesign',
+    implementationDraft('FEAT-TEST-001', ['approval-service', 'notification-service']),
+  );
+
+  const pass = lintDraft(taskPath, 'implementationDesign');
+  assert.strictEqual(pass.status, 'pass');
+  assert.strictEqual(pass.checks.find(check => check.code === 'implementation unit count').result, 'pass');
+  assert.strictEqual(
+    pass.checks.filter(check => check.code.startsWith('required unit subsection:')).length,
+    24,
+  );
+  assert.strictEqual(pass.checks.find(check => check.code === 'implementation mapping coverage').result, 'pass');
+  assert.strictEqual(pass.checks.find(check => check.code === 'implementation applicability coverage').result, 'pass');
+
+  for (const handling of ['沿用既有设计', '无新增影响']) {
+    writeDraft(
+      taskPath,
+      'implementationDesign',
+      implementationDraft('FEAT-TEST-001').replace('| 完整设计 |', `| ${handling} |`),
+    );
+    assert.strictEqual(lintDraft(taskPath, 'implementationDesign').status, 'pass', handling);
+  }
+});
+
+test('implementation lint rejects missing or duplicate units, missing mapping, incomplete units, and the legacy applicability list', () => {
+  const { taskPath } = makeTask();
+  const valid = implementationDraft('FEAT-TEST-001');
+  const cases = [
+    implementationDraft('FEAT-TEST-001', []),
+    implementationDraft('FEAT-TEST-001', ['approval-service', 'approval-service']),
+    valid.replace(/^\| approval-service \| 存量 \|.*\n/m, ''),
+    valid.replace(/^### 面向 TDD 的单元行为设计[\s\S]*?(?=^### 开发实现计划交接)/m, ''),
+    valid.replace('| 完整设计 |', '| 部分设计 |'),
+    valid.replace(
+      /^## 适用性与裁剪说明[\s\S]*?(?=^## 实现级开放事项与升级项)/m,
+      '## 适用性与裁剪说明\n- 并发：生成：覆盖撤回和升级竞态。\n\n',
+    ),
+  ];
+
+  for (const content of cases) {
+    writeDraft(taskPath, 'implementationDesign', content);
+    assert.strictEqual(lintDraft(taskPath, 'implementationDesign').status, 'fail');
+  }
 });
 
 test('review summary is hash-bound, minimal, and blocks only blocking findings', () => {

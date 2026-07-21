@@ -6,6 +6,23 @@ const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
 
+const IMPLEMENTATION_LEADING_SECTIONS = ['概述', '上游设计基线', '微服务实现范围与代码仓映射', '公共工程约束与设计追溯'];
+const IMPLEMENTATION_TRAILING_SECTIONS = ['适用性与裁剪说明', '实现级开放事项与升级项', '词汇表', '参考资料'];
+const IMPLEMENTATION_UNIT_SUBSECTIONS = [
+  '服务实现上下文',
+  '工程事实与实现范围',
+  '目标实现总览',
+  '代码结构、职责与依赖',
+  '接口、类型与不变量',
+  '控制流、数据流、状态与持久化',
+  '核心算法与技术质量属性',
+  '错误、并发、事务与一致性',
+  '兼容、迁移、回滚与运行观测',
+  '设计原则、模式选择与关键技术决策',
+  '面向 TDD 的单元行为设计',
+  '开发实现计划交接',
+];
+
 const DESIGN_TYPES = {
   businessDesign: {
     slug: 'business-design',
@@ -57,8 +74,13 @@ const DESIGN_TYPES = {
   implementationDesign: {
     slug: 'implementation-design',
     artifactPrefix: 'IMPL',
-    coreSections: ['实现范围与代码影响', '模块接口与调用链', '错误、并发与数据一致性', '迁移、回滚与可测试性', '适用性说明', '关联设计与交接'],
-    applicabilityItems: ['并发', '迁移', '运维', '资源约束'],
+    documentTitle: 'Implementation Design',
+    leadingSections: IMPLEMENTATION_LEADING_SECTIONS,
+    trailingSections: IMPLEMENTATION_TRAILING_SECTIONS,
+    coreSections: [...IMPLEMENTATION_LEADING_SECTIONS, ...IMPLEMENTATION_TRAILING_SECTIONS],
+    unitSectionPrefix: '微服务实现设计：',
+    requiredUnitSubsections: IMPLEMENTATION_UNIT_SUBSECTIONS,
+    applicabilityItems: [],
   },
   testDesign: {
     slug: 'test-design',
@@ -353,12 +375,133 @@ function extractLevelTwoHeadings(raw) {
     .map(match => match[1]);
 }
 
+function extractHeadingSections(raw, level) {
+  const marker = '#'.repeat(level);
+  const headingPattern = new RegExp(`^${marker}\\s+([^#].*?)\\s*$`);
+  const boundaryPattern = new RegExp(`^${marker}\\s+`);
+  const lines = raw.split(/\r?\n/);
+  const sections = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(headingPattern);
+    if (!match) continue;
+    let end = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (boundaryPattern.test(lines[cursor])) {
+        end = cursor;
+        break;
+      }
+    }
+    sections.push({ heading: match[1], content: lines.slice(index + 1, end).join('\n').trim() });
+  }
+  return sections;
+}
+
+function parseMarkdownTable(content) {
+  const rows = content.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line.startsWith('|') && line.endsWith('|'))
+    .map(line => line.slice(1, -1).split('|').map(cell => cell.trim()));
+  if (rows.length < 3) return null;
+  if (!rows[1].every(cell => /^:?-{3,}:?$/.test(cell))) return null;
+  return { header: rows[0], rows: rows.slice(2) };
+}
+
+function sameValues(actual, expected) {
+  return actual.length === expected.length && actual.every((value, index) => value === expected[index]);
+}
+
+function sameSets(actual, expected) {
+  return actual.length === expected.length && actual.every(value => expected.includes(value));
+}
+
 function hasSubstantiveSectionContent(content) {
   const normalized = content
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\s+/g, '')
     .replace(/[。；;.]$/u, '');
   return Boolean(normalized) && !['无', '不适用', '沿用现状'].includes(normalized);
+}
+
+function addImplementationChecks(raw, definition, checks) {
+  const sections = extractHeadingSections(raw, 2);
+  const headings = sections.map(section => section.heading);
+  const units = sections.filter(section => section.heading.startsWith(definition.unitSectionPrefix));
+  const unitNames = units.map(section => section.heading.slice(definition.unitSectionPrefix.length).trim());
+  const expectedOrder = [...definition.leadingSections, ...units.map(section => section.heading), ...definition.trailingSections];
+
+  checks.push({
+    code: 'implementation section order',
+    result: sameValues(headings, expectedOrder) ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'implementation unit count',
+    result: units.length > 0 ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'implementation unit names',
+    result: unitNames.length > 0
+      && unitNames.every(Boolean)
+      && new Set(unitNames).size === unitNames.length
+      ? 'pass'
+      : 'fail',
+  });
+
+  for (const unit of units) {
+    const serviceName = unit.heading.slice(definition.unitSectionPrefix.length).trim();
+    const subsections = extractHeadingSections(unit.content, 3);
+    checks.push({
+      code: `implementation unit subsection order:${serviceName}`,
+      result: sameValues(subsections.map(section => section.heading), definition.requiredUnitSubsections)
+        ? 'pass'
+        : 'fail',
+    });
+    for (const subsectionName of definition.requiredUnitSubsections) {
+      const subsection = subsections.find(candidate => candidate.heading === subsectionName);
+      checks.push({
+        code: `required unit subsection:${serviceName}/${subsectionName}`,
+        result: subsection && hasSubstantiveSectionContent(subsection.content) ? 'pass' : 'fail',
+      });
+    }
+  }
+
+  const mapping = parseMarkdownTable(extractSection(raw, '微服务实现范围与代码仓映射'));
+  const mappingHeader = ['微服务', '新增/存量', '上游已确定责任', '代码仓或新工程', '构建模块/产物', '详细设计位置'];
+  const mappedServices = mapping ? [...new Set(mapping.rows.map(row => row[0]))] : [];
+  checks.push({
+    code: 'implementation mapping table',
+    result: mapping
+      && sameValues(mapping.header, mappingHeader)
+      && mapping.rows.length > 0
+      && mapping.rows.every(row => row.length === mappingHeader.length && row.every(hasSubstantiveSectionContent))
+      ? 'pass'
+      : 'fail',
+  });
+  checks.push({
+    code: 'implementation mapping coverage',
+    result: sameSets(mappedServices, unitNames) ? 'pass' : 'fail',
+  });
+
+  const applicability = parseMarkdownTable(extractSection(raw, '适用性与裁剪说明'));
+  const applicabilityHeader = ['微服务', '设计维度', '处理方式', '核验范围与依据', '正文落点'];
+  const allowedHandling = ['完整设计', '沿用既有设计', '无新增影响'];
+  const applicableServices = applicability ? [...new Set(applicability.rows.map(row => row[0]))] : [];
+  checks.push({
+    code: 'implementation applicability table',
+    result: applicability
+      && sameValues(applicability.header, applicabilityHeader)
+      && applicability.rows.length > 0
+      && applicability.rows.every(row => (
+        row.length === applicabilityHeader.length
+        && row.every(hasSubstantiveSectionContent)
+        && allowedHandling.includes(row[2])
+      ))
+      ? 'pass'
+      : 'fail',
+  });
+  checks.push({
+    code: 'implementation applicability coverage',
+    result: sameSets(applicableServices, unitNames) ? 'pass' : 'fail',
+  });
 }
 
 function checklistPath(checklistId) {
@@ -408,6 +551,7 @@ function lintDraft(taskPath, designType) {
         : 'fail',
     });
   }
+  if (definition.unitSectionPrefix) addImplementationChecks(raw, definition, checks);
   for (const section of definition.coreSections) {
     const content = extractSection(raw, section);
     checks.push({

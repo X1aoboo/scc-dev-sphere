@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
 const { businessDraft } = require('./fixtures/business-design');
+const { implementationDraft } = require('./fixtures/implementation-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   initDesign,
@@ -85,34 +86,7 @@ version: "1.0.0"
 ## 参考资料
 采用当前任务需求、审批状态模型和组织服务接口合同。
 `,
-  implementationDesign: `---
-artifactId: "IMPL-FEAT-DRY-001"
-version: "1.0.0"
----
-
-# 审批任务 SLA 自动升级实现设计
-
-## 实现范围与代码影响
-新增 EscalationService、OverdueTaskScheduler 和 OutboxPublisher，扩展任务仓储。
-
-## 模块接口与调用链
-调度器分页读取候选并调用 escalate(command)；服务在单事务中写任务、审计和 Outbox。
-
-## 错误、并发与数据一致性
-唯一约束处理重复事件；乐观锁冲突后重读；外部查询超时不进入写事务。
-
-## 迁移、回滚与可测试性
-先添加可空字段和新表，再兼容发布；功能开关控制调度器；仓储、时钟和外部客户端通过端口注入。
-
-## 适用性说明
-- 并发：生成：覆盖撤回和升级竞态。
-- 迁移：生成：采用向前兼容 DDL。
-- 运维：生成：覆盖日志、指标、开关和回滚。
-- 资源约束：生成：分页扫描并限制批次。
-
-## 关联设计与交接
-实施和测试可消费唯一约束、乐观锁、Outbox 重放和回滚接缝。
-`,
+  implementationDesign: implementationDraft('FEAT-DRY-001'),
   testDesign: `---
 artifactId: "TD-FEAT-DRY-001"
 version: "1.0.0"
