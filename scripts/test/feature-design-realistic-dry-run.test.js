@@ -5,6 +5,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
+const { businessDraft } = require('./fixtures/business-design');
+const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   initDesign,
   draftPath,
@@ -19,31 +21,7 @@ const {
 const { approveDesign } = require('../devsphere-approval');
 
 const DRAFTS = {
-  businessDesign: `---
-artifactId: "BD-FEAT-DRY-001"
-version: "1.0.0"
----
-
-# 审批任务 SLA 自动升级业务设计
-
-## 目标与范围
-审批任务逾期后自动升级并通知上级审批人；不包含组织架构维护。
-
-## 角色、流程与规则
-申请人提交，审批人处理，系统按 SLA 升级。重复 webhook 不产生第二次升级。
-
-## 状态、术语与验收
-状态为待审批、升级中、已升级、已通过、已拒绝、已撤回。重复事件不重复升级，每次转换可审计。
-
-## 适用性说明
-- 复杂规则：生成：覆盖升级幂等与撤回约束。
-- 长流程：生成：覆盖多级升级和终态。
-- 隐私：生成：操作者标识最小化展示并受权限控制。
-- 术语冲突：不适用：沿用审批域术语。
-
-## 关联设计与交接
-相关设计可消费升级规则、状态、审计和验收合同。
-`,
+  businessDesign: businessDraft('FEAT-DRY-001', 'existing'),
   solutionDesign: `---
 artifactId: "SD-FEAT-DRY-001"
 version: "1.0.0"
@@ -166,22 +144,24 @@ version: "1.0.0"
 };
 
 const CHECKLIST = {
-  businessDesign: 'business-coverage',
+  businessDesign: 'business-semantic-consistency',
   solutionDesign: 'architecture-consistency',
   implementationDesign: 'implementation-feasibility',
   testDesign: 'risk-coverage',
 };
 
-test('tradeoff-rich feature baselines independent design activities in arbitrary order and synchronizes readiness', () => {
+test('tradeoff-rich feature follows the fixed design sequence and synchronizes readiness', () => {
   const { taskPath } = makeTask({ taskId: 'FEAT-DRY-001' });
   const statePath = path.join(taskPath, 'state.json');
   const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   state.status = 'designing';
   state.requiredDesignTypes = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved SLA requirement.', 'utf8');
 
-  const order = ['testDesign', 'businessDesign', 'implementationDesign', 'solutionDesign'];
+  const order = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
   for (const designType of order) {
+    assert.strictEqual(validateDesignEntry(taskPath, designType).valid, true);
     initDesign(taskPath, designType);
     fs.writeFileSync(draftPath(taskPath, designType), DRAFTS[designType], 'utf8');
     assert.strictEqual(lintDraft(taskPath, designType).status, 'pass');
@@ -195,7 +175,7 @@ test('tradeoff-rich feature baselines independent design activities in arbitrary
     publish(taskPath, designType);
     assert.strictEqual(fs.readFileSync(artifactPath(taskPath, designType), 'utf8'), DRAFTS[designType]);
     const synced = syncDesignState(taskPath);
-    if (designType !== 'solutionDesign') assert.strictEqual(synced.status, 'designing');
+    if (designType !== 'testDesign') assert.strictEqual(synced.status, 'designing');
   }
 
   assert.strictEqual(inspectWorkspace(taskPath).recovery, 'needs_design_selection');

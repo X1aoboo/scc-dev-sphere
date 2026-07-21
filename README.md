@@ -66,7 +66,7 @@ skills/feature-design/references/
 └── review-checklists/
 ```
 
-Design Guide 保存专业边界、原则、分析透镜、高价值矛盾、风险缩放、Checklist 导航和收敛标准。Spec 区分核心章节与条件章节；Checklist 自身定义适用条件、评审规则和具体检查项。
+Design Guide 保存专业边界、原则、分析透镜、高价值矛盾、风险缩放、Checklist 导航和收敛标准。Spec 定义各 Design Draft 的内容合同并按专业需要组织固定与条件内容；Checklist 自身定义适用条件、评审规则和具体检查项。
 
 ## Draft、Review 与 Baseline
 
@@ -82,7 +82,7 @@ work/<design-slug>/draft.md
 → state sync
 ```
 
-- Lint 只检查 frontmatter、核心章节、适用性声明、占位符和明显格式，不判断专业质量。
+- Lint 只检查 frontmatter、固定章节与标题层级、适用的确定性声明、占位符和明显格式，不判断专业质量。
 - 所有 Reviewer 接收同一个冻结 Draft 和 hash；每个 Reviewer 只读 Draft、自己的 Checklist 和评审所需的相关正式材料。
 - Reviewer 只返回有实际影响的 `blocking`、`advisory`、`risk`；没有问题直接通过。
 - 语义修改改变 hash 并使当前活动全部适用 Review 失效；纯空白/注释格式变化可以在重新 Lint 后刷新 Review hash。

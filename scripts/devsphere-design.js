@@ -10,8 +10,25 @@ const DESIGN_TYPES = {
   businessDesign: {
     slug: 'business-design',
     artifactPrefix: 'BD',
-    coreSections: ['目标与范围', '角色、流程与规则', '状态、术语与验收', '适用性说明', '关联设计与交接'],
-    applicabilityItems: ['复杂规则', '长流程', '隐私', '术语冲突'],
+    documentTitle: 'Business Design',
+    exactSectionOrder: true,
+    coreSections: [
+      '概述',
+      '需求基线与业务设计范围',
+      '业务目标态总览',
+      '业务概念、对象与度量语义',
+      '业务参与者、责任与适用范围',
+      '业务场景与业务行为',
+      '业务规则与判定逻辑',
+      '时间、状态与生命周期语义',
+      '异常、边界与业务结果',
+      '关键业务决策、约束与风险',
+      '业务验收与需求追溯',
+      '下游设计约束与交接',
+      '词汇表',
+      '参考资料',
+    ],
+    applicabilityItems: [],
   },
   solutionDesign: {
     slug: 'solution-design',
@@ -329,6 +346,21 @@ function extractSubsection(raw, parentHeading, heading) {
   return lines.slice(start + 1, end).join('\n').trim();
 }
 
+function extractLevelTwoHeadings(raw) {
+  return raw.split(/\r?\n/)
+    .map(line => line.match(/^##\s+([^#].*?)\s*$/))
+    .filter(Boolean)
+    .map(match => match[1]);
+}
+
+function hasSubstantiveSectionContent(content) {
+  const normalized = content
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+/g, '')
+    .replace(/[。；;.]$/u, '');
+  return Boolean(normalized) && !['无', '不适用', '沿用现状'].includes(normalized);
+}
+
 function checklistPath(checklistId) {
   return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
@@ -359,10 +391,28 @@ function lintDraft(taskPath, designType) {
     code: 'placeholder',
     result: /<[^>]+>|\{\{[^}]+\}\}|\b(?:TODO|TBD)\b/i.test(raw) ? 'fail' : 'pass',
   });
+  if (definition.documentTitle) {
+    const titles = raw.split(/\r?\n/).filter(line => /^#\s+/.test(line));
+    checks.push({
+      code: 'document title',
+      result: titles.length === 1 && titles[0].trim() === `# ${definition.documentTitle}` ? 'pass' : 'fail',
+    });
+  }
+  if (definition.exactSectionOrder) {
+    const headings = extractLevelTwoHeadings(raw);
+    checks.push({
+      code: 'core section order',
+      result: headings.length === definition.coreSections.length
+        && headings.every((heading, index) => heading === definition.coreSections[index])
+        ? 'pass'
+        : 'fail',
+    });
+  }
   for (const section of definition.coreSections) {
+    const content = extractSection(raw, section);
     checks.push({
       code: `core section:${section}`,
-      result: extractSection(raw, section) ? 'pass' : 'fail',
+      result: hasSubstantiveSectionContent(content) ? 'pass' : 'fail',
     });
   }
   for (const [parent, subsections] of Object.entries(definition.requiredSubsections || {})) {

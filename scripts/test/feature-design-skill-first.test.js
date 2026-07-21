@@ -5,6 +5,8 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
+const { businessDraft } = require('./fixtures/business-design');
+const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   DESIGN_TYPES,
   initDesign,
@@ -23,31 +25,7 @@ const {
   sha256File,
 } = require('../devsphere-design');
 
-const VALID_DRAFT = `---
-artifactId: "BD-FEAT-TEST-001"
-version: "1.0.0"
----
-
-# 业务设计
-
-## 目标与范围
-支持审批流，明确排除计费。
-
-## 角色、流程与规则
-申请人提交，审批人审批。审批通过后生效。
-
-## 状态、术语与验收
-状态为待审批、已通过、已拒绝。通过后可查询生效结果。
-
-## 适用性说明
-- 复杂规则：不适用：没有组合判断。
-- 长流程：不适用：只有单次审批。
-- 隐私：不适用：不处理个人数据。
-- 术语冲突：不适用：沿用现有词汇。
-
-## 关联设计与交接
-其他设计可消费审批状态和生效规则。
-`;
+const VALID_DRAFT = businessDraft('FEAT-TEST-001');
 
 const VALID_SOLUTION_DRAFT = `---
 artifactId: "SD-FEAT-TEST-001"
@@ -129,7 +107,7 @@ function writeDraft(taskPath, designType, content = VALID_DRAFT) {
 function passingSummary(taskPath, designType) {
   return {
     draftHash: sha256File(draftPath(taskPath, designType)),
-    checklists: [{ checklistId: 'business-coverage', result: 'pass', summary: '通过', findings: [] }],
+    checklists: [{ checklistId: 'business-semantic-consistency', result: 'pass', summary: '通过', findings: [] }],
     notApplicable: [],
   };
 }
@@ -153,7 +131,7 @@ test('workspace stores required design types but no internal design cursor', () 
   assert.strictEqual(state.stages, undefined);
 });
 
-test('workspace inference uses unfinished work instead of a fixed type order', () => {
+test('workspace inference can recover unfinished work without persisting a design cursor', () => {
   const { taskPath } = makeTask();
   assert.strictEqual(inspectWorkspace(taskPath).recovery, 'needs_design_selection');
 
@@ -163,10 +141,20 @@ test('workspace inference uses unfinished work instead of a fixed type order', (
   assert.strictEqual(inferred.designType, 'testDesign');
 });
 
-test('any design type can start without an upstream baseline', () => {
+test('formal design entry requires Requirement then upstream Design Baselines', () => {
   const { taskPath } = makeTask();
-  assert.doesNotThrow(() => initDesign(taskPath, 'implementationDesign'));
-  assert.strictEqual(inspectWorkspace(taskPath).designType, 'implementationDesign');
+  const statePath = path.join(taskPath, 'state.json');
+  const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  state.status = 'designing';
+  fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
+
+  assert.throws(() => validateDesignEntry(taskPath, 'businessDesign'), /Requirement Baseline/i);
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved requirement.', 'utf8');
+  assert.strictEqual(validateDesignEntry(taskPath, 'businessDesign').valid, true);
+  assert.throws(() => validateDesignEntry(taskPath, 'solutionDesign'), /business-design Baseline/i);
+
+  completeBusiness(taskPath);
+  assert.strictEqual(validateDesignEntry(taskPath, 'solutionDesign').valid, true);
 });
 
 test('multiple unfinished activities or conflicting persisted facts require user confirmation', () => {
@@ -181,15 +169,34 @@ test('multiple unfinished activities or conflicting persisted facts require user
   assert.strictEqual(inspectDesign(other, 'businessDesign').recovery, 'needs_user_confirmation');
 });
 
-test('lint checks structure and explicit applicability without semantic judgement', () => {
+test('business lint accepts complete new, existing, and low-impact Drafts without semantic judgement', () => {
   const { taskPath } = makeTask();
-  writeDraft(taskPath, 'businessDesign');
-  const pass = lintDraft(taskPath, 'businessDesign');
-  assert.strictEqual(pass.status, 'pass');
-  assert.ok(pass.checks.every(check => check.kind !== 'semantic'));
+  for (const variant of ['new', 'existing', 'low-impact']) {
+    writeDraft(taskPath, 'businessDesign', businessDraft('FEAT-TEST-001', variant));
+    const pass = lintDraft(taskPath, 'businessDesign');
+    assert.strictEqual(pass.status, 'pass', variant);
+    assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 14);
+    assert.ok(pass.checks.every(check => check.kind !== 'semantic'));
+  }
+});
 
-  fs.writeFileSync(draftPath(taskPath, 'businessDesign'), VALID_DRAFT.replace('## 关联设计与交接', '## {{TODO}}'), 'utf8');
-  assert.strictEqual(lintDraft(taskPath, 'businessDesign').status, 'fail');
+test('business lint rejects missing, empty, placeholder, misordered, and invalid-frontmatter Drafts', () => {
+  const { taskPath } = makeTask();
+  const cases = [
+    VALID_DRAFT.replace('## 词汇表\nSLA 截止时间：任务应完成处理的业务时刻。升级：逾期任务责任上移并形成可观察结果的业务事件。\n\n', ''),
+    VALID_DRAFT.replace('## 词汇表\nSLA 截止时间：任务应完成处理的业务时刻。升级：逾期任务责任上移并形成可观察结果的业务事件。', '## 词汇表\n'),
+    VALID_DRAFT.replace('当前任务 Requirement Baseline', '{{TODO}} Requirement Baseline'),
+    VALID_DRAFT
+      .replace('## 概述', '## __TEMP__')
+      .replace('## 需求基线与业务设计范围', '## 概述')
+      .replace('## __TEMP__', '## 需求基线与业务设计范围'),
+    VALID_DRAFT.replace('artifactId: "BD-FEAT-TEST-001"\n', 'artifactId: "BD-FEAT-TEST-001"\nstatus: draft\n'),
+  ];
+
+  for (const content of cases) {
+    writeDraft(taskPath, 'businessDesign', content);
+    assert.strictEqual(lintDraft(taskPath, 'businessDesign').status, 'fail');
+  }
 });
 
 test('solution lint enforces the fourteen chapters and all 4+1 views', () => {
@@ -219,12 +226,12 @@ test('review summary is hash-bound, minimal, and blocks only blocking findings',
   lintDraft(taskPath, 'businessDesign');
   const summary = passingSummary(taskPath, 'businessDesign');
   summary.checklists[0] = {
-    checklistId: 'business-coverage',
+      checklistId: 'business-semantic-consistency',
     result: 'findings',
     summary: '一项建议',
     findings: [{
       type: 'advisory',
-      location: '状态、术语与验收',
+      location: '异常、边界与业务结果',
       issue: '拒绝提示可以更明确',
       impact: '用户可能需要再次确认结果',
       recommendation: '补充用户可见结果',
@@ -273,7 +280,7 @@ test('reopen operates on one independent design without changing top-level state
   assert.strictEqual(designReady(taskPath).valid, false);
 });
 
-test('design type metadata has no order or upstream contracts', () => {
+test('design type metadata remains free of workflow order and upstream contracts', () => {
   for (const definition of Object.values(DESIGN_TYPES)) {
     assert.strictEqual(definition.upstream, undefined);
     assert.strictEqual(definition.next, undefined);
