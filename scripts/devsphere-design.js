@@ -129,12 +129,8 @@ function artifactPath(taskPath, designType) {
   return path.join(taskPath, 'artifacts', `${definitionFor(designType).slug}.md`);
 }
 
-function lintPath(taskPath, designType) {
-  return path.join(taskPath, 'quality-gates', `${definitionFor(designType).slug}-lint.json`);
-}
-
 function reviewSummaryPath(taskPath, designType) {
-  return path.join(taskPath, 'reviews', definitionFor(designType).slug, 'summary.json');
+  return path.join(designDir(taskPath, designType), 'review.json');
 }
 
 function approvalPath(taskPath, designType) {
@@ -213,7 +209,7 @@ function inspectDesign(taskPath, designType) {
   definitionFor(designType);
   const draft = readDraftRef(taskPath, designType);
   const artifact = readArtifactRef(taskPath, designType);
-  const lint = readJSON(lintPath(taskPath, designType));
+  const lint = draft ? lintDraft(taskPath, designType) : null;
   const review = readJSON(reviewSummaryPath(taskPath, designType));
   const approval = readJSON(approvalPath(taskPath, designType));
   const hasWork = fileExists(notesPath(taskPath, designType)) || fileExists(draftPath(taskPath, designType));
@@ -584,7 +580,6 @@ function lintDraft(taskPath, designType) {
     status: checks.some(check => check.result === 'fail') ? 'fail' : 'pass',
     checks,
   };
-  writeJSON(lintPath(taskPath, designType), result);
   return result;
 }
 
@@ -600,7 +595,7 @@ function validateFinding(finding) {
 function recordReview(taskPath, designType, input) {
   definitionFor(designType);
   const draft = readDraftRef(taskPath, designType);
-  const lint = readJSON(lintPath(taskPath, designType));
+  const lint = draft ? lintDraft(taskPath, designType) : null;
   if (!draft) throw new Error(`No valid Draft for ${designType}`);
   if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
     throw new Error('Current Draft must pass deterministic lint before review');
@@ -650,7 +645,7 @@ function recordReview(taskPath, designType, input) {
 
 function refreshFormattingReview(taskPath, designType) {
   const draft = readDraftRef(taskPath, designType);
-  const lint = readJSON(lintPath(taskPath, designType));
+  const lint = draft ? lintDraft(taskPath, designType) : null;
   const summary = readJSON(reviewSummaryPath(taskPath, designType));
   if (!draft || !lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
     throw new Error('Current Draft must pass lint');
@@ -727,11 +722,10 @@ function syncDesignState(taskPath) {
 function publish(taskPath, designType) {
   const draft = readDraftRef(taskPath, designType);
   if (!draft) throw new Error(`No valid Draft for ${designType}`);
-  const lint = readJSON(lintPath(taskPath, designType));
+  const lint = lintDraft(taskPath, designType);
   const review = readJSON(reviewSummaryPath(taskPath, designType));
   const approval = readJSON(approvalPath(taskPath, designType));
   if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) throw new Error('Current lint is not passing');
-  if (!review || review.status !== 'pass' || review.draftHash !== draft.hash) throw new Error('Current review is not passing');
   if (!approval || approval.draftHash !== draft.hash || approval.approvedBy !== 'human') throw new Error('Current human approval is missing');
 
   const source = draftPath(taskPath, designType);
@@ -741,6 +735,7 @@ function publish(taskPath, designType) {
     if (sha256File(source) !== sha256File(target)) {
       throw new Error('Existing Baseline differs from approved Draft; explicitly reopen this design before publishing');
     }
+    unlinkIfExists(reviewSummaryPath(taskPath, designType));
     return {
       designType,
       artifactPath: target,
@@ -749,8 +744,10 @@ function publish(taskPath, designType) {
       idempotent: true,
     };
   }
+  if (!review || review.status !== 'pass' || review.draftHash !== draft.hash) throw new Error('Current review is not passing');
   fs.copyFileSync(source, target);
   if (sha256File(source) !== sha256File(target)) throw new Error('Published Artifact differs from approved Draft');
+  unlinkIfExists(reviewSummaryPath(taskPath, designType));
   return {
     designType,
     artifactPath: target,
@@ -787,7 +784,6 @@ function reopenDesign(taskPath, designType) {
   initDesign(taskPath, designType);
   fs.writeFileSync(draftPath(taskPath, designType), bumpMajorVersion(fs.readFileSync(artifact, 'utf8')), 'utf8');
   unlinkIfExists(artifact);
-  unlinkIfExists(lintPath(taskPath, designType));
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
   unlinkIfExists(approvalPath(taskPath, designType));
   return { designType, historyFile: history, draft: draftPath(taskPath, designType) };
@@ -837,7 +833,6 @@ module.exports = {
   draftPath,
   notesPath,
   artifactPath,
-  lintPath,
   reviewSummaryPath,
   approvalPath,
   sha256File,

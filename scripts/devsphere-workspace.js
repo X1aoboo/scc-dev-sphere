@@ -17,8 +17,6 @@ const DEFAULT_REQUIRED_DESIGN_TYPES = [
 const DIRS = [
   'inputs',
   'artifacts',
-  'reviews',
-  'quality-gates',
   'approvals',
   'implementation',
   'verification',

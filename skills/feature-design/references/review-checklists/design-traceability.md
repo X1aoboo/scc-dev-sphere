@@ -27,4 +27,4 @@
 
 ## Reviewer 边界
 
-Reviewer 保持只读和会话隔离：直接向主会话报告 findings，不与用户交互，不修改 Draft，不替用户决定需求或设计取舍。评审不增加 Requirement Baseline 未承诺的能力，也不把某一 Design Type 的专业内容强加给其他类型。
+执行本 Checklist 时，对 Draft 和正式 Artifact 保持只读；findings 纳入本轮统一 Review 结果，不与用户交互，不替用户决定需求或设计取舍。评审不增加 Requirement Baseline 未承诺的能力，也不把某一 Design Type 的专业内容强加给其他类型。

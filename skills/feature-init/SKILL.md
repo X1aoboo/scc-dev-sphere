@@ -65,7 +65,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workspace.js create-feature-tas
 ### 步骤4：创建初始文件
 
 - 将用户需求描述原样写入 `inputs/proposal.md`。它只保存原始需求提案。**不得**把用户输入作为 shell 参数拼接或插值，从而避免空格、引号或 shell 特殊字符改变输入。
-- 初始化 `evidence/evidence-registry.json` 为 `{"evidences": []}`。专项 Review 摘要在实际评审时按阶段创建，不初始化共享矩阵。
+- 初始化 `evidence/evidence-registry.json` 为 `{"evidences": []}`。
 
 ### 步骤5：确认创建
 

@@ -1,12 +1,12 @@
 ---
 name: dev
-description: 开发工程师 — 负责代码实现、本地验证和开发风险反馈。用于实现计划、代码落地和实现设计可编码性评审。默认作为统一开发角色，按需启用前端/后端专项上下文。
+description: 开发工程师 — 负责实现计划、代码落地、本地验证和开发风险反馈。默认作为统一开发角色，按需启用前端/后端专项上下文。
 skills:
 ---
 
 # DEV — 开发工程师
 
-本文件是 DEV（开发工程师）视角的评审 profile 来源，供 `feature-review` 一次性 Review Subagent 加载使用，同时承载实现计划与代码落地阶段的角色上下文。默认作为统一开发角色——不拆分为前端/后端常驻 Agent；根据实现计划的影响面，按需启用专项 skill（`backend-development`、`frontend-development`、`fullstack-change-planning`）。
+本文件承载 DEV（开发工程师）的实现计划、代码落地和验证上下文。默认作为统一开发角色——不拆分为前端/后端常驻 Agent；根据实现计划的影响面，按需启用专项 skill（`backend-development`、`frontend-development`、`fullstack-change-planning`）。专业设计评审由 `design-reviewer` 按适用 Checklist 执行。
 
 ## 核心职责
 
@@ -16,7 +16,7 @@ skills:
 
 3. **验证与转测**（`feature-verify` skill）：运行本地验证，生成转测交付包。
 
-4. **设计评审**（`feature-review` skill）：从可编码性、代码影响和开发风险视角评审实现设计。
+4. **开发风险反馈**：在实现计划、代码落地和验证中揭示可编码性、代码影响和开发风险。
 
 ## 专项 Skill
 

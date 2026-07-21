@@ -14,7 +14,7 @@ test('feature-design exposes five outcome tasks and keeps semantic analysis in t
     /恢复设计工作空间.*建立专业上下文/s,
     /完成并确认核心设计/,
     /形成可评审.*Draft/,
-    /独立 Review.*修订/s,
+    /集中 Review.*修订/s,
     /发布 Design Baseline/,
     /先调查，再提问/,
     /design tree/i,
@@ -32,12 +32,12 @@ test('feature-design exposes five outcome tasks and keeps semantic analysis in t
 
 test('feature-design maintains Evidence and Decision as atomic non-gating side effects', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const taskHarness = skill.match(/## 执行任务([\s\S]*?)## 1\./)[1];
+  const taskHarness = skill.match(/## 执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
   const designModel = skill.match(/### 建立当前设计模型([\s\S]*?)### 运行语义分析循环/)[1];
 
   assert.strictEqual((taskHarness.match(/^\d\. \*\*/gm) || []).length, 5);
   assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*.*Evidence\/Decision.*已登记.*写入失败.*已揭示/s);
-  assert.match(taskHarness, /4\. \*\*独立 Review 并修订至满足发布条件\*\*.*Review.*新知识.*新取舍.*维护/s);
+  assert.match(taskHarness, /4\. \*\*集中 Review 并修订至满足发布条件\*\*.*Review.*新知识.*新取舍.*维护/s);
   assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 1);
   assert.match(skill, /knowledge-query.*候选.*主会话.*采用.*支持或改变.*设计/s);
   assert.match(skill, /合理替代方案.*残余风险.*用户.*明确确认/s);
@@ -51,7 +51,7 @@ test('feature-design maintains Evidence and Decision as atomic non-gating side e
 
 test('feature-design colocates exact persistence commands with Task 2 semantic events', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const task2 = skill.match(/## 2\. 完成并确认核心设计([\s\S]*?)## 3\./)[1];
+  const task2 = skill.match(/## (?:步骤)?2\. 完成并确认核心设计([\s\S]*?)## (?:步骤)?3\./)[1];
 
   assert.match(task2, /knowledge-query.*候选.*采用.*立即登记.*Evidence/s);
   assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record <workspaceRoot> <<'JSON'/);
@@ -65,7 +65,7 @@ test('feature-design colocates exact persistence commands with Task 2 semantic e
 
 test('feature-design maintains only semantic knowledge introduced by Review', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const task4 = skill.match(/## 4\. 隔离 Review 并修订([\s\S]*?)## 5\./)[1];
+  const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
 
   assert.match(task4, /Reviewer finding.*不.*Evidence/s);
   assert.match(task4, /知识缺口.*knowledge-query.*采用.*Evidence/s);
@@ -87,13 +87,18 @@ test('feature-design progressively loads one Design Guide and Spec without stage
   assert.doesNotMatch(skill, /references\/stages|stage-contracts|current-stage|init-stage|inspect-stage|固定上游|validate-design-entry|外层 Workflow.*固定顺序/s);
 });
 
-test('feature-design keeps isolated review simple and leaves top-level state to workflow', () => {
+test('feature-design delegates one centralized review and leaves top-level state to workflow', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  assert.match(skill, /每份适用 Checklist.*新的.*隔离.*Reviewer/s);
-  assert.match(skill, /评审规则和每个检查项/);
-  assert.match(skill, /直接返回轻量 Markdown/);
-  assert.match(skill, /语义修改.*全部适用.*完整复评/s);
-  assert.match(skill, /record-review/);
+  assert.match(skill, /一个新的、会话隔离的 `design-reviewer` Agent/);
+  assert.match(skill, /只委派一次并以前台方式等待结果/);
+  assert.match(skill, /只委派一次.*串行执行全部适用 Checklist/s);
+  assert.match(skill, /内部 Task.*Checklist.*执行进度/s);
+  assert.match(skill, /统一调用 `record-review`/);
+  assert.match(skill, /主会话.*不创建、修改或刷新 Review 摘要/s);
+  assert.match(skill, /语义修改.*全部适用 Checklist 完整复评/s);
+  assert.match(skill, /mode=format-refresh/);
+  assert.doesNotMatch(skill, /为每份适用 Checklist 创建.*Reviewer/);
+  assert.doesNotMatch(skill, /node .*record-review/);
   assert.match(skill, /approve-current-design/);
   assert.match(skill, /publish/);
   assert.doesNotMatch(skill, /sync-state/);
@@ -186,7 +191,7 @@ test('business review navigation has two required checklists and one conditional
   for (const checklist of [semantic, traceability, impact]) {
     assert.match(checklist, /blocking.*advisory.*risk/s);
     assert.match(checklist, /不与用户交互/);
-    assert.match(checklist, /不修改 Draft/);
+    assert.match(checklist, /对 Draft 和正式 Artifact 保持只读/);
   }
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/review-checklists/business-coverage.md')), false);
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/review-checklists/business-traceability.md')), false);
@@ -251,15 +256,40 @@ test('every Review Checklist is Chinese and defines applicability, rules, and co
   }
 });
 
-test('feature-review directly returns Markdown and does not depend on a plan or matrix', () => {
-  const skill = read('skills/feature-review/SKILL.md');
-  assert.match(skill, /会话隔离/);
-  assert.match(skill, /评审规则和所有检查项/);
-  assert.match(skill, /不询问用户/);
-  assert.match(skill, /不修改文件/);
-  assert.match(skill, /blocking.*advisory.*risk/s);
-  assert.match(skill, /轻量 Markdown/);
-  assert.doesNotMatch(skill, /allowedReads|评审计划|record-reviews|disposition|Review Matrix|返回 JSON/i);
+test('design-reviewer is the single review contract with bounded tools and task lifecycle', () => {
+  const agent = read('agents/design-reviewer.md');
+  assert.match(agent, /^name: design-reviewer$/m);
+  assert.match(agent, /^model: sonnet$/m);
+  assert.match(agent, /^effort: high$/m);
+  assert.match(agent, /scc-dev-sphere:knowledge-query/);
+  for (const tool of ['Read', 'Glob', 'Grep', 'Bash', 'Agent', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) {
+    assert.match(agent, new RegExp(`^  - ${tool}$`, 'm'));
+  }
+  assert.doesNotMatch(agent, /^  - (Skill|Write|Edit|WebSearch|WebFetch)$/m);
+  assert.match(agent, /^background: false$/m);
+  assert.match(agent, /^## 工作流$/m);
+  assert.match(agent, /^### 步骤1：根据 Checklist 创建任务$/m);
+  assert.match(agent, /^### 步骤2：串行执行 Checklist$/m);
+  assert.match(agent, /^### 步骤3：维护并验证 Review 摘要$/m);
+  assert.match(agent, /^### 步骤4：完成任务、清理并返回$/m);
+  assert.match(agent, /前一步完成条件未满足时，不进入下一步/);
+  assert.match(agent, /步骤1：根据 Checklist 创建任务[\s\S]*为每份适用 Checklist 创建一个 Task/);
+  assert.strictEqual((agent.match(/^完成条件：/gm) || []).length, 4);
+  assert.match(agent, /步骤2：串行执行 Checklist[\s\S]*始终只有正在实际评审的一项处于 `in_progress`/);
+  assert.match(agent, /不得从 `pending` 直接完成/);
+  assert.match(agent, /不重复提交相同状态/);
+  assert.match(agent, /知识查询.*当前 Checklist Task 保持 `in_progress`/s);
+  assert.match(agent, /`knowledgeQueryScriptPath`.*不得自行猜测脚本位置/s);
+  assert.match(agent, /record-review/);
+  assert.match(agent, /refresh-format-review/);
+  assert.match(agent, /Task 更新为 `deleted`/);
+  assert.match(agent, /不委派 Checklist Review/);
+  assert.match(agent, /不与用户交互/);
+  assert.match(agent, /不修改 Draft、Artifact、Approval 或 Feature 状态/);
+  assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-review/SKILL.md')), false);
+  for (const relative of ['skills/feature-design/SKILL.md', 'agents/dev.md', 'agents/cie.md', 'README.md']) {
+    assert.doesNotMatch(read(relative), /feature-review/, relative);
+  }
 });
 
 test('overall approval consumes the required baseline set without cross-stage artifacts', () => {
@@ -277,6 +307,7 @@ test('obsolete design control paths are removed from the plugin surface', () => 
     'skills/feature-design-test/SKILL.md',
     'skills/design-quality-gate/SKILL.md',
     'skills/design-template-check/SKILL.md',
+    'skills/feature-review/SKILL.md',
     'scripts/devsphere-review-matrix.js',
     'templates/artifacts/integrated-design.md',
   ]) assert.strictEqual(fs.existsSync(path.join(root, relative)), false, relative);

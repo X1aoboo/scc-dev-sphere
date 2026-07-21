@@ -73,7 +73,7 @@
 - 调查事实、design tree/frontier、推荐与挑战、单个高价值问题、重新计算和动态分段确认；
 - Design Type 的独立性，不增加固定顺序或上游 Baseline 门禁；
 - Work、Draft、Lint、Review、Approval、Artifact 和状态同步语义；
-- 一份 Checklist 对应一个隔离 Reviewer 的 Review 机制；
+- 单个隔离 `design-reviewer` 串行执行全部适用 Checklist 的 Review 机制；
 - 现有 Review Checklist 的评审规则和检查项；
 - `requiredDesignTypes` 外层策略；
 - `knowledge-query`、Evidence 与 Decision 边界；
@@ -514,12 +514,12 @@ Lint 对下列章节检查是否包含实质正文：
 
 ## 8. Review 兼容方案
 
-不修改现有 Checklist 内容和 `feature-review` 机制，只更新 Guide 中的 Checklist 导航。
+不修改现有 Checklist 内容和集中 Review 机制，只更新 Guide 中的 Checklist 导航。
 
 Review 仍然遵循：
 
-- 一份适用 Checklist 对应一个新的隔离 Reviewer；
-- Reviewer 只读取冻结 Draft、自己的 Checklist 和必要正式事实；
+- 每轮冻结 Draft 对应一个新的隔离 `design-reviewer`；
+- `design-reviewer` 只读取冻结 Draft、全部适用 Checklist 和必要正式事实，并串行执行；
 - 主会话汇总 findings 并与用户讨论修订；
 - 语义修改使全部适用 Review 失效；
 - blocking findings 关闭后才能发布。
@@ -544,7 +544,7 @@ Review 仍然遵循：
 - `skills/feature-design/SKILL.md`；
 - 其他三个 Design Guide 与 Spec；
 - Review Checklist 正文；
-- `skills/feature-review/SKILL.md`；
+- `agents/design-reviewer.md` 和 Review 持久化合同；
 - Feature Workflow、Approval 和状态同步；
 - 工作空间目录和 Artifact 路径；
 - 知识库和跨任务 Baseline 机制。

@@ -23,6 +23,7 @@ const {
   syncDesignState,
   draftPath,
   artifactPath,
+  reviewSummaryPath,
   sha256File,
 } = require('../devsphere-design');
 
@@ -130,6 +131,8 @@ test('workspace stores required design types but no internal design cursor', () 
   assert.strictEqual(state.ciCdRisk, undefined);
   assert.strictEqual(state.currentDesignType, undefined);
   assert.strictEqual(state.stages, undefined);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'quality-gates')), false);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'reviews')), false);
 });
 
 test('workspace inference can recover unfinished work without persisting a design cursor', () => {
@@ -178,6 +181,7 @@ test('business lint accepts complete new, existing, and low-impact Drafts withou
     assert.strictEqual(pass.status, 'pass', variant);
     assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 14);
     assert.ok(pass.checks.every(check => check.kind !== 'semantic'));
+    assert.strictEqual(fs.existsSync(path.join(taskPath, 'quality-gates')), false);
   }
 });
 
@@ -288,6 +292,12 @@ test('review summary is hash-bound, minimal, and blocks only blocking findings',
     }],
   };
   assert.strictEqual(recordReview(taskPath, 'businessDesign', summary).status, 'pass');
+  assert.strictEqual(
+    reviewSummaryPath(taskPath, 'businessDesign'),
+    path.join(taskPath, 'work', 'business-design', 'review.json'),
+  );
+  assert.strictEqual(fs.existsSync(reviewSummaryPath(taskPath, 'businessDesign')), true);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'reviews')), false);
   summary.checklists[0].findings[0].type = 'blocking';
   assert.strictEqual(recordReview(taskPath, 'businessDesign', summary).status, 'blocked');
 });
@@ -312,6 +322,8 @@ test('publish copies the approved Draft byte-for-byte without changing top-level
   setRequired(taskPath, ['businessDesign']);
   const result = completeBusiness(taskPath);
   assert.strictEqual(fs.readFileSync(result.artifactPath, 'utf8'), VALID_DRAFT);
+  assert.strictEqual(fs.existsSync(reviewSummaryPath(taskPath, 'businessDesign')), false);
+  assert.strictEqual(publish(taskPath, 'businessDesign').idempotent, true);
   assert.strictEqual(result.state, undefined);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'designing');
   assert.strictEqual(syncDesignState(taskPath).status, 'design_ready');

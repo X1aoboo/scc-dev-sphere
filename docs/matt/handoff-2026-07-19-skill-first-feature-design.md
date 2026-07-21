@@ -13,7 +13,7 @@
 - 专业差异位于 `references/design-guides/`；四份 Specs 保持独立；Review Checklists 使用中文的适用条件、评审规则和具体检查项。
 - `stage-contracts.json` 和 `references/stages/` 已删除。
 - `scripts/devsphere-design.js` 从固定 Stage 顺序改为独立 Design Type：从 Work/Draft/Artifact 推断当前活动，歧义时要求用户确认，Baseline 后同步顶层状态。
-- Review 保留一个 Checklist 一个隔离 Reviewer，删除 plan JSON、allowedReads 计划、disposition 状态机和跨阶段 Review Matrix。
+- Review 每轮只创建一个隔离 `design-reviewer`，在内部串行执行适用 Checklist、按需查询知识并维护 `work/<design-slug>/review.json`；主会话只处理 findings 和设计修订。临时摘要在 Baseline 发布后删除，Lint 实时计算且不持久化；plan JSON、allowedReads 计划、disposition 状态机和跨阶段 Review Matrix 均不保留。
 - 外层总体批准绑定 `requiredDesignTypes` 对应的当前 Baseline 集合。
 
 ## 验证

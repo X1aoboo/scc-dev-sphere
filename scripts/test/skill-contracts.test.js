@@ -62,6 +62,15 @@ test('feature-clarify supports user-authorized deferral without silent assumptio
   assert.match(skill, /不得静默假设答案/);
 });
 
+test('knowledge-query delegates enabled sources to nested read-only subagents', () => {
+  const skill = readSkill('knowledge-query');
+  const prompt = fs.readFileSync(path.join(root, 'skills', 'knowledge-query', 'subagent-prompt.md'), 'utf8');
+  assert.match(skill, /为每个可用数据源创建嵌套、只读的数据源 Subagent/);
+  assert.match(prompt, /为每个可用来源创建一个嵌套、只读的数据源 Subagent/);
+  assert.match(prompt, /只能读取配置允许的目标/);
+  assert.match(prompt, /不询问用户、不写文件、不做设计决定/);
+});
+
 test('feature-clarify exposes bundled side effects as candidate scope expansion', () => {
   const skill = readSkill('feature-clarify');
   assert.match(skill, /“顺便”“同时”“兼容”/);
