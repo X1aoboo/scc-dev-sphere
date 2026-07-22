@@ -136,6 +136,31 @@ test('Design Guides contain professional differences and Specs remain independen
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/stages')), false);
 });
 
+test('all Design Draft contracts require Mermaid for suitable semantic diagrams', () => {
+  for (const slug of ['business-design', 'solution-design', 'implementation-design', 'test-design']) {
+    const guide = read(`skills/feature-design/references/design-guides/${slug}.md`);
+    const spec = read(`skills/feature-design/references/specs/${slug}.md`);
+
+    assert.match(guide, /降低理解成本.*Mermaid/s, `${slug} Guide should select Mermaid when a diagram helps`);
+    assert.match(guide, /不要求.*图示.*数量/s, `${slug} Guide should not require diagrams or a diagram count`);
+    assert.match(guide, /界面设计.*不适合 Mermaid.*不强制/s, `${slug} Guide should exempt unsuitable UI design`);
+    assert.match(guide, /禁止.*ASCII.*语义图/s, `${slug} Guide should prohibit ASCII semantic diagrams`);
+    assert.doesNotMatch(guide, /```text[\s\S]*?[→←][\s\S]*?```/, `${slug} Guide should not model relationships with fenced ASCII arrows`);
+
+    assert.match(spec, /语义图.*Mermaid/s, `${slug} Spec should require Mermaid semantic diagrams`);
+    assert.match(spec, /禁止.*ASCII.*语义图/s, `${slug} Spec should prohibit ASCII semantic diagrams`);
+    assert.match(spec, /不要求.*图示.*数量/s, `${slug} Spec should not require diagrams or a diagram count`);
+    assert.match(spec, /界面设计.*不适合 Mermaid.*不强制/s, `${slug} Spec should exempt unsuitable UI design`);
+    assert.match(spec, /Markdown 表格.*目录树.*代码片段.*不属于.*ASCII.*语义图/s, `${slug} Spec should preserve non-diagram technical text`);
+  }
+
+  const traceability = read('skills/feature-design/references/review-checklists/design-traceability.md');
+  assert.match(traceability, /所有设计类型必选/);
+  assert.match(traceability, /ASCII.*语义图.*blocking/s);
+  assert.match(traceability, /没有图示.*不.*finding/s);
+  assert.match(traceability, /界面设计.*Markdown 表格.*目录树.*代码片段/s);
+});
+
 test('business design Guide is a semantic reference with the approved coverage and checklist navigation', () => {
   const guide = read('skills/feature-design/references/design-guides/business-design.md');
   const headings = [...guide.matchAll(/^## (.+)$/gm)].map(match => match[1]);
