@@ -82,7 +82,16 @@ function main() {
     else throw new Error(`Unknown command: ${command}`);
 
     if (result && result.hookSpecificOutput) process.stdout.write(JSON.stringify(result));
-    else if (result) { process.stdout.write(JSON.stringify(result)); if (!result.allowed) process.exit(1); }
+    else if (result) {
+      process.stdout.write(JSON.stringify(result));
+      if (!result.allowed) {
+        // Exit 2 + stderr is the cross-event blocking contract (works for
+        // UserPromptSubmit / PreToolUse alike). Avoids relying on any single
+        // hook's JSON schema, so the guard stays portable across CC versions.
+        process.stderr.write(result.reason || 'Blocked by devsphere-guard');
+        process.exit(2);
+      }
+    }
   } catch (error) {
     process.stderr.write(JSON.stringify({ allowed: false, reason: error.message }));
     process.exit(1);
