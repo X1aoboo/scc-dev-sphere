@@ -4,7 +4,21 @@
 const fs = require('fs');
 const path = require('path');
 const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state');
-const { designReady } = require('./devsphere-design');
+const { validateDesignReady } = require('./devsphere-approval');
+
+const TRANSITIONS = {
+  initialized: ['clarified'],
+  clarified: ['designing'],
+  designing: ['design_ready', 'blocked'],
+  design_ready: ['external_test_design_ready', 'approved_for_implementation', 'designing'],
+  external_test_design_ready: ['approved_for_implementation', 'designing'],
+  approved_for_implementation: ['implementation_planned', 'designing'],
+  implementation_planned: ['implementing'],
+  implementing: ['verification_ready'],
+  verification_ready: ['completed', 'implementing', 'blocked'],
+  blocked: ['designing', 'implementing'],
+  completed: [],
+};
 
 function hasActiveTask(workspaceRoot) {
   const current = readCurrentTask(workspaceRoot);
@@ -27,23 +41,16 @@ function checkImplementEntry(workspaceRoot) {
 function checkApproveEntry(workspaceRoot) {
   if (!hasActiveTask(workspaceRoot)) return { allowed: false, reason: 'No active task.' };
   const taskPath = getTaskPath(workspaceRoot);
-  const state = taskPath && readState(taskPath);
-  if (!state || state.status !== 'design_ready') return { allowed: false, reason: 'Overall approval requires design_ready.' };
-  const ready = designReady(taskPath);
-  return ready.valid ? { allowed: true, reason: 'OK' } : { allowed: false, reason: ready.issues.join('; ') };
+  const ready = taskPath && validateDesignReady(taskPath);
+  return ready && ready.valid
+    ? { allowed: true, reason: 'OK' }
+    : { allowed: false, reason: ready ? ready.issues.join('; ') : 'Task path not found.' };
 }
 
 function checkStateAdvance(taskPath, targetStatus) {
   const state = readState(taskPath);
   if (!state) return { allowed: false, reason: 'State file not found.' };
-  const transitions = {
-    initialized: ['clarified'], clarified: ['designing'],
-    designing: ['design_ready', 'blocked'], design_ready: ['approved_for_implementation', 'designing'],
-    approved_for_implementation: ['implementation_planned', 'designing'], implementation_planned: ['implementing'],
-    implementing: ['verification_ready'], verification_ready: ['completed', 'implementing', 'blocked'],
-    blocked: ['designing', 'implementing'], completed: [],
-  };
-  if (!(transitions[state.status] || []).includes(targetStatus)) {
+  if (!(TRANSITIONS[state.status] || []).includes(targetStatus)) {
     return { allowed: false, reason: `Invalid transition from '${state.status}' to '${targetStatus}'.` };
   }
   return { allowed: true, reason: 'OK' };
@@ -101,6 +108,7 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  TRANSITIONS,
   hasActiveTask, checkImplementEntry, checkApproveEntry, checkStateAdvance,
   checkEvidenceWritesFromStdin, checkEvidenceBashFromStdin,
 };

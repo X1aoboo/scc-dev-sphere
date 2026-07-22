@@ -120,17 +120,18 @@ test('generic status updates cannot bypass overall human approval', () => {
 
 test('overall readiness and approval bind only the current required baseline set', () => {
   const { taskPath } = makeTask();
-  configure(taskPath, ['testDesign']);
-  baseline(taskPath, 'testDesign');
+  const required = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
+  configure(taskPath, required);
+  for (const designType of required) baseline(taskPath, designType);
   syncDesignState(taskPath);
 
   const ready = validateDesignReady(taskPath);
   assert.strictEqual(ready.valid, true);
-  assert.deepStrictEqual(ready.requiredDesignTypes, ['testDesign']);
+  assert.deepStrictEqual(ready.requiredDesignTypes, required);
 
   const approval = approveDesign(taskPath, { approvedBy: 'human', risks: [], limitations: [] });
-  assert.strictEqual(approval.artifacts.length, 1);
-  assert.strictEqual(approval.artifacts[0].designType, 'testDesign');
+  assert.strictEqual(approval.artifacts.length, 4);
+  assert.ok(approval.artifacts.some(artifact => artifact.designType === 'testDesign'));
   assert.strictEqual(approval.crossStageReviewHash, undefined);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'approved_for_implementation');
 });

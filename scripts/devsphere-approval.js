@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { readState, writeState } = require('./devsphere-state');
 const { designReady } = require('./devsphere-design');
+const { testDesignTaskIssues } = require('./devsphere-test-design-config');
 
 const APPROVAL_TYPES = { DESIGN_FINAL: 'design-final-approval', IMPLEMENTATION_PLAN: 'implementation-plan-approval' };
 
@@ -24,8 +25,12 @@ function validateDesignReady(taskPath) {
   const issues = [];
   const state = readState(taskPath);
   if (!state) return { valid: false, issues: ['State file not found'] };
-  if (state.status !== 'design_ready') {
-    issues.push(`Task status must be design_ready, got '${state.status}'`);
+  const external = Boolean(state.externalTestDesign);
+  const expectedStatus = external ? 'external_test_design_ready' : 'design_ready';
+  if (state.status !== expectedStatus) issues.push(`Task status must be ${expectedStatus}, got '${state.status}'`);
+  issues.push(...testDesignTaskIssues(state));
+  if (external) {
+    if (!state.externalTestDesign.completedAt) issues.push('External test design has not completed');
   }
   const ready = designReady(taskPath);
   issues.push(...ready.issues);
@@ -35,12 +40,18 @@ function validateDesignReady(taskPath) {
     artifacts: ready.artifacts || {},
     designApprovals: ready.approvals || {},
     requiredDesignTypes: ready.requiredDesignTypes || [],
+    ...(external ? {
+      externalTestDesign: {
+        skillId: state.externalTestDesign.skillId,
+        completedAt: state.externalTestDesign.completedAt,
+      },
+    } : {}),
   };
 }
 
 function approveDesign(taskPath, input) {
   const state = readState(taskPath);
-  if (!state || state.status !== 'design_ready') throw new Error('Overall approval requires design_ready');
+  if (!state) throw new Error('State file not found');
   if (!input || input.approvedBy !== 'human') throw new Error('Overall design approval must be human');
   const ready = validateDesignReady(taskPath);
   if (!ready.valid) throw new Error(ready.issues.join('; '));
@@ -49,6 +60,7 @@ function approveDesign(taskPath, input) {
     type: APPROVAL_TYPES.DESIGN_FINAL,
     taskId: state.taskId,
     artifacts: Object.entries(ready.artifacts).map(([designType, ref]) => ({ designType, ...ref })),
+    ...(ready.externalTestDesign ? { externalTestDesign: ready.externalTestDesign } : {}),
     risks: input.risks || [],
     limitations: input.limitations || [],
     approvedBy: 'human',

@@ -8,6 +8,13 @@ const { createFeatureTask } = require('../devsphere-workspace');
 function makeTask(opts = {}) {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ds-test-'));
   const taskId = opts.taskId || 'FEAT-TEST-001';
+  const configDir = path.join(workspaceRoot, '.devsphere', 'config');
+  fs.mkdirSync(configDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(configDir, 'test-design.json'),
+    JSON.stringify({ mode: 'builtin' }),
+    'utf8',
+  );
   createFeatureTask(workspaceRoot, taskId, {
     designRevisionLimit: opts.designRevisionLimit,
   });

@@ -94,6 +94,21 @@ resolver 会：
 
 根据 `nextAction.kind`：
 
+#### `sync_design_status`
+
+执行一次确定性状态同步：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design-status ${CLAUDE_PROJECT_DIR}
+```
+
+解析命令返回的 JSON：
+
+- `status` 已离开 `designing`：回到步骤4，重新计算并处理 nextAction；
+- `status` 仍为 `designing`：展示 `issues`，本次停止，等待 Design Baseline 或批准事实修复。
+
+完成标准：同步命令成功返回，且新的持久化状态或阻塞原因已经向用户呈现。不得把 `reason` 文本当作执行命令的依据。
+
 #### `run_skill`
 
 展示状态摘要：
@@ -139,6 +154,8 @@ resolver 会：
 
 instruction 应说明本次需要读取的产物、工作产物路径和正式输出路径，但不得把整段命令字符串放进 `nextAction.args`，不得通过 Shell 调用 Skill，也不得让 resolver 执行动作。完成后根据 Skill 输出继续派发。
 
+如果 `nextAction.stage === 'external-test-design'`，instruction 还必须明确：四份 `requiredArtifacts` 是本次输入；全部输出写入 `taskPath/nextAction.args.outputDir`；workflow 已取得本次启动确认，Skill 执行过程中不再发起人工交互。外部 Skill 正常结束才算本次派发完成。
+
 如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：
 
 ```bash
@@ -165,9 +182,9 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
 - 对 `nextAction.agents` 中的每个 agentName，各派发一个 Agent tool
 - 每个 Agent 的 prompt 包含相同的 skill 和任务上下文，但注明自身职责视角
 
-#### Agent 完成后
+#### 派发完成后
 
-所有 Agent 完成后，执行以下同步流程：
+main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程：
 
 1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“Requirement Baseline 已经用户批准并发布”时，才由外层 workflow 完成顶层状态迁移：
 
@@ -184,6 +201,14 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
    ```
 
    同步根据工作空间中的 Baseline 和 `state.requiredDesignTypes` 判定保持 `designing` 或进入 `design_ready`，不按固定设计类型顺序推进。每次 Skill 只完成一份 Design Baseline；同步后回到步骤4重新计算下一动作。
+
+3. **外部测试设计完成：** 如果本次 `nextAction.stage === 'external-test-design'`，仅在外部 Skill 正常结束后执行：
+
+   ```bash
+   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js complete-external-test-design ${CLAUDE_PROJECT_DIR}
+   ```
+
+   命令成功且返回 `status: external_test_design_ready` 才表示完成。Skill 不可用、报错或中断时保持 `design_ready`，展示失败原因并停止本次派发。
 
 然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
 
@@ -264,10 +289,10 @@ multiSelect: false
 
 ### 步骤6：用户执行后
 
-用户执行推荐的 agent/skill 后，对应的 skill 会生成产物并更新状态。下次调用 `/scc-dev-sphere:workflow` 时，resolver 将基于更新后的持久化状态重新计算 nextAction。
+用户执行推荐的 Agent/Skill 后，按步骤5中适用的确定性命令同步状态。下次调用 `/scc-dev-sphere:workflow` 时，resolver 基于最新持久化事实重新计算 nextAction。
 
 ## 约束
 
-- Workflow 不修改状态文件 —— 这是 skill 和 hook 的职责
+- Workflow 只通过步骤5声明的确定性命令更新状态，不直接编辑状态文件
 - Workflow 始终从当前持久化状态重新计算 nextAction（不跨调用缓存）
 - Workflow 通过 AskUserQuestion 获取用户确认后，自动派发 Agent 执行；如果用户选择暂停，则不做任何操作

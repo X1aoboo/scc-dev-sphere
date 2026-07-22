@@ -6,13 +6,16 @@ const path = require('path');
 const {
   writeState, writeCurrentTask,
 } = require('./devsphere-state');
+const {
+  BUILTIN_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_TEST_DESIGN_OUTPUT_DIR,
+  readEffectiveTestDesignConfig,
+  readPluginDefaultTestDesignConfig,
+  validateTestDesignConfig,
+} = require('./devsphere-test-design-config');
 
-const DEFAULT_REQUIRED_DESIGN_TYPES = [
-  'businessDesign',
-  'solutionDesign',
-  'implementationDesign',
-  'testDesign',
-];
+const DEFAULT_REQUIRED_DESIGN_TYPES = BUILTIN_REQUIRED_DESIGN_TYPES;
 
 const DIRS = [
   'inputs',
@@ -37,11 +40,19 @@ function ensureDirectories(taskPath) {
 }
 
 function initState(taskPath, opts = {}) {
+  const testDesignConfig = validateTestDesignConfig(
+    opts.testDesignConfig || readPluginDefaultTestDesignConfig(),
+    'testDesignConfig',
+  );
+  const external = testDesignConfig.mode === 'external';
   const state = {
     taskId: opts.taskId || path.basename(taskPath),
     taskType: 'feature',
-    requiredDesignTypes: opts.requiredDesignTypes || DEFAULT_REQUIRED_DESIGN_TYPES,
+    requiredDesignTypes: external
+      ? [...EXTERNAL_REQUIRED_DESIGN_TYPES]
+      : [...DEFAULT_REQUIRED_DESIGN_TYPES],
     status: 'initialized',
+    ...(external ? { externalTestDesign: { skillId: testDesignConfig.externalSkillId } } : {}),
   };
   writeState(taskPath, state);
 }
@@ -54,8 +65,12 @@ function createFeatureTask(workspaceRoot, taskId, opts = {}) {
     throw new Error(`Task workspace already exists: ${taskPath}`);
   }
 
+  const testDesignConfig = readEffectiveTestDesignConfig(workspaceRoot);
   ensureDirectories(taskPath);
-  initState(taskPath, { ...opts, taskId });
+  if (testDesignConfig.mode === 'external') {
+    fs.mkdirSync(path.join(taskPath, EXTERNAL_TEST_DESIGN_OUTPUT_DIR), { recursive: true });
+  }
+  initState(taskPath, { ...opts, taskId, testDesignConfig });
 
   // Set as current task
   writeCurrentTask(workspaceRoot, {
@@ -98,4 +113,10 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { DEFAULT_REQUIRED_DESIGN_TYPES, createFeatureTask, ensureDirectories, initState };
+module.exports = {
+  DEFAULT_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_REQUIRED_DESIGN_TYPES,
+  createFeatureTask,
+  ensureDirectories,
+  initState,
+};

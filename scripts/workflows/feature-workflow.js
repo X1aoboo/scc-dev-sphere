@@ -10,6 +10,11 @@ const {
   readArtifactRef,
   syncDesignState,
 } = require('../devsphere-design');
+const { TRANSITIONS } = require('../devsphere-guard');
+const {
+  EXTERNAL_TEST_DESIGN_OUTPUT_DIR,
+  testDesignTaskIssues,
+} = require('../devsphere-test-design-config');
 
 const DESIGN_SEQUENCE = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
 const DESIGN_ENTRY_REQUIREMENTS = {
@@ -66,6 +71,18 @@ function makeAction(kind, state, stage, target, skill, agents, reason, required 
   };
 }
 
+function featureApproveAction(state) {
+  return makeAction('run_skill', state, null, 'design-final', 'feature-approve', [],
+    'The required design and test-design facts are ready for overall approval.',
+    (state.requiredDesignTypes || []).map(designType => `artifacts/${({
+      businessDesign: 'business-design',
+      solutionDesign: 'solution-design',
+      implementationDesign: 'implementation-design',
+      testDesign: 'test-design',
+    })[designType]}.md`),
+    ['approvals/design-final-approval.json']);
+}
+
 function resolveNextAction(taskPath, state) {
   switch (state.status) {
     case 'initialized':
@@ -85,7 +102,7 @@ function resolveNextAction(taskPath, state) {
     case 'designing': {
       const designType = nextRequiredDesignType(taskPath, state);
       if (!designType) {
-        return makeAction('show_status', state, 'design', null, null, [],
+        return makeAction('sync_design_status', state, 'design', null, null, [],
           'All required Design Baselines exist. Synchronize design status before continuing.');
       }
       const requirement = DESIGN_ENTRY_REQUIREMENTS[designType];
@@ -94,15 +111,18 @@ function resolveNextAction(taskPath, state) {
         [requirement.path], [], { designType });
     }
     case 'design_ready':
-      return makeAction('run_skill', state, null, 'design-final', 'feature-approve', [],
-        'The required Design Baseline set is ready for overall approval.',
-        (state.requiredDesignTypes || []).map(designType => `artifacts/${({
-          businessDesign: 'business-design',
-          solutionDesign: 'solution-design',
-          implementationDesign: 'implementation-design',
-          testDesign: 'test-design',
-        })[designType]}.md`),
-        ['approvals/design-final-approval.json']);
+      if (!state.externalTestDesign) return featureApproveAction(state);
+      return makeAction('run_skill', state, 'external-test-design', null,
+        state.externalTestDesign.skillId, [],
+        'All required Design Baselines are ready. Run the configured external test-design Skill.',
+        [
+          'inputs/requirement.md',
+          'artifacts/business-design.md',
+          'artifacts/solution-design.md',
+          'artifacts/implementation-design.md',
+        ], [], { taskPath, outputDir: EXTERNAL_TEST_DESIGN_OUTPUT_DIR });
+    case 'external_test_design_ready':
+      return featureApproveAction(state);
     case 'approved_for_implementation':
       return makeAction('run_skill', state, null, 'implementation-plan', 'feature-plan-implementation', ['dev'],
         'Overall design approved. Generate the implementation plan.',
@@ -121,6 +141,45 @@ function resolveNextAction(taskPath, state) {
     default:
       return makeAction('show_status', state, null, null, null, [], `Unhandled status: ${state.status}`);
   }
+}
+
+function completeExternalTestDesign(workspaceRoot) {
+  const taskPath = getTaskPath(workspaceRoot);
+  if (!taskPath) throw new Error('No active task');
+  const state = readState(taskPath);
+  if (!state) throw new Error('No state file');
+  if (state.status !== 'design_ready') {
+    throw new Error(`complete-external-test-design requires status 'design_ready', got '${state.status}'`);
+  }
+  if (!state.externalTestDesign || typeof state.externalTestDesign.skillId !== 'string'
+      || !state.externalTestDesign.skillId.trim()) {
+    throw new Error('External test design is not enabled for this task');
+  }
+  const contractIssues = testDesignTaskIssues(state);
+  if (contractIssues.length) throw new Error(contractIssues.join('; '));
+  const ready = designReady(taskPath);
+  if (!ready.valid) throw new Error(ready.issues.join('; '));
+
+  const requiredInputs = [
+    'inputs/requirement.md',
+    'artifacts/business-design.md',
+    'artifacts/solution-design.md',
+    'artifacts/implementation-design.md',
+  ];
+  const missing = requiredInputs.filter(relative => !fs.existsSync(path.join(taskPath, relative)));
+  if (missing.length) throw new Error(`Missing external test-design inputs: ${missing.join(', ')}`);
+  if (!(TRANSITIONS.design_ready || []).includes('external_test_design_ready')) {
+    throw new Error('Invalid transition: design_ready -> external_test_design_ready');
+  }
+
+  state.externalTestDesign.completedAt = new Date().toISOString();
+  state.status = 'external_test_design_ready';
+  writeState(taskPath, state);
+  return {
+    synced: true,
+    status: state.status,
+    externalTestDesign: state.externalTestDesign,
+  };
 }
 
 function setTaskStatus(workspaceRoot, newStatus) {
@@ -167,6 +226,9 @@ function main() {
       const taskPath = getTaskPath(workspaceRoot);
       if (!taskPath) throw new Error('No active task');
       result = validateDesignEntry(taskPath, newStatus);
+    } else if (command === 'complete-external-test-design') {
+      if (args.length !== 2) throw new Error('Usage: complete-external-test-design <workspaceRoot>');
+      result = completeExternalTestDesign(workspaceRoot);
     } else {
       throw new Error(`Unknown command: ${command}`);
     }
@@ -182,8 +244,10 @@ if (require.main === module) main();
 module.exports = {
   DESIGN_SEQUENCE,
   DESIGN_ENTRY_REQUIREMENTS,
+  EXTERNAL_TEST_DESIGN_OUTPUT_DIR,
   nextRequiredDesignType,
   validateDesignEntry,
   resolveNextAction,
   setTaskStatus,
+  completeExternalTestDesign,
 };

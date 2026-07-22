@@ -188,3 +188,14 @@ test('workflow owns design entry and completion state synchronization', () => {
   assert.match(workflow, /当前 Design Baseline 已获用户批准并发布/);
   assert.match(workflow, /sync-design-status \$\{CLAUDE_PROJECT_DIR\}/);
 });
+
+test('workflow handles external test design as a confirmed one-shot main-session action', () => {
+  const workflow = readSkill('workflow');
+  assert.match(workflow, /#### `sync_design_status`/);
+  assert.match(workflow, /status` 仍为 `designing`[^\n]*展示 `issues`/);
+  assert.match(workflow, /nextAction\.stage === 'external-test-design'/);
+  assert.match(workflow, /taskPath\/nextAction\.args\.outputDir/);
+  assert.match(workflow, /Skill 执行过程中不再发起人工交互/);
+  assert.match(workflow, /complete-external-test-design \$\{CLAUDE_PROJECT_DIR\}/);
+  assert.match(workflow, /status: external_test_design_ready/);
+});

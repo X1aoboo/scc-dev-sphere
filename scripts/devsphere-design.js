@@ -705,8 +705,9 @@ function syncDesignState(taskPath) {
   const ready = designReady(taskPath);
   if (state.status === 'designing') {
     state.status = ready.valid ? 'design_ready' : 'designing';
-  } else if (['design_ready', 'approved_for_implementation'].includes(state.status) && !ready.valid) {
+  } else if (['design_ready', 'external_test_design_ready', 'approved_for_implementation'].includes(state.status) && !ready.valid) {
     state.status = 'designing';
+    if (state.externalTestDesign) delete state.externalTestDesign.completedAt;
   }
   writeState(taskPath, state);
   return {
