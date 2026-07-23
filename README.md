@@ -269,6 +269,7 @@ git status --short --untracked-files=all
 
 ## 详细文档
 
+- [完整中文使用指南](docs/guides/scc-dev-sphere-user-guide.md)：面向实际使用者的工作空间、Feature 生命周期、阶段输入输出、人工闸口、恢复、故障处理和端到端示例。
 - [SDLC Agentic Workflow](docs/workflows/sdlc-agentic-workflow.md)：Feature 主流程、Review、批准和失败处理概览。
 - [Feature Design Skill-first 重构设计规格](docs/design-refactor/06-skill-first-feature-design-refactor.md)：主会话协作设计、职责边界和恢复模型。
 - [Feature Design Evidence/Decision 维护规格](docs/design-refactor/08-feature-design-evidence-decision-maintenance.md)：Evidence 与 Decision 的准入和维护边界。
