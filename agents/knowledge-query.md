@@ -10,8 +10,6 @@ disallowedTools:
   - TaskGet
   - TaskList
   - TaskUpdate
-model: sonnet
-effort: high
 maxTurns: 20
 background: false
 ---

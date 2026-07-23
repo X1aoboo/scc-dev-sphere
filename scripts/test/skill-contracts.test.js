@@ -71,8 +71,8 @@ test('feature-clarify supports user-authorized deferral without silent assumptio
 test('knowledge-query routes by relevance, expands on missing information, and returns sourced natural language', () => {
   const agent = fs.readFileSync(path.join(root, 'agents', 'knowledge-query.md'), 'utf8');
   assert.match(agent, /^name: knowledge-query$/m);
-  assert.match(agent, /^model: sonnet$/m);
-  assert.match(agent, /^effort: high$/m);
+  assert.doesNotMatch(agent, /^model:/m);
+  assert.doesNotMatch(agent, /^effort:/m);
   assert.match(agent, /^background: false$/m);
   for (const tool of ['Agent', 'Write', 'Edit', 'NotebookEdit', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) {
     assert.match(agent, new RegExp(`^  - ${tool}$`, 'm'));

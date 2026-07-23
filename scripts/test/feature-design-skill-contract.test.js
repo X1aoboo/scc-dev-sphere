@@ -292,8 +292,8 @@ test('every Review Checklist is Chinese and defines applicability, rules, and co
 test('design-reviewer is the single review contract with denied mutation and direct knowledge tools', () => {
   const agent = read('agents/design-reviewer.md');
   assert.match(agent, /^name: design-reviewer$/m);
-  assert.match(agent, /^model: sonnet$/m);
-  assert.match(agent, /^effort: high$/m);
+  assert.doesNotMatch(agent, /^model:/m);
+  assert.doesNotMatch(agent, /^effort:/m);
   assert.match(agent, /调用 `knowledge-query` Agent/);
   assert.match(agent, /用自然语言说明 Checklist 判断所需查明的事实和必要背景/);
   assert.match(agent, /等待查询完成，只使用它返回的最终结果/);

@@ -11,8 +11,6 @@ disallowedTools:
   - AskUserQuestion
   - Workflow
   - mcp__*
-model: sonnet
-effort: high
 maxTurns: 20
 background: false
 ---
