@@ -92,9 +92,9 @@ function main() {
     else if (result) {
       process.stdout.write(JSON.stringify(result));
       if (!result.allowed) {
-        // Exit 2 + stderr is the cross-event blocking contract (works for
-        // UserPromptSubmit / PreToolUse alike). Avoids relying on any single
-        // hook's JSON schema, so the guard stays portable across CC versions.
+        // Exit 2 + stderr is the PreToolUse blocking contract. Avoids relying
+        // on the hook's JSON schema, so the guard stays portable across CC
+        // versions.
         process.stderr.write(result.reason || 'Blocked by devsphere-guard');
         process.exit(2);
       }
