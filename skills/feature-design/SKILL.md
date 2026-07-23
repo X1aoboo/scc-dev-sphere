@@ -166,14 +166,18 @@ Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-review
 
 ## 步骤5. 批准并发布 Baseline
 
-向用户展示设计目标、最终方案、关键取舍、Lint、Review 结论、已修订问题和残余风险，明确请求最终批准。
+向用户展示设计目标、最终方案、关键取舍、Lint、Review 结论、已修订问题和残余风险，通过 `AskUserQuestion` 明确请求最终批准。
 
-用户批准后运行：
+用户明确批准后，由主会话直接落盘，无需外部审批接口。`approvedBy` 固定为 `"human"`，表示批准决定来自用户。
+
+`acceptedRisks` 写入用户接受的残余风险；无残余风险时使用 `[]`。以下为无残余风险的批准示例：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '<approval-json>'
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '{"approvedBy":"human","acceptedRisks":[],"summary":"用户已批准当前 Design Draft 作为 Baseline"}'
 node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <designType>
 ```
+
+只有批准成功后才运行 `publish`。失败时检查 JSON 和 Draft/Lint/Review hash。
 
 `publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
 

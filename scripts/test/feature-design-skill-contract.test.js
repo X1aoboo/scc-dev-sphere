@@ -104,6 +104,18 @@ test('feature-design delegates one centralized review and leaves top-level state
   assert.doesNotMatch(skill, /plan-reviews|record-reviews|allowedReads|disposition|plan-cross-review|record-cross-review/);
 });
 
+test('feature-design turns explicit user approval into the canonical human approval record', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  const approvalStep = skill.match(/## 步骤5\. 批准并发布 Baseline([\s\S]*?)完成条件：/)[1];
+
+  assert.match(approvalStep, /AskUserQuestion/);
+  assert.match(approvalStep, /"approvedBy"\s*:\s*"human"/);
+  assert.match(approvalStep, /"acceptedRisks"\s*:/);
+  assert.match(approvalStep, /"summary"\s*:/);
+  assert.match(approvalStep, /主会话.*直接落盘/s);
+  assert.match(approvalStep, /无需外部审批接口/);
+});
+
 test('feature-design sends natural-language questions to knowledge-query and keeps adoption in main', () => {
   const skill = read('skills/feature-design/SKILL.md');
   assert.match(skill, /调用 `knowledge-query` Agent/);
