@@ -143,6 +143,7 @@ Requirement → Business Design → Solution Design → Implementation Design �
 |---|---|
 | 工作流入口 | [`workflow`](skills/workflow/SKILL.md)、[`status`](skills/status/SKILL.md) |
 | Feature 生命周期 | [`feature-init`](skills/feature-init/SKILL.md)、[`feature-clarify`](skills/feature-clarify/SKILL.md)、[`feature-design`](skills/feature-design/SKILL.md)、[`feature-approve`](skills/feature-approve/SKILL.md)、[`feature-plan-implementation`](skills/feature-plan-implementation/SKILL.md)、[`feature-implement`](skills/feature-implement/SKILL.md)、[`feature-verify`](skills/feature-verify/SKILL.md) |
+| 设计通用能力 | [`design-draft`](skills/design-draft/SKILL.md) |
 | 开发专项 | [`backend-development`](skills/backend-development/SKILL.md)、[`frontend-development`](skills/frontend-development/SKILL.md)、[`fullstack-change-planning`](skills/fullstack-change-planning/SKILL.md) |
 | 知识配置 | [`knowledge-config`](skills/knowledge-config/SKILL.md) |
 

@@ -63,17 +63,19 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 
 ## 步骤3. 形成可评审 Draft
 
-设计收敛后才按当前 Spec 写入 `work/<slug>/draft.md`。Draft 必须准确表达 Confirmed Design，可脱离聊天独立理解，不添加未讨论的目标、约束或方案。
+直接执行 `/scc-dev-sphere:design-draft`，将当前会话中已经确认的完整设计作为设计来源，将步骤1加载的当前 Spec 作为模板，并将 `work/<slug>/draft.md` 作为目标文件。
 
-运行：
+调用期间当前顶层任务保持 `in_progress`。只有 `design-draft` 已完成对照检查，确认最终有效设计及必要上下文均已充分写入 Draft，才能运行：
 
 ```bash
 node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js lint <taskPath> <designType>
 ```
 
-Lint 只检查 frontmatter、核心章节、适用性说明、占位符和格式。Lint 失败时修复确定性问题；若修复会改变设计语义，返回任务 2 讨论并确认。
+Lint 只检查 frontmatter、核心章节、适用性说明、占位符和格式。Lint 失败时修复确定性问题。
 
-完成条件：Draft 内容完整、无未确认语义、可独立评审，当前 Draft hash 的 Lint 为 `pass`。
+如果 `design-draft` 或 Lint 修复过程发现设计冲突、缺口、未决事项，或者必须新增设计语义才能完成 Draft，不得自行补全或继续 Lint。将任务 3 恢复为 `pending`，将任务 2 恢复为 `in_progress`，重新调用 `feature-design-analysis` 完成分析和用户确认，再重新进入任务 3。
+
+完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft；Draft 可脱离聊天独立评审；不存在未确认语义；当前 Draft hash 的 Lint 为 `pass`。
 
 ## 步骤4. 集中 Review 并修订
 

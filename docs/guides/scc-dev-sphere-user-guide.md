@@ -1483,5 +1483,6 @@ workflow（feature-verify）
 | `/scc-dev-sphere:workflow` | 推进下一阶段 |
 | `/scc-dev-sphere:status` | 只读查看当前状态 |
 | `/scc-dev-sphere:knowledge-config` | 查询和维护知识源 |
+| `/scc-dev-sphere:design-draft` | 将当前会话中已完成的设计无损固化为设计稿 |
 
 其余 Feature Skill 正常由 Workflow 调用，不建议作为日常主入口。

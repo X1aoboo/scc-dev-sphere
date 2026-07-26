@@ -32,6 +32,21 @@ test('feature-design exposes five outcome tasks and delegates semantic analysis 
   assert.doesNotMatch(skill, /businessDesign\s*→\s*solutionDesign|第一个缺失 Artifact|nextAction|Review Matrix/i);
 });
 
+test('feature-design delegates lossless Draft writing and retains workflow-owned Lint', () => {
+  const skill = read('skills/feature-design/SKILL.md');
+  const task3 = skill.match(/## 步骤3\. 形成可评审 Draft([\s\S]*?)## 步骤4\./)[1];
+
+  assert.match(task3, /\/scc-dev-sphere:design-draft/);
+  assert.match(task3, /当前会话中已经确认的完整设计.*设计来源/s);
+  assert.match(task3, /当前 Spec.*模板/s);
+  assert.match(task3, /work\/<slug>\/draft\.md.*目标文件/s);
+  assert.match(task3, /design-draft.*完成对照检查/s);
+  assert.match(task3, /devsphere-design\.js lint <taskPath> <designType>/);
+  assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);
+  assert.match(task3, /重新调用 `feature-design-analysis`/);
+  assert.match(task3, /最终有效设计及必要上下文.*完整、忠实/s);
+});
+
 test('feature-design keeps external evidence and decision persistence out of its contract', () => {
   const skill = read('skills/feature-design/SKILL.md');
   const taskHarness = skill.match(/## 步骤0\. 创建执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
