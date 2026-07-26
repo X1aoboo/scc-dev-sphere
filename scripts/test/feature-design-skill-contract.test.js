@@ -32,35 +32,21 @@ test('feature-design exposes five outcome tasks and delegates semantic analysis 
   assert.doesNotMatch(skill, /businessDesign\s*→\s*solutionDesign|第一个缺失 Artifact|nextAction|Review Matrix/i);
 });
 
-test('feature-design maintains Evidence and Decision as atomic non-gating side effects', () => {
+test('feature-design keeps external evidence and decision persistence out of its contract', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const analysis = read('skills/feature-design-analysis/SKILL.md');
-  const taskHarness = skill.match(/## 执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
+  const taskHarness = skill.match(/## 步骤0\. 创建执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
 
   assert.strictEqual((taskHarness.match(/^\d\. \*\*/gm) || []).length, 5);
-  assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*.*Evidence\/Decision.*已登记.*写入失败.*已揭示/s);
-  assert.match(taskHarness, /4\. \*\*集中 Review 并修订至满足发布条件\*\*.*Review.*新知识.*新取舍.*维护/s);
-  assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 1);
-  assert.match(skill, /knowledge-query.*附来源的知识结论.*主会话.*采用.*支持或改变.*设计/s);
-  assert.match(skill, /合理替代方案.*残余风险.*用户.*明确确认/s);
-  assert.match(skill, /原子副作用.*不进入.*设计模型/s);
-  assert.match(skill, /不要.*写入结果.*ID.*supersedes.*回写.*work notes/s);
-  assert.match(skill, /notes.*事实.*已确认设计.*开放事项/s);
-  assert.match(skill, /成功.*静默.*失败.*揭示/s);
-  assert.match(skill, /不.*Draft.*Lint.*Review.*批准.*发布.*门禁/s);
-  assert.doesNotMatch(analysis, /EV\/DEC ID|Evidence ID|Decision ID/);
+  assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*/);
+  assert.match(taskHarness, /4\. \*\*集中 Review 并修订至满足发布条件\*\*/);
+  assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 0);
+  assert.doesNotMatch(skill, /register-evidence-record|devsphere-decisions\.js add|devsphere-decisions\.js init/);
 });
 
-test('feature-design owns exact persistence commands for delegated semantic events', () => {
+test('feature-design delegates analysis without embedding persistence commands', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const task2 = skill.match(/## (?:步骤)?2\. 完成并确认核心设计([\s\S]*?)## (?:步骤)?3\./)[1];
-
-  assert.match(task2, /Evidence\/Decision.*本 Skill.*维护合同/s);
-  assert.match(skill, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record \$\{CLAUDE_PROJECT_DIR\} <<'JSON'/);
-  assert.match(skill, /<evidence-json>\nJSON/);
-  assert.match(skill, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/devsphere-decisions\.js add <taskPath> <slug> '<decision-json>'/);
-  assert.match(skill, /evidence.*实际.*EV ID.*空数组/s);
-  assert.doesNotMatch(skill, /devsphere-decisions\.js init/);
+  assert.match(skill, /feature-design-analysis/);
+  assert.doesNotMatch(skill, /register-evidence-record|devsphere-decisions\.js add|devsphere-decisions\.js init/);
 });
 
 test('feature-design maintains only semantic knowledge introduced by Review', () => {
@@ -111,18 +97,19 @@ test('feature-design turns explicit user approval into the canonical human appro
   assert.match(approvalStep, /AskUserQuestion/);
   assert.match(approvalStep, /"approvedBy"\s*:\s*"human"/);
   assert.match(approvalStep, /"acceptedRisks"\s*:/);
+  assert.match(approvalStep, /"acceptedRisks"\s*:\s*\[\]/);
+  assert.match(approvalStep, /"acceptedRisks"\s*:\s*\["<accepted-risk>"\]/);
+  assert.match(approvalStep, /不得保留占位符/);
   assert.match(approvalStep, /"summary"\s*:/);
   assert.match(approvalStep, /主会话.*直接落盘/s);
   assert.match(approvalStep, /无需外部审批接口/);
 });
 
-test('feature-design sends natural-language questions to knowledge-query and keeps adoption in main', () => {
-  const skill = read('skills/feature-design/SKILL.md');
+test('feature-design-analysis owns factual investigation and user-facing design questions', () => {
   const analysis = read('skills/feature-design-analysis/SKILL.md');
   assert.match(analysis, /创建 `knowledge-query` SubAgent/);
   assert.match(analysis, /不要直接向用户询问任何你自己可以查到的信息/);
   assert.match(analysis, /现在就处理其余的 frontier 问题/);
-  assert.match(skill, /knowledge-query.*附来源的知识结论.*主会话.*采用/s);
   assert.doesNotMatch(analysis, /workspaceRoot|knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
 });
 

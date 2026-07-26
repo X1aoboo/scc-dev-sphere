@@ -7,44 +7,19 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 
 在主会话中完成当前一个设计活动。业务设计、方案设计、实现设计和测试设计共享下列固定过程；设计类型只决定加载的专业 Reference，不规定活动之间的顺序或依赖。
 
-## 执行任务
+## 步骤0. 创建执行任务
 
-每次调用本 Skill，都立即使用当前环境的任务管理能力为当前一个设计活动创建以下五个线性顶层任务，并将第一项标记为 `in_progress` 后再开始实质工作：
+立即使用当前环境的任务管理能力为当前一个设计活动创建以下五个线性顶层任务，并将第一项标记为 `in_progress` 后再开始实质工作：
 
-1. **恢复设计工作空间、识别当前设计活动并建立专业上下文**：当前设计类型、恢复位置、持久化事实和专业 Reference 都有可靠依据。
-2. **完成并确认核心设计**：语义分析循环已收敛，专业覆盖完整，用户确认完整设计内容；符合准入条件的 Evidence/Decision 已登记，或未解决的写入失败已揭示。
-3. **形成可评审的 Design Draft**：Draft 可脱离聊天独立理解、只表达已确认设计，并通过确定性 Lint。
-4. **集中 Review 并修订至满足发布条件**：所有适用 Checklist 已由单个隔离 `design-reviewer` 完整执行，blocking findings 已关闭，语义修订后已完整复评；Review 引入的新知识和新取舍已按同一合同维护。
-5. **获得用户最终批准并发布 Design Baseline**：获批 Draft 已原样发布，并向调用者返回明确完成事实。
+1. **恢复设计工作空间、识别当前设计活动并建立专业上下文**
+2. **完成并确认核心设计**
+3. **形成可评审的 Design Draft**
+4. **集中 Review 并修订至满足发布条件**
+5. **获得用户最终批准并发布 Design Baseline**
 
 任务状态必须投影当前实际工作焦点。本次设计活动尚未完成时，始终只有当前一项任务处于 `in_progress`，后续任务保持 `pending`。开始下一项任务的任何实质工作前，先将当前任务标记为 `completed`，再将下一项标记为 `in_progress`；等待用户回答或 Reviewer 返回时，当前任务保持 `in_progress`。只有对应完成条件实际满足后才能完成任务；任务更新返回成功后，以该结果继续推进，不重复提交相同状态。
 
 任务增强当前会话对过程的遵循，不作为流程事实来源。查询、问题、设计段落、Reviewer、finding 和局部修订留在所属顶层任务内。
-
-## Evidence 与 Decision
-
-Evidence/Decision 是主会话在语义事件发生后的单条原子副作用，不进入当前设计模型、design tree/frontier 或顶层任务；EV/DEC ID 只作创建引用时的即时技术句柄。不要把写入结果、ID 或 `supersedes` 映射回写到当前设计模型或 work notes；notes 只按既有结构记录相应的事实、已确认设计和开放事项。
-
-- **Evidence**：仅当 `knowledge-query` 返回并附来源的知识结论被主会话结合完整上下文明确采用，且实际支持或改变当前设计判断时才登记。用户对同一知识主题的事实补充可作为 `user` source 合并。未采用的查询结论、未找到的信息、可直接恢复的代码或 Artifact 事实、普通设计讨论中的用户事实、临时理解、建议和 Reviewer finding 不是 Evidence。
-- **Decision**：仅当存在合理替代方案，或需要接受残余风险或高成本约束，且不同选择会实质改变行为、边界、契约、实现或测试范围、成本或风险，并由用户明确确认最终选择时才登记。整段普通确认、事实或术语澄清、例行参数和必然实现细节不是 Decision。
-
-只有主会话执行维护。单条写入成功时静默继续当前设计；失败时先修正并重试，仍失败则揭示未持久化内容、原因及对恢复的影响，然后继续现有流程。Evidence/Decision 不成为 Draft、Lint、Review、批准或发布门禁。
-
-登记 Evidence：
-
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence-record ${CLAUDE_PROJECT_DIR} <<'JSON'
-<evidence-json>
-JSON
-```
-
-登记 Decision：
-
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js add <taskPath> <slug> '<decision-json>'
-```
-
-Decision 的 `evidence` 只填实际支持该选择的 EV ID；没有这类 Evidence 时使用空数组，不为填充引用制造 Evidence。
 
 ## 步骤1. 恢复工作空间并加载专业上下文
 
@@ -129,14 +104,23 @@ Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-review
 
 用户明确批准后，由主会话直接落盘，无需外部审批接口。`approvedBy` 固定为 `"human"`，表示批准决定来自用户。
 
-`acceptedRisks` 写入用户接受的残余风险；无残余风险时使用 `[]`。以下为无残余风险的批准示例：
+根据是否存在用户接受的残余风险，选择一条批准命令：
 
 ```bash
+# 无残余风险
 node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '{"approvedBy":"human","acceptedRisks":[],"summary":"用户已批准当前 Design Draft 作为 Baseline"}'
+
+# 有残余风险：将 <accepted-risk> 替换为实际风险，不得保留占位符
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '{"approvedBy":"human","acceptedRisks":["<accepted-risk>"],"summary":"用户已接受所列残余风险，并批准当前 Design Draft 作为 Baseline"}'
+```
+
+批准成功后运行：
+
+```bash
 node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <designType>
 ```
 
-只有批准成功后才运行 `publish`。失败时检查 JSON 和 Draft/Lint/Review hash。
+批准失败时检查 JSON 和 Draft/Lint/Review hash。
 
 `publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
 
