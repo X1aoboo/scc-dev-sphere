@@ -30,6 +30,22 @@ Evidence/Decision 是主会话在语义事件发生后的单条原子副作用�
 
 只有主会话执行维护。单条写入成功时静默继续当前设计；失败时先修正并重试，仍失败则揭示未持久化内容、原因及对恢复的影响，然后继续现有流程。Evidence/Decision 不成为 Draft、Lint、Review、批准或发布门禁。
 
+登记 Evidence：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence-record ${CLAUDE_PROJECT_DIR} <<'JSON'
+<evidence-json>
+JSON
+```
+
+登记 Decision：
+
+```bash
+node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js add <taskPath> <slug> '<decision-json>'
+```
+
+Decision 的 `evidence` 只填实际支持该选择的 EV ID；没有这类 Evidence 时使用空数组，不为填充引用制造 Evidence。
+
 ## 步骤1. 恢复工作空间并加载专业上下文
 
 从调用上下文取得 `<taskPath>`，运行：
@@ -62,70 +78,13 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 
 ## 步骤2. 完成并确认核心设计
 
-### 建立当前设计模型
+直接执行 `/scc-dev-sphere:feature-design-analysis` 调用专业设计分析 Skill，使用步骤1已经加载的当前设计上下文、Design Guide 和 Spec 完成交互式分析与设计确认。
 
-先调查，再提问。综合目标、现状、约束、相关设计、代码、Evidence 和可用知识，持续维护当前设计模型：
+调用期间当前顶层任务保持 `in_progress`。本步骤触发的 Evidence/Decision 仍按照本 Skill 的维护合同处理。
 
-- 已核验事实及来源；
-- 已确认设计；
-- 暂定理解及可能推翻它的假设；
-- 开放事项、关键取舍和残余风险。
+只有用户已经确认完整设计收敛，并明确允许进入 Draft，才能完成当前任务。不得在分析完成前生成或修改 Draft。
 
-能从项目或知识源查到的事实由你调查。只有用户掌握的上下文和真正需要用户承担的设计决策才提问。需要查资料时，调用 `knowledge-query` Agent，用自然语言说明要查明什么以及必要的设计背景。等待查询完成，只使用它返回的最终结果。彼此无关的问题可以分别查询。查询结果中的“未找到”只说明相关来源没有答案。
-
-### 在语义事件后立即持久化
-
-当 `knowledge-query` 返回并附来源的知识结论被主会话采用，并且实际支持或改变当前设计时，立即登记一条 Evidence：
-
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/knowledge-query.js register-evidence-record ${CLAUDE_PROJECT_DIR} <<'JSON'
-<evidence-json>
-JSON
-```
-
-当用户明确确认一个实质取舍时，立即登记一条 Decision：
-
-```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-decisions.js add <taskPath> <slug> '<decision-json>'
-```
-
-Decision 的 `evidence` 只填实际支持该选择的 EV ID；没有这类 Evidence 时使用空数组，不为填充引用制造 Evidence。两类登记成功后不请求额外确认、不单独汇报 ID；失败时执行前述修正、重试和揭示合同。
-
-### 运行语义分析循环
-
-把设计问题按决策依赖组织成当前会话中的 **design tree**。前提已经满足、现在无需猜测即可讨论的问题构成 **frontier**。design tree/frontier 只用于推理，不持久化为游标、ID 或依赖图。
-
-循环执行：
-
-1. 重新审视整个设计模型和 Design Guide 的专业透镜。
-2. 从 frontier 选择最可能改变设计、阻塞其他判断、风险最高或返工代价最大的问题。
-3. 调查回答该问题所需的事实。
-4. 形成当前理解、推荐方案、理由、可行替代方案和主要代价。
-5. 指出矛盾、薄弱假设和风险；有依据时直接挑战用户方案。
-6. 默认只深入讨论一个高价值问题；只有真正独立、低耦合的问题才同轮批量讨论。
-7. 根据用户回答更新整个设计模型，说明变化及影响，重新计算 design tree/frontier。
-
-每个问题必须改变或验证设计判断。模板章节是覆盖约束，不是问题清单。简单设计可以很短，但仍需完成事实调查、专业判断和明确确认。
-
-### 动态组织并确认设计
-
-按依赖、内聚性、复杂度和风险组织 **Design Sections**。每次呈现一个已经完成内部推演的段落，说明推荐、替代方案和代价，获得用户确认后再继续。
-
-把用户确认后的内容视为 **Confirmed Design**。新事实或 Review finding 需要修改时，先说明原设计、拟修改内容、原因和影响，再取得重新确认。影响范围不可靠时请用户确认。
-
-收敛前完整核对：
-
-- frontier 没有会实质改变设计的开放项；
-- 关键事实有可核验依据；
-- 重要取舍和残余风险已经明确；
-- Design Guide 的专业收敛标准逐项满足；
-- Spec 核心内容全部覆盖；
-- 每项条件内容都有生成位置或明确不适用理由；
-- 高风险或有歧义的省略已由用户决定。
-
-向用户呈现完整设计与覆盖结果并取得整体确认。
-
-完成条件：上述收敛项全部可检查地满足，用户明确确认当前设计内容已收敛；所有已触发的维护动作均已成功，或尚未解决的写入失败已揭示。当前设计可以在没有任何符合准入条件的记录时正常收敛。
+完成条件：用户确认设计已收敛，并同意生成 Design Draft。
 
 ## 步骤3. 形成可评审 Draft
 

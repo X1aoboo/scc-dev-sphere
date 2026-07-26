@@ -8,32 +8,34 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
 
-test('feature-design exposes five outcome tasks and keeps semantic analysis in the main skill', () => {
+test('feature-design exposes five outcome tasks and delegates semantic analysis to its internal skill', () => {
   const skill = read('skills/feature-design/SKILL.md');
+  const analysis = read('skills/feature-design-analysis/SKILL.md');
   for (const phrase of [
     /恢复设计工作空间.*建立专业上下文/s,
     /完成并确认核心设计/,
     /形成可评审.*Draft/,
     /集中 Review.*修订/s,
     /发布 Design Baseline/,
-    /先调查，再提问/,
+  ]) assert.match(skill, phrase);
+
+  assert.match(skill, /\/scc-dev-sphere:feature-design-analysis/);
+  assert.match(analysis, /^user-invocable: false$/m);
+  for (const phrase of [
     /design tree/i,
     /frontier/i,
-    /当前理解.*推荐方案.*理由.*替代方案.*主要代价/s,
-    /矛盾.*薄弱假设.*风险/s,
-    /重新计算 design tree\/frontier/i,
     /Design Sections/,
-    /Confirmed Design/,
-    /整体确认/,
-  ]) assert.match(skill, phrase);
+    /完整设计已经由用户分段确认/,
+    /用户明确确认设计已经收敛并允许进入 Draft/,
+  ]) assert.match(analysis, phrase);
 
   assert.doesNotMatch(skill, /businessDesign\s*→\s*solutionDesign|第一个缺失 Artifact|nextAction|Review Matrix/i);
 });
 
 test('feature-design maintains Evidence and Decision as atomic non-gating side effects', () => {
   const skill = read('skills/feature-design/SKILL.md');
+  const analysis = read('skills/feature-design-analysis/SKILL.md');
   const taskHarness = skill.match(/## 执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
-  const designModel = skill.match(/### 建立当前设计模型([\s\S]*?)### 运行语义分析循环/)[1];
 
   assert.strictEqual((taskHarness.match(/^\d\. \*\*/gm) || []).length, 5);
   assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*.*Evidence\/Decision.*已登记.*写入失败.*已揭示/s);
@@ -46,20 +48,18 @@ test('feature-design maintains Evidence and Decision as atomic non-gating side e
   assert.match(skill, /notes.*事实.*已确认设计.*开放事项/s);
   assert.match(skill, /成功.*静默.*失败.*揭示/s);
   assert.match(skill, /不.*Draft.*Lint.*Review.*批准.*发布.*门禁/s);
-  assert.doesNotMatch(designModel, /EV\/DEC ID|Evidence ID|Decision ID/);
+  assert.doesNotMatch(analysis, /EV\/DEC ID|Evidence ID|Decision ID/);
 });
 
-test('feature-design colocates exact persistence commands with Task 2 semantic events', () => {
+test('feature-design owns exact persistence commands for delegated semantic events', () => {
   const skill = read('skills/feature-design/SKILL.md');
   const task2 = skill.match(/## (?:步骤)?2\. 完成并确认核心设计([\s\S]*?)## (?:步骤)?3\./)[1];
 
-  assert.match(task2, /knowledge-query.*附来源的知识结论.*采用.*立即登记.*Evidence/s);
-  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record \$\{CLAUDE_PROJECT_DIR\} <<'JSON'/);
-  assert.match(task2, /<evidence-json>\nJSON/);
-  assert.match(task2, /用户.*确认.*实质取舍.*立即登记.*Decision/s);
-  assert.match(task2, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/devsphere-decisions\.js add <taskPath> <slug> '<decision-json>'/);
-  assert.match(task2, /evidence.*实际.*EV ID.*空数组/s);
-  assert.match(task2, /所有.*已触发.*维护动作.*成功.*失败.*揭示/s);
+  assert.match(task2, /Evidence\/Decision.*本 Skill.*维护合同/s);
+  assert.match(skill, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/knowledge-query\.js register-evidence-record \$\{CLAUDE_PROJECT_DIR\} <<'JSON'/);
+  assert.match(skill, /<evidence-json>\nJSON/);
+  assert.match(skill, /node \$\{CLAUDE_SKILL_DIR\}\/\.\.\/\.\.\/scripts\/devsphere-decisions\.js add <taskPath> <slug> '<decision-json>'/);
+  assert.match(skill, /evidence.*实际.*EV ID.*空数组/s);
   assert.doesNotMatch(skill, /devsphere-decisions\.js init/);
 });
 
@@ -118,13 +118,12 @@ test('feature-design turns explicit user approval into the canonical human appro
 
 test('feature-design sends natural-language questions to knowledge-query and keeps adoption in main', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  assert.match(skill, /调用 `knowledge-query` Agent/);
-  assert.match(skill, /用自然语言说明要查明什么以及必要的设计背景/);
-  assert.match(skill, /等待查询完成，只使用它返回的最终结果/);
-  assert.match(skill, /彼此无关的问题可以分别查询/);
+  const analysis = read('skills/feature-design-analysis/SKILL.md');
+  assert.match(analysis, /创建 `knowledge-query` SubAgent/);
+  assert.match(analysis, /不要直接向用户询问任何你自己可以查到的信息/);
+  assert.match(analysis, /现在就处理其余的 frontier 问题/);
   assert.match(skill, /knowledge-query.*附来源的知识结论.*主会话.*采用/s);
-  assert.doesNotMatch(skill, /workspaceRoot|knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
-  assert.doesNotMatch(skill, /创建独立subagent|Query\/Data Source Subagent|预加载的 `knowledge-query`/);
+  assert.doesNotMatch(analysis, /workspaceRoot|knowledgeQueryScriptPath|输入为 .*`topic`.*`purpose`/);
 });
 
 test('Design Guides contain professional differences and Specs remain independent contracts', () => {
