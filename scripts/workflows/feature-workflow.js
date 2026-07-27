@@ -118,10 +118,9 @@ function resolveNextAction(taskPath, state) {
     case 'initialized':
       return makeAction('run_skill', state, null, null, 'feature-clarify', [],
         'Clarify the existing proposal and publish an approved Requirement Baseline before design.',
-        ['inputs/proposal.md'],
+        listInputArtifacts(taskPath),
         ['inputs/requirement-clarification.md'],
         {
-          proposalPath: 'inputs/proposal.md',
           clarificationPath: 'inputs/requirement-clarification.md',
         });
     case 'clarified':

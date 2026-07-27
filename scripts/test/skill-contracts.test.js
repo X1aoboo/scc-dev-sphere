@@ -84,10 +84,10 @@ test('feature-clarify records one clarification artifact and fails closed on rev
   const skill = readSkill('feature-clarify');
   assert.match(skill, /requirement-clarification-contract\.md/);
   assert.match(skill, /requirement-clarification-review\.md/);
-  assert.match(skill, /requirement-clarification\.md/);
-  assert.match(skill, /proposalPath/);
+  assert.match(skill, /inputsPath/);
   assert.match(skill, /clarificationPath/);
-  assert.match(skill, /文件路径/);
+  assert.match(skill, /全部文件/);
+  assert.doesNotMatch(skill, /proposalPath/);
   assert.match(skill, /缺失、报错、格式无效或仅返回运行状态/);
   assert.match(skill, /不得由主会话自行评审/);
   assert.match(skill, /需求澄清结果已经用户批准/);
@@ -111,7 +111,8 @@ test('requirement clarification contract records only confirmed clarification re
     'requirement-clarification-contract.md',
   ), 'utf8');
   assert.match(contract, /只记录需求澄清产生的结果/);
-  assert.match(contract, /不复述未变化的原始需求/);
+  assert.match(contract, /不复述未变化的需求输入/);
+  assert.match(contract, /`inputs\/`/);
   assert.match(contract, /目标/);
   assert.match(contract, /范围与排除项/);
   assert.match(contract, /验收/);
@@ -134,10 +135,10 @@ test('requirement clarification reviewer reviews the combined baseline without c
   assert.match(reviewer, /\[advisory\]/);
   assert.match(reviewer, /不要与用户交互/);
   assert.match(reviewer, /完整读取/);
-  assert.match(reviewer, /proposal\.md/);
+  assert.match(reviewer, /`inputs\/` 目录中的全部文件/);
   assert.match(reviewer, /requirement-clarification\.md/);
   assert.match(reviewer, /共同构成/);
-  assert.match(reviewer, /不要求澄清文件复制原始需求/);
+  assert.match(reviewer, /不要求澄清文件复制其他需求输入/);
   assert.match(reviewer, /未固化方案/);
   assert.match(reviewer, /来源/);
 });
@@ -167,6 +168,12 @@ test('workflow executes every no-Agent action in the main session', () => {
   assert.match(section[0], /调用 instruction/i);
   assert.match(section[0], /feature-design/);
   assert.match(section[0], /set-task-status \$\{CLAUDE_PROJECT_DIR\} designing/);
+});
+
+test('workflow declares every feature-clarify required artifact as a requirement source', () => {
+  const workflow = readSkill('workflow');
+  assert.match(workflow, /nextAction\.skill === 'feature-clarify'[\s\S]*全部 `requiredArtifacts` 都是需求数据源/);
+  assert.match(workflow, /不得只读取 `proposal\.md`/);
 });
 
 test('workflow owns clarified state sync only after the approved baseline completion fact', () => {

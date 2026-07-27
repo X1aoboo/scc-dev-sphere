@@ -10,15 +10,21 @@ const { resolveNextAction } = require('../workflows/feature-workflow');
 
 test('initialized routes to feature-clarify before design', () => {
   const { taskPath } = makeTask();
+  const fs = require('node:fs');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+  fs.mkdirSync(path.join(taskPath, 'inputs', 'supporting'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'supporting', 'domain.md'), '# Domain\n');
   const action = resolveNextAction(taskPath, readState(taskPath));
 
   assert.deepStrictEqual(action.kind, 'run_skill');
   assert.deepStrictEqual(action.skill, 'feature-clarify');
   assert.deepStrictEqual(action.agents, []);
-  assert.deepStrictEqual(action.requiredArtifacts, ['inputs/proposal.md']);
+  assert.deepStrictEqual(action.requiredArtifacts, [
+    'inputs/proposal.md',
+    'inputs/supporting/domain.md',
+  ]);
   assert.deepStrictEqual(action.expectedArtifacts, ['inputs/requirement-clarification.md']);
   assert.deepStrictEqual(action.args, {
-    proposalPath: 'inputs/proposal.md',
     clarificationPath: 'inputs/requirement-clarification.md',
   });
   assert.match(action.reason, /clarif/i);

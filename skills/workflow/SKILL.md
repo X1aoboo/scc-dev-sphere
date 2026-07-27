@@ -154,6 +154,8 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design
 
 instruction 应说明本次需要读取的产物、工作产物路径和正式输出路径，但不得把整段命令字符串放进 `nextAction.args`，不得通过 Shell 调用 Skill，也不得让 resolver 执行动作。完成后根据 Skill 输出继续派发。
 
+如果 `nextAction.skill === 'feature-clarify'`，instruction 必须明确：全部 `requiredArtifacts` 都是需求数据源，必须完整读取，不得只读取 `proposal.md`；`nextAction.args.clarificationPath` 是唯一澄清结果文件。
+
 如果 `nextAction.stage === 'external-test-design'`，instruction 还必须明确：全部 `requiredArtifacts` 都是本次输入，不得筛选或忽略；全部输出写入 `taskPath/nextAction.args.outputDir`；workflow 已取得本次启动确认，Skill 执行过程中不再发起人工交互。外部 Skill 正常结束才算本次派发完成。
 
 如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：

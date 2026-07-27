@@ -19,7 +19,9 @@ description: 在进入设计前编排需求澄清、独立 Review 和用户批�
 
 ## 任务 1：澄清、确认并记录需求
 
-从调用上下文取得 `proposalPath` 和 `clarificationPath`（当前标准路径为 `inputs/requirement-clarification.md`）。完整读取 `proposalPath` 后，直接调用 `/scc-dev-sphere:feature-clarify-analysis`，由它完成需求分析和用户确认。
+从调用上下文取得 `taskPath`、全部 `requiredArtifacts` 和 `clarificationPath`。`inputsPath` 为 `<taskPath>/inputs`；完整读取 `requiredArtifacts` 中的全部文件，不得只读取 `proposal.md`。已存在的 `clarificationPath` 用于恢复此前记录。
+
+随后直接调用 `/scc-dev-sphere:feature-clarify-analysis`，将全部需求输入作为分析上下文，由它完成需求分析和用户确认。
 
 用户确认后，读取 [requirement-clarification-contract.md](references/requirement-clarification-contract.md)，将已经确认的需求澄清结果写入 `clarificationPath`。只做符合 Contract 的组织和记录，不重新分析，不重写完整原始需求，也不引入 Draft。
 
@@ -27,9 +29,9 @@ description: 在进入设计前编排需求澄清、独立 Review 和用户批�
 
 ## 任务 2：独立 Review 并修订
 
-读取 [requirement-clarification-review.md](references/requirement-clarification-review.md)，创建全新的独立 Reviewer Subagent。只向 Reviewer 提供文件路径：
+读取 [requirement-clarification-review.md](references/requirement-clarification-review.md)，创建全新的独立 Reviewer Subagent。只向 Reviewer 提供路径：
 
-- `proposalPath`
+- `inputsPath`
 - `clarificationPath`
 - `contractPath`
 - `reviewGuidePath`

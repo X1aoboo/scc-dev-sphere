@@ -1,12 +1,11 @@
 # Requirement Clarification Review
 
-独立评审 `proposal.md` 与 `requirement-clarification.md` 共同构成的 Requirement Baseline。
+独立评审 `inputs/` 中全部文件共同构成的 Requirement Baseline。
 
 ## 输入与独立性
 
-根据主会话提供的文件路径，自行完整读取：
+根据主会话提供的 `inputsPath`，自行完整读取 `inputs/` 目录中的全部文件，包括：
 
-- `proposal.md`
 - `requirement-clarification.md`
 - Requirement Clarification Contract
 - 判断结论所必需的相关来源
@@ -22,9 +21,9 @@
 - 原始需求中的未固化方案是否被错误升级为正式需求。
 - 新确认的有用事实是否记录并保留来源。
 - 后移事项是否由用户授权，并说明影响、风险和最迟决策点。
-- 两个文件结合后是否足以直接进入设计。
+- 全部需求输入结合后是否足以直接进入设计。
 
-不要求澄清文件复制原始需求，也不要因为未复述 proposal 内容而报告遗漏。
+不要求澄清文件复制其他需求输入，也不要因为未复述这些内容而报告遗漏。
 
 ## 严重性
 
