@@ -16,11 +16,10 @@ test('initialized routes to feature-clarify before design', () => {
   assert.deepStrictEqual(action.skill, 'feature-clarify');
   assert.deepStrictEqual(action.agents, []);
   assert.deepStrictEqual(action.requiredArtifacts, ['inputs/proposal.md']);
-  assert.deepStrictEqual(action.expectedArtifacts, ['inputs/requirement.md']);
+  assert.deepStrictEqual(action.expectedArtifacts, ['inputs/requirement-clarification.md']);
   assert.deepStrictEqual(action.args, {
     proposalPath: 'inputs/proposal.md',
-    draftPath: 'inputs/requirement-draft.md',
-    baselinePath: 'inputs/requirement.md',
+    clarificationPath: 'inputs/requirement-clarification.md',
   });
   assert.match(action.reason, /clarif/i);
 });
@@ -29,13 +28,21 @@ test('clarified routes directly to feature-design', () => {
   const { taskPath } = makeTask();
   const state = readState(taskPath);
   state.status = 'clarified';
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n');
+  require('node:fs').mkdirSync(path.join(taskPath, 'inputs', 'supporting'), { recursive: true });
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'supporting', 'terms.md'), '# Terms\n');
 
   const action = resolveNextAction(taskPath, state);
 
   assert.deepStrictEqual(action.kind, 'run_skill');
   assert.deepStrictEqual(action.skill, 'feature-design');
   assert.deepStrictEqual(action.agents, []);
-  assert.deepStrictEqual(action.requiredArtifacts, ['inputs/requirement.md']);
+  assert.deepStrictEqual(action.requiredArtifacts, [
+    'inputs/proposal.md',
+    'inputs/requirement-clarification.md',
+    'inputs/supporting/terms.md',
+  ]);
   assert.deepStrictEqual(action.args, { designType: 'businessDesign' });
   assert.match(action.reason, /design/i);
 });
@@ -45,6 +52,8 @@ test('set-task-status starts design without legacy mode fields', () => {
   const initial = readState(taskPath);
   initial.status = 'clarified';
   writeState(taskPath, initial);
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n');
 
   const result = spawnSync('node', [
     path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
@@ -59,11 +68,31 @@ test('set-task-status starts design without legacy mode fields', () => {
   assert.strictEqual(state.ciCdRisk, undefined);
 });
 
+test('set-task-status blocks design until both required requirement inputs are non-empty', () => {
+  const fs = require('node:fs');
+  const { workspaceRoot, taskPath } = makeTask();
+  const initial = readState(taskPath);
+  initial.status = 'clarified';
+  writeState(taskPath, initial);
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+
+  const result = spawnSync('node', [
+    path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),
+    'set-task-status', workspaceRoot, 'designing',
+  ], { encoding: 'utf-8' });
+
+  assert.notStrictEqual(result.status, 0);
+  assert.match(result.stderr, /requirement-clarification\.md/);
+  assert.strictEqual(readState(taskPath).status, 'clarified');
+});
+
 test('set-task-status rejects legacy assessment arguments', () => {
   const { workspaceRoot, taskPath } = makeTask();
   const initial = readState(taskPath);
   initial.status = 'clarified';
   writeState(taskPath, initial);
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+  require('node:fs').writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n');
 
   const result = spawnSync('node', [
     path.join(__dirname, '..', 'workflows', 'feature-workflow.js'),

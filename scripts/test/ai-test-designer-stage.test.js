@@ -60,7 +60,10 @@ function baseline(taskPath, designType) {
 }
 
 function completeExternalInputs(taskPath) {
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement\n', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n', 'utf8');
+  fs.mkdirSync(path.join(taskPath, 'inputs', 'supporting'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'supporting', 'domain.md'), '# Domain\n', 'utf8');
   for (const designType of ['businessDesign', 'solutionDesign', 'implementationDesign']) {
     baseline(taskPath, designType);
   }
@@ -154,7 +157,9 @@ test('resolver synchronizes completed design facts and keeps external test desig
     outputDir: 'artifacts/test-design/',
   });
   assert.deepStrictEqual(externalAction.requiredArtifacts, [
-    'inputs/requirement.md',
+    'inputs/proposal.md',
+    'inputs/requirement-clarification.md',
+    'inputs/supporting/domain.md',
     'artifacts/business-design.md',
     'artifacts/solution-design.md',
     'artifacts/implementation-design.md',
@@ -205,10 +210,10 @@ test('external completion rejects builtin, wrong status, invalid design facts, a
   assert.throws(() => completeExternalTestDesign(externalWorkspace), /Baseline/i);
 
   completeExternalInputs(taskPath);
-  fs.rmSync(path.join(taskPath, 'inputs', 'requirement.md'));
-  assert.throws(() => completeExternalTestDesign(externalWorkspace), /Missing external test-design inputs/i);
+  fs.rmSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'));
+  assert.throws(() => completeExternalTestDesign(externalWorkspace), /Requirement Baseline inputs are missing/i);
 
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement\n', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n', 'utf8');
   state = readState(taskPath);
   state.requiredDesignTypes.push('testDesign');
   writeState(taskPath, state);

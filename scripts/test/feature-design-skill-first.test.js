@@ -153,7 +153,8 @@ test('formal design entry requires Requirement then upstream Design Baselines', 
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
 
   assert.throws(() => validateDesignEntry(taskPath, 'businessDesign'), /Requirement Baseline/i);
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved requirement.', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n\nDetailed requirement.', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n\nApproved clarification.', 'utf8');
   assert.strictEqual(validateDesignEntry(taskPath, 'businessDesign').valid, true);
   assert.throws(() => validateDesignEntry(taskPath, 'solutionDesign'), /business-design Baseline/i);
 

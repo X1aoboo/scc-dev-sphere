@@ -154,7 +154,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design
 
 instruction 应说明本次需要读取的产物、工作产物路径和正式输出路径，但不得把整段命令字符串放进 `nextAction.args`，不得通过 Shell 调用 Skill，也不得让 resolver 执行动作。完成后根据 Skill 输出继续派发。
 
-如果 `nextAction.stage === 'external-test-design'`，instruction 还必须明确：四份 `requiredArtifacts` 是本次输入；全部输出写入 `taskPath/nextAction.args.outputDir`；workflow 已取得本次启动确认，Skill 执行过程中不再发起人工交互。外部 Skill 正常结束才算本次派发完成。
+如果 `nextAction.stage === 'external-test-design'`，instruction 还必须明确：全部 `requiredArtifacts` 都是本次输入，不得筛选或忽略；全部输出写入 `taskPath/nextAction.args.outputDir`；workflow 已取得本次启动确认，Skill 执行过程中不再发起人工交互。外部 Skill 正常结束才算本次派发完成。
 
 如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：
 
@@ -186,7 +186,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-st
 
 main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程：
 
-1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“Requirement Baseline 已经用户批准并发布”时，才由外层 workflow 完成顶层状态迁移：
+1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“需求澄清结果已经用户批准”时，才由外层 workflow 完成顶层状态迁移：
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} clarified

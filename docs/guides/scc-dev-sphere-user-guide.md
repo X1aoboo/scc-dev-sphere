@@ -100,7 +100,7 @@ flowchart TB
 | 术语 | 用户需要知道的含义 |
 |---|---|
 | Proposal | 初始化时原样保存的需求输入 |
-| Requirement Draft | 需求澄清中的候选版本 |
+| Requirement Clarification | 对原始需求目标、边界和验收的已确认补充或修正 |
 | Requirement Baseline | 用户批准后供后续设计使用的正式需求 |
 | Design Draft | 当前设计的候选版本 |
 | Review | 对 Draft 的独立检查 |
@@ -309,11 +309,11 @@ Claude Code 可能在会话中显示“澄清需求”“形成 Draft”“执�
 - 本次范围、明确不做的内容；
 - 可以判断是否成功的验收结果；
 - 需要后移的事项及其风险；
-- 最终 Requirement。
+- 最终需求澄清结果。
 
-插件会形成 `inputs/requirement-draft.md`，完成独立 Review，并在你批准后发布 `inputs/requirement.md`。状态随之进入 `clarified`。
+插件会保留完整 `inputs/proposal.md`，把已确认的目标、边界、验收及修正记录到 `inputs/requirement-clarification.md`。独立 Review 通过并获得你批准后，两者与 `inputs/` 中其他材料共同构成 Requirement Baseline，状态进入 `clarified`。
 
-中断后先运行 `status`，再运行 `workflow`。已写入 Draft 的内容可以恢复；只存在于聊天中的分析可能需要重新确认。
+中断后先运行 `status`，再运行 `workflow`。已写入 `requirement-clarification.md` 的内容可以恢复；只存在于聊天中的分析可能需要重新确认。
 
 ### 5.2 三类内置设计
 
@@ -321,9 +321,9 @@ Workflow 当前按 Business → Solution → Implementation 的顺序推进。
 
 | 阶段 | 正式输入 | 主要讨论 | 正式输出 | 你要重点确认 |
 |---|---|---|---|---|
-| Business Design | `inputs/requirement.md` | 业务概念、场景、规则、状态、异常和业务验收 | `artifacts/business-design.md` | 没有静默扩大 Requirement，规则可以唯一判断 |
-| Solution Design | `artifacts/business-design.md` | 目标架构、接口、数据、集成、质量属性和技术取舍 | `artifacts/solution-design.md` | 架构责任清楚，限制、风险和回退已明确 |
-| Implementation Design | `artifacts/solution-design.md` | 实际模块、代码结构、接口、控制流、错误处理、迁移和测试行为 | `artifacts/implementation-design.md` | 设计能够落到真实代码并覆盖受影响模块 |
+| Business Design | `inputs/` 内全部文件 | 业务概念、场景、规则、状态、异常和业务验收 | `artifacts/business-design.md` | 没有静默扩大 Requirement，规则可以唯一判断 |
+| Solution Design | `inputs/` 内全部文件 + `artifacts/business-design.md` | 目标架构、接口、数据、集成、质量属性和技术取舍 | `artifacts/solution-design.md` | 架构责任清楚，限制、风险和回退已明确 |
+| Implementation Design | `inputs/` 内全部文件 + `artifacts/solution-design.md` | 实际模块、代码结构、接口、控制流、错误处理、迁移和测试行为 | `artifacts/implementation-design.md` | 设计能够落到真实代码并覆盖受影响模块 |
 
 每份 Design Baseline 都有对应的 `approvals/<design-slug>.json`。
 
@@ -475,9 +475,9 @@ Workflow 会让 `dev` Agent：
 |---|---|---|
 | `current-task.json` | 当前任务指针 | 通常不要；仅用于明确的指针修复 |
 | `state.json` | 顶层任务状态和任务配置 | 不要直接修改以绕过流程 |
-| `inputs/proposal.md` | 原始需求输入 | 不建议修改 |
-| `inputs/requirement-draft.md` | 需求澄清 Draft | 通过会话协作修改 |
-| `inputs/requirement.md` | 正式 Requirement Baseline | 不要直接修改 |
+| `inputs/proposal.md` | 完整原始需求 | 初始化后保持原始语义 |
+| `inputs/requirement-clarification.md` | 已确认的需求澄清结果 | 通过会话协作修改 |
+| `inputs/` 其他文件 | 补充需求输入 | 设计阶段全部读取 |
 | `work/<slug>/` | 当前设计的 notes、Draft 和临时 Review | 通过 `feature-design` 维护 |
 | `artifacts/*.md` | 正式 Design Baseline | 不要直接修改 |
 | `approvals/` | 各类人工批准 | 不要手工伪造或改 hash |
@@ -491,7 +491,7 @@ Workflow 会让 `dev` Agent：
 
 下游应优先读取：
 
-- `inputs/requirement.md`；
+- `inputs/` 内全部文件；
 - `artifacts/` 下的 Design Baseline；
 - `approvals/` 下的批准记录；
 - `links/repos.json`；
@@ -663,7 +663,7 @@ FEAT-异步批量导出
 失败时能够看到失败状态并重新发起。
 ```
 
-当插件展示最终 Requirement 时，重点检查：
+当插件展示最终需求澄清结果时，重点检查：
 
 - 目标是否仍是解决大量数据导出问题；
 - 是否明确排除了定时导出、邮件通知等附加能力；
@@ -681,7 +681,7 @@ FEAT-异步批量导出
 /scc-dev-sphere:status
 ```
 
-确认状态为 `clarified`，且 `inputs/requirement.md` 已生成。
+确认状态为 `clarified`，且 `inputs/proposal.md` 与 `inputs/requirement-clarification.md` 均非空。
 
 #### 第三步：完成三类设计
 
@@ -825,7 +825,7 @@ feature-init
 请在设计阶段评估，不要直接写成 Requirement 约束。
 ```
 
-当插件形成 Requirement Draft 时，检查：
+当插件形成 Requirement Clarification 时，检查：
 
 - 是否保留了真正的业务目标和验收；
 - 是否把技术建议留给后续设计；
@@ -834,10 +834,10 @@ feature-init
 确认后明确回复：
 
 ```text
-这份 Requirement 已正确区分需求承诺和方案建议，我批准发布 Baseline。
+这份 Requirement 已正确区分需求承诺和方案建议，我批准当前需求澄清结果。
 ```
 
-然后使用 `/scc-dev-sphere:status` 检查 `inputs/requirement.md`，再重复运行 `/scc-dev-sphere:workflow`。后续 `feature-design` 只应把 PRD 中的技术建议作为候选方案，而不是不可改变的约束。
+然后使用 `/scc-dev-sphere:status` 检查 `inputs/proposal.md` 与 `inputs/requirement-clarification.md`，再重复运行 `/scc-dev-sphere:workflow`。后续 `feature-design` 会读取 `inputs/` 中全部文件；其中未被明确固化的技术建议仍是候选方案，而不是不可改变的约束。
 
 如果设计需要查询 PRD 引用的其他项目资料，可以先运行：
 

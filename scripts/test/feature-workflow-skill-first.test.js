@@ -72,12 +72,39 @@ test('outer workflow rejects Business and Solution entry until their Baselines a
   configure(taskPath, ['businessDesign', 'solutionDesign']);
   assert.throws(() => validateDesignEntry(taskPath, 'businessDesign'), /Requirement Baseline/i);
 
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved.', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n', 'utf8');
+  assert.throws(() => validateDesignEntry(taskPath, 'businessDesign'), /requirement-clarification/i);
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n', 'utf8');
   assert.strictEqual(validateDesignEntry(taskPath, 'businessDesign').valid, true);
   assert.throws(() => validateDesignEntry(taskPath, 'solutionDesign'), /business-design Baseline/i);
 
   baseline(taskPath, 'businessDesign');
   assert.strictEqual(validateDesignEntry(taskPath, 'solutionDesign').valid, true);
+});
+
+test('every design action receives all input files in stable recursive order plus its upstream baseline', () => {
+  const { taskPath } = makeTask();
+  configure(taskPath, ['businessDesign', 'solutionDesign']);
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n');
+  fs.mkdirSync(path.join(taskPath, 'inputs', 'z'), { recursive: true });
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'z', 'notes.md'), '# Notes\n');
+
+  let action = resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')));
+  assert.deepStrictEqual(action.requiredArtifacts, [
+    'inputs/proposal.md',
+    'inputs/requirement-clarification.md',
+    'inputs/z/notes.md',
+  ]);
+
+  baseline(taskPath, 'businessDesign');
+  action = resolveNextAction(taskPath, JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')));
+  assert.deepStrictEqual(action.requiredArtifacts, [
+    'inputs/proposal.md',
+    'inputs/requirement-clarification.md',
+    'inputs/z/notes.md',
+    'artifacts/business-design.md',
+  ]);
 });
 
 test('generic design_ready transition uses the persisted required design set', () => {

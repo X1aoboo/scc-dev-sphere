@@ -131,7 +131,8 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
   state.status = 'designing';
   state.requiredDesignTypes = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2), 'utf8');
-  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement.md'), '# Requirement Baseline\n\nApproved SLA requirement.', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'proposal.md'), '# Proposal\n\nDetailed SLA requirement.', 'utf8');
+  fs.writeFileSync(path.join(taskPath, 'inputs', 'requirement-clarification.md'), '# Clarification\n\nApproved clarification.', 'utf8');
 
   const order = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
   for (const designType of order) {

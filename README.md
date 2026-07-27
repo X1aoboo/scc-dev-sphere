@@ -35,7 +35,7 @@
 ## 核心能力
 
 - **Feature 初始化**：保存原始需求提案，创建任务工作区并设为当前任务。
-- **需求澄清**：收敛问题、目标、范围和验收，经独立 Review 与用户批准后发布 Requirement Baseline。
+- **需求澄清**：收敛问题、目标、范围和验收，经独立 Review 与用户批准后，使 `inputs/` 中的需求输入共同成为 Requirement Baseline。
 - **协作式设计**：依次完成 Business、Solution、Implementation 和 Test Design；每次设计都经历分析、Draft、Lint、隔离 Review、人工批准和 Baseline 发布。
 - **总体设计批准**：确认当前 Feature 所需的全部 Design Baseline 后，才允许进入实现规划。
 - **实现规划与开发**：由 `dev` Agent 生成 Implementation Plan、执行代码变更并记录范围偏差和 diff 摘要。
@@ -109,7 +109,7 @@ flowchart LR
 | 阶段 | 目标 | 执行者 | 主要交付件 |
 |---|---|---|---|
 | 初始化 | 保存原始提案并建立 Feature 工作区 | 主会话 `feature-init` | `inputs/proposal.md`、`state.json` |
-| 需求澄清 | 形成可独立理解且获批的 Requirement Baseline | 主会话 `feature-clarify`，独立 Reviewer Subagent | `inputs/requirement-draft.md`、`inputs/requirement.md` |
+| 需求澄清 | 补充并确认需求目标、边界和验收 | 主会话 `feature-clarify`，内部 `feature-clarify-analysis`，独立 Reviewer Subagent | `inputs/proposal.md`、`inputs/requirement-clarification.md` |
 | 协作式设计 | 完成当前专业设计，并通过 Lint、隔离 Review 和人工批准 | 主会话 `feature-design`、`design-reviewer` | `work/<design-slug>/draft.md`、`artifacts/<design-slug>.md` |
 | 总体设计批准 | 批准当前 Feature 所需的 Baseline 集合 | 主会话 `feature-approve` | `approvals/design-final-approval.json` |
 | 实现规划 | 绑定代码仓并形成可执行计划 | `dev` Agent + `feature-plan-implementation` | `implementation/implementation-plan.md`、`links/repos.json` |

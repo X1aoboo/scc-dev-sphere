@@ -83,7 +83,8 @@ test('feature-design progressively loads one Design Guide and Spec without stage
   assert.match(skill, /init-design/);
   assert.match(skill, /references\/design-guides\/<slug>\.md/);
   assert.match(skill, /references\/specs\/<slug>\.md/);
-  assert.match(skill, /当前设计目标.*相关 Artifact|相关 Artifact.*设计目标/s);
+  assert.match(skill, /`inputs\/` 目录内的所有文件都是当前需求输入/);
+  assert.match(skill, /当前阶段所需的上游 Design Baseline/);
   assert.match(skill, /无法|冲突|多个候选/);
   assert.doesNotMatch(skill, /references\/stages|stage-contracts|current-stage|init-stage|inspect-stage|固定上游|validate-design-entry|外层 Workflow.*固定顺序/s);
 });

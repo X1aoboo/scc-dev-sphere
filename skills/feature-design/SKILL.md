@@ -47,7 +47,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 - `references/design-guides/<slug>.md`：专业方法、透镜、风险和收敛标准；
 - `references/specs/<slug>.md`：Draft 内容合同。
 
-同时读取当前需求、相关正式 Artifact、现有 Draft/notes、被设计实际采用的既有 Evidence/Decision，以及项目代码和文档。Decision 文件不存在只表示当前没有既有记录。只加载当前设计目标实际需要的相关 Artifact。
+完整读取调用上下文 `requiredArtifacts` 中的全部文件。`inputs/` 目录内的所有文件都是当前需求输入，不得只读取 `proposal.md`、`requirement-clarification.md` 或自行筛选其中一部分。另读取当前阶段所需的上游 Design Baseline、现有 Draft/notes、被设计实际采用的既有 Evidence/Decision，以及项目代码和文档。Decision 文件不存在只表示当前没有既有记录。
 
 完成条件：当前设计类型和恢复位置有可靠证据；工作区已恢复或初始化；Design Guide、Spec 和必要事实已进入上下文。
 

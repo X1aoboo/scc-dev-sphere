@@ -17,12 +17,41 @@ const {
 } = require('../devsphere-test-design-config');
 
 const DESIGN_SEQUENCE = ['businessDesign', 'solutionDesign', 'implementationDesign', 'testDesign'];
+const REQUIRED_REQUIREMENT_INPUTS = [
+  'inputs/proposal.md',
+  'inputs/requirement-clarification.md',
+];
 const DESIGN_ENTRY_REQUIREMENTS = {
-  businessDesign: { kind: 'requirement', path: 'inputs/requirement.md' },
+  businessDesign: { kind: 'requirement' },
   solutionDesign: { kind: 'design', designType: 'businessDesign', path: 'artifacts/business-design.md' },
   implementationDesign: { kind: 'design', designType: 'solutionDesign', path: 'artifacts/solution-design.md' },
   testDesign: { kind: 'design', designType: 'implementationDesign', path: 'artifacts/implementation-design.md' },
 };
+
+function listInputArtifacts(taskPath) {
+  const inputsRoot = path.join(taskPath, 'inputs');
+  if (!fs.existsSync(inputsRoot)) return [];
+  const files = [];
+  function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const absolute = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile()) files.push(path.relative(taskPath, absolute).split(path.sep).join('/'));
+    }
+  }
+  visit(inputsRoot);
+  return files.sort();
+}
+
+function validateRequirementInputs(taskPath) {
+  const missing = REQUIRED_REQUIREMENT_INPUTS.filter(relative => {
+    const file = path.join(taskPath, relative);
+    return !fs.existsSync(file) || !fs.readFileSync(file, 'utf8').trim();
+  });
+  if (missing.length) {
+    throw new Error(`Requirement Baseline inputs are missing or empty: ${missing.join(', ')}`);
+  }
+}
 
 function nextRequiredDesignType(taskPath, state) {
   const required = state.requiredDesignTypes || [];
@@ -37,20 +66,21 @@ function validateDesignEntry(taskPath, designType) {
     throw new Error(`Design entry requires task status 'designing', got '${state.status}'`);
   }
 
+  validateRequirementInputs(taskPath);
   const requirement = DESIGN_ENTRY_REQUIREMENTS[designType];
-  if (requirement.kind === 'requirement') {
-    const baseline = path.join(taskPath, requirement.path);
-    if (!fs.existsSync(baseline) || !fs.readFileSync(baseline, 'utf8').trim()) {
-      throw new Error(`Requirement Baseline is missing or empty: ${requirement.path}`);
-    }
-  } else {
+  if (requirement.kind === 'design') {
     const upstream = inspectDesign(taskPath, requirement.designType);
     if (upstream.recovery !== 'baseline_complete' || !upstream.approval.valid) {
       throw new Error(`${DESIGN_TYPES[requirement.designType].slug} Baseline must be valid and human-approved before ${DESIGN_TYPES[designType].slug}`);
     }
   }
 
-  return { valid: true, designType, requiredBaseline: requirement.path };
+  return {
+    valid: true,
+    designType,
+    requiredInputs: [...REQUIRED_REQUIREMENT_INPUTS],
+    ...(requirement.path ? { requiredBaseline: requirement.path } : {}),
+  };
 }
 
 function makeAction(kind, state, stage, target, skill, agents, reason, required = [], expected = [], args = {}) {
@@ -89,16 +119,15 @@ function resolveNextAction(taskPath, state) {
       return makeAction('run_skill', state, null, null, 'feature-clarify', [],
         'Clarify the existing proposal and publish an approved Requirement Baseline before design.',
         ['inputs/proposal.md'],
-        ['inputs/requirement.md'],
+        ['inputs/requirement-clarification.md'],
         {
           proposalPath: 'inputs/proposal.md',
-          draftPath: 'inputs/requirement-draft.md',
-          baselinePath: 'inputs/requirement.md',
+          clarificationPath: 'inputs/requirement-clarification.md',
         });
     case 'clarified':
       return makeAction('run_skill', state, 'design', null, 'feature-design', [],
         'The approved Requirement Baseline is ready for Business Design.',
-        ['inputs/requirement.md'], [], { designType: 'businessDesign' });
+        listInputArtifacts(taskPath), [], { designType: 'businessDesign' });
     case 'designing': {
       const designType = nextRequiredDesignType(taskPath, state);
       if (!designType) {
@@ -106,9 +135,11 @@ function resolveNextAction(taskPath, state) {
           'All required Design Baselines exist. Synchronize design status before continuing.');
       }
       const requirement = DESIGN_ENTRY_REQUIREMENTS[designType];
+      const required = listInputArtifacts(taskPath);
+      if (requirement.path) required.push(requirement.path);
       return makeAction('run_skill', state, 'design', null, 'feature-design', [],
         `Continue the fixed design sequence with ${designType}; the outer workflow validates its upstream Baseline.`,
-        [requirement.path], [], { designType });
+        required, [], { designType });
     }
     case 'design_ready':
       if (!state.externalTestDesign) return featureApproveAction(state);
@@ -116,7 +147,7 @@ function resolveNextAction(taskPath, state) {
         state.externalTestDesign.skillId, [],
         'All required Design Baselines are ready. Run the configured external test-design Skill.',
         [
-          'inputs/requirement.md',
+          ...listInputArtifacts(taskPath),
           'artifacts/business-design.md',
           'artifacts/solution-design.md',
           'artifacts/implementation-design.md',
@@ -160,8 +191,9 @@ function completeExternalTestDesign(workspaceRoot) {
   const ready = designReady(taskPath);
   if (!ready.valid) throw new Error(ready.issues.join('; '));
 
+  validateRequirementInputs(taskPath);
   const requiredInputs = [
-    'inputs/requirement.md',
+    ...listInputArtifacts(taskPath),
     'artifacts/business-design.md',
     'artifacts/solution-design.md',
     'artifacts/implementation-design.md',
@@ -203,6 +235,7 @@ function setTaskStatus(workspaceRoot, newStatus) {
     const ready = designReady(taskPath);
     if (!ready.valid) throw new Error(ready.issues.join('; '));
   }
+  if (newStatus === 'designing') validateRequirementInputs(taskPath);
   if (newStatus) state.status = newStatus;
   writeState(taskPath, state);
   return { synced: true, status: state.status };
@@ -244,8 +277,10 @@ if (require.main === module) main();
 module.exports = {
   DESIGN_SEQUENCE,
   DESIGN_ENTRY_REQUIREMENTS,
+  REQUIRED_REQUIREMENT_INPUTS,
   EXTERNAL_TEST_DESIGN_OUTPUT_DIR,
   nextRequiredDesignType,
+  listInputArtifacts,
   validateDesignEntry,
   resolveNextAction,
   setTaskStatus,

@@ -22,6 +22,6 @@ test('四个设计阶段主产物都能解析', () => {
 test('非主产物返回 isMainArtifact=false', () => {
   assert.strictEqual(resolveMainArtifact('/p/t/decisions/business-design-decisions.json').isMainArtifact, false);
   assert.strictEqual(resolveMainArtifact('/p/t/artifacts/integrated-design.md').isMainArtifact, false);
-  assert.strictEqual(resolveMainArtifact('/p/t/inputs/requirement.md').isMainArtifact, false);
+  assert.strictEqual(resolveMainArtifact('/p/t/inputs/requirement-clarification.md').isMainArtifact, false);
   assert.strictEqual(resolveMainArtifact('/unrelated/file.txt').isMainArtifact, false);
 });
