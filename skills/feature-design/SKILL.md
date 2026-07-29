@@ -63,7 +63,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 
 ## 步骤3. 形成可评审 Draft
 
-直接执行 `/scc-dev-sphere:design-draft`，将当前会话中已经确认的完整设计作为设计来源，将步骤1加载的当前 Spec 作为模板，并将 `work/<slug>/draft.md` 作为目标文件。
+直接执行 `/scc-dev-sphere:design-draft`，将当前会话中已经确认的完整设计作为设计来源，将步骤1加载的当前 Spec 作为模板，并将 `work/<slug>/draft.md` 作为目标文件、`work/<slug>/<slug>-assets/` 作为可选配套资产目录。Draft 使用 `<slug>-assets/...` 相对路径引用线框图、原型快照和标注图；不需要配套资产时保持目录为空。
 
 调用期间当前顶层任务保持 `in_progress`。只有 `design-draft` 已完成对照检查，确认最终有效设计及必要上下文均已充分写入 Draft，才能运行：
 
@@ -71,11 +71,11 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js lint <taskPath> <designType>
 ```
 
-Lint 只检查 frontmatter、核心章节、适用性说明、占位符和格式。Lint 失败时修复确定性问题。
+Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时只修复确定性问题；专业完整性仍由 Design Guide 收敛标准、适用 Checklist 和用户评审确认。
 
 如果 `design-draft` 或 Lint 修复过程发现设计冲突、缺口、未决事项，或者必须新增设计语义才能完成 Draft，不得自行补全或继续 Lint。将任务 3 恢复为 `pending`，将任务 2 恢复为 `in_progress`，重新调用 `feature-design-analysis` 完成分析和用户确认，再重新进入任务 3。
 
-完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft；Draft 可脱离聊天独立评审；不存在未确认语义；当前 Draft hash 的 Lint 为 `pass`。
+完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft 及其配套资产；Draft 可脱离聊天独立评审；不存在未确认语义；当前设计包 hash 的 Lint 为 `pass`。设计包 hash 覆盖 Draft 和全部配套资产，任一资产变化都必须重新 Review 和人工批准。
 
 ## 步骤4. 集中 Review 并修订
 

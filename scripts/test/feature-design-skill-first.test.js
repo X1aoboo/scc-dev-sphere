@@ -7,6 +7,11 @@ const path = require('node:path');
 const { makeTask } = require('./helpers');
 const { businessDraft } = require('./fixtures/business-design');
 const { implementationDraft } = require('./fixtures/implementation-design');
+const {
+  assetsPath: solutionAssetsFixturePath,
+  installSolutionAssets,
+  solutionDraft,
+} = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   DESIGN_TYPES,
@@ -22,76 +27,17 @@ const {
   designReady,
   syncDesignState,
   draftPath,
+  draftAssetsPath,
   artifactPath,
+  artifactAssetsPath,
   reviewSummaryPath,
+  readArtifactRef,
+  readDraftRef,
   sha256File,
 } = require('../devsphere-design');
 
 const VALID_DRAFT = businessDraft('FEAT-TEST-001');
-
-const VALID_SOLUTION_DRAFT = `---
-artifactId: "SD-FEAT-TEST-001"
-version: "1.0.0"
----
-
-# Solution Design
-
-## 概述
-为审批任务增加 SLA 自动升级，目标读者为研发和测试人员。
-
-## 特性需求与设计上下文
-这是存量增强；新增自动升级，影响审批状态与通知，保持组织数据所有权不变，不包含组织架构维护。
-
-## 总体方案
-调度器发现逾期任务，升级服务原子创建升级事件，异步消费者完成上级解析和通知。
-
-## 4+1 架构视图
-
-### 场景视图
-逾期任务触发一次升级；撤回和重复扫描不会形成第二次有效升级。
-
-### 逻辑视图
-审批服务拥有任务状态，组织服务拥有上下级关系，通知服务负责送达。
-
-### 进程视图
-扫描、原子建事件、异步消费和通知形成可重试链路，幂等键阻止重复升级。
-
-### 开发视图
-审批服务新增调度和升级组件，通知服务沿用现有消费入口。
-
-### 物理视图
-复用现有部署拓扑和消息设施，通过独立并发配额隔离扫描任务。
-
-## 接口与集成设计
-组织查询设置超时和有限重试，通知事件至少一次投递并以 eventId 幂等。
-
-## 数据设计
-审批服务拥有升级状态和 Outbox，审计记录只追加，组织关系不复制为权威数据。
-
-## 可靠性、可用性与功能安全设计
-依赖失败保留待处理事件并退避重试，积压和重试耗尽触发告警；不涉及功能安全。
-
-## 安全、隐私与韧性设计
-沿用审批权限边界，操作者标识最小化展示，通知消费不能绕过租户校验。
-
-## 非功能质量属性设计
-扫描批次和并发配额保护在线请求；升级延迟与积压深度可监控和验证。
-
-## 关键技术决策、取舍与风险
-选择事务 Outbox 取得可靠投递，接受通知最终一致；组织服务长时间不可用是残余风险。
-
-## 下游设计约束与交接
-审批服务细化事务和并发实现；测试覆盖重复扫描、撤回竞态和通知重放。
-
-## 需求追溯与覆盖关系
-自动升级落到调度与升级事件，可靠通知落到 Outbox，审计要求落到追加记录。
-
-## 词汇表
-升级事件：一次 SLA 违约产生的唯一业务事件。
-
-## 参考资料
-采用当前任务需求、审批状态模型和组织服务接口合同。
-`;
+const VALID_SOLUTION_DRAFT = solutionDraft();
 
 function setRequired(taskPath, designTypes) {
   const statePath = path.join(taskPath, 'state.json');
@@ -108,8 +54,25 @@ function writeDraft(taskPath, designType, content = VALID_DRAFT) {
 
 function passingSummary(taskPath, designType) {
   return {
-    draftHash: sha256File(draftPath(taskPath, designType)),
+    draftHash: readDraftRef(taskPath, designType).hash,
     checklists: [{ checklistId: 'business-semantic-consistency', result: 'pass', summary: '通过', findings: [] }],
+    notApplicable: [],
+  };
+}
+
+function passingSolutionSummary(taskPath) {
+  return {
+    draftHash: readDraftRef(taskPath, 'solutionDesign').hash,
+    checklists: [
+      'architecture-consistency',
+      'architecture-documentation-quality',
+      'design-traceability',
+    ].map(checklistId => ({
+      checklistId,
+      result: 'pass',
+      summary: '通过',
+      findings: [],
+    })),
     notApplicable: [],
   };
 }
@@ -205,25 +168,139 @@ test('business lint rejects missing, empty, placeholder, misordered, and invalid
   }
 });
 
-test('solution lint enforces the fourteen chapters and all 4+1 views', () => {
+test('solution lint enforces only the numbered structural contract and feature-point mappings', () => {
   const { taskPath } = makeTask();
   writeDraft(taskPath, 'solutionDesign', VALID_SOLUTION_DRAFT);
+  installSolutionAssets(taskPath);
   const pass = lintDraft(taskPath, 'solutionDesign');
   assert.strictEqual(pass.status, 'pass');
-  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 14);
-  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('required subsection:')).length, 5);
-
-  fs.writeFileSync(
-    draftPath(taskPath, 'solutionDesign'),
-    VALID_SOLUTION_DRAFT.replace('### 物理视图', '### 部署观察'),
-    'utf8',
-  );
-  const fail = lintDraft(taskPath, 'solutionDesign');
-  assert.strictEqual(fail.status, 'fail');
+  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 12);
+  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('required subsection:')).length, 3);
+  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('solution view:')).length, 5);
   assert.strictEqual(
-    fail.checks.find(check => check.code === 'required subsection:4+1 架构视图/物理视图').result,
+    pass.checks.filter(check => check.code.startsWith('required feature point subsection:')).length,
+    20,
+  );
+  assert.strictEqual(pass.checks.find(check => check.code === 'solution feature point mapping coverage').result, 'pass');
+
+  const cases = [
+    {
+      content: VALID_SOLUTION_DRAFT.replace('#### 4.2.5 物理视图', '#### 4.2.5 部署观察'),
+      code: 'solution view order',
+    },
+    {
+      content: VALID_SOLUTION_DRAFT.replace('##### 当前设计', '##### 既有方案'),
+      code: 'solution feature point subsection order:FP-01 识别逾期审批任务',
+    },
+    {
+      content: VALID_SOLUTION_DRAFT.replace(
+        '| FP-03 解析升级对象并请求通知 | REQ-SLA-004、REQ-SLA-005、REQ-SLA-006 | 新增 | 按违约时间解析直属上级，幂等请求通知并跟踪结果 | 4.3.3 |\n',
+        '',
+      ),
+      code: 'solution feature point mapping coverage',
+    },
+  ];
+
+  for (const item of cases) {
+    writeDraft(taskPath, 'solutionDesign', item.content);
+    const fail = lintDraft(taskPath, 'solutionDesign');
+    assert.strictEqual(fail.status, 'fail');
+    assert.strictEqual(fail.checks.find(check => check.code === item.code).result, 'fail');
+  }
+
+  const summaryOnlyTargetState = VALID_SOLUTION_DRAFT.replace(
+    /(#### 4\.3\.1 FP-01[\s\S]*?##### 目标态设计\r?\n\r?\n)[\s\S]*?(?=\r?\n##### 设计影响、约束与风险)/,
+    '$1采用分页和幂等机制完成候选识别。',
+  );
+  writeDraft(taskPath, 'solutionDesign', summaryOnlyTargetState);
+  assert.strictEqual(
+    lintDraft(taskPath, 'solutionDesign').status,
+    'pass',
+    'structural lint must not claim to judge professional or semantic completeness',
+  );
+
+  const missingAsset = path.join(
+    draftAssetsPath(taskPath, 'solutionDesign'),
+    'ucd',
+    'escalation-list-wireframe.svg',
+  );
+  fs.unlinkSync(missingAsset);
+  const missingAssetLint = lintDraft(taskPath, 'solutionDesign');
+  assert.strictEqual(
+    missingAssetLint.checks.find(check => check.code === 'design asset bundle').result,
     'fail',
   );
+
+  installSolutionAssets(taskPath);
+  fs.writeFileSync(path.join(draftAssetsPath(taskPath, 'solutionDesign'), 'unreferenced.svg'), '<svg/>', 'utf8');
+  const unreferencedAssetLint = lintDraft(taskPath, 'solutionDesign');
+  assert.strictEqual(
+    unreferencedAssetLint.checks.find(check => check.code === 'design asset bundle').result,
+    'fail',
+  );
+});
+
+test('solution design assets are hash-bound to review and approval', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'solutionDesign', VALID_SOLUTION_DRAFT);
+  installSolutionAssets(taskPath);
+  assert.strictEqual(lintDraft(taskPath, 'solutionDesign').status, 'pass');
+
+  const before = readDraftRef(taskPath, 'solutionDesign');
+  assert.strictEqual(before.assets.length, 3);
+  assert.notStrictEqual(before.hash, sha256File(draftPath(taskPath, 'solutionDesign')));
+  assert.strictEqual(
+    recordReview(taskPath, 'solutionDesign', passingSolutionSummary(taskPath)).status,
+    'pass',
+  );
+
+  fs.appendFileSync(
+    path.join(draftAssetsPath(taskPath, 'solutionDesign'), 'ucd', 'recovery-states-wireframe.svg'),
+    '\n<!-- visual revision -->\n',
+  );
+  assert.strictEqual(inspectDesign(taskPath, 'solutionDesign').review.valid, false);
+  assert.throws(
+    () => refreshFormattingReview(taskPath, 'solutionDesign'),
+    /semantic; all applicable reviews must run again/i,
+  );
+});
+
+test('publish and reopen preserve the approved solution design asset bundle', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'solutionDesign', VALID_SOLUTION_DRAFT);
+  installSolutionAssets(taskPath);
+  assert.strictEqual(lintDraft(taskPath, 'solutionDesign').status, 'pass');
+  recordReview(taskPath, 'solutionDesign', passingSolutionSummary(taskPath));
+  approveCurrentDesign(taskPath, 'solutionDesign', { approvedBy: 'human', acceptedRisks: [] });
+
+  const published = publish(taskPath, 'solutionDesign');
+  const artifactRef = readArtifactRef(taskPath, 'solutionDesign');
+  const publishedAsset = path.join(
+    artifactAssetsPath(taskPath, 'solutionDesign'),
+    'ucd',
+    'escalation-detail-wireframe.svg',
+  );
+  assert.strictEqual(published.hash, artifactRef.hash);
+  assert.strictEqual(artifactRef.assets.length, 3);
+  assert.deepStrictEqual(
+    fs.readFileSync(publishedAsset),
+    fs.readFileSync(path.join(solutionAssetsFixturePath, 'ucd', 'escalation-detail-wireframe.svg')),
+  );
+  assert.strictEqual(publish(taskPath, 'solutionDesign').idempotent, true);
+
+  const reopened = reopenDesign(taskPath, 'solutionDesign');
+  assert.strictEqual(
+    fs.existsSync(path.join(reopened.historyAssets, 'ucd', 'escalation-detail-wireframe.svg')),
+    true,
+  );
+  assert.strictEqual(
+    fs.existsSync(path.join(reopened.draftAssets, 'ucd', 'escalation-detail-wireframe.svg')),
+    true,
+  );
+  assert.match(fs.readFileSync(reopened.historyFile, 'utf8'), /solution-design-assets\/ucd\/escalation-detail-wireframe\.svg/);
+  assert.match(fs.readFileSync(reopened.draft, 'utf8'), /version: "2\.0\.0"/);
+  assert.strictEqual(fs.existsSync(artifactPath(taskPath, 'solutionDesign')), false);
+  assert.strictEqual(fs.existsSync(artifactAssetsPath(taskPath, 'solutionDesign')), false);
 });
 
 test('implementation lint accepts feature context, repeated complete service units, and applicability coverage', () => {

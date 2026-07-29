@@ -50,25 +50,34 @@ const DESIGN_TYPES = {
   solutionDesign: {
     slug: 'solution-design',
     artifactPrefix: 'SD',
+    exactSectionOrder: true,
+    allowNumberedHeadings: true,
     coreSections: [
       '概述',
-      '特性需求与设计上下文',
-      '总体方案',
-      '4+1 架构视图',
+      '特性需求概述',
+      '需求场景与影响分析',
+      '特性/功能实现原理',
       '接口与集成设计',
       '数据设计',
       '可靠性、可用性与功能安全设计',
       '安全、隐私与韧性设计',
       '非功能质量属性设计',
       '关键技术决策、取舍与风险',
-      '下游设计约束与交接',
-      '需求追溯与覆盖关系',
-      '词汇表',
-      '参考资料',
+      '需求分解分配与下游交接',
+      '词汇表与参考资料',
     ],
     requiredSubsections: {
-      '4+1 架构视图': ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图'],
+      '特性/功能实现原理': ['总体方案', '4+1 架构视图', '功能点设计'],
     },
+    solutionViewSubsections: ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图'],
+    hasSolutionFeaturePoints: true,
+    requiredFeaturePointSubsections: [
+      '关联需求与设计目标',
+      '当前设计',
+      '本次变更',
+      '目标态设计',
+      '设计影响、约束与风险',
+    ],
     applicabilityItems: [],
   },
   implementationDesign: {
@@ -121,12 +130,22 @@ function draftPath(taskPath, designType) {
   return path.join(designDir(taskPath, designType), 'draft.md');
 }
 
+function draftAssetsPath(taskPath, designType) {
+  const slug = definitionFor(designType).slug;
+  return path.join(designDir(taskPath, designType), `${slug}-assets`);
+}
+
 function notesPath(taskPath, designType) {
   return path.join(designDir(taskPath, designType), 'notes.md');
 }
 
 function artifactPath(taskPath, designType) {
   return path.join(taskPath, 'artifacts', `${definitionFor(designType).slug}.md`);
+}
+
+function artifactAssetsPath(taskPath, designType) {
+  const slug = definitionFor(designType).slug;
+  return path.join(taskPath, 'artifacts', `${slug}-assets`);
 }
 
 function reviewSummaryPath(taskPath, designType) {
@@ -145,6 +164,47 @@ function sha256File(filePath) {
   return sha256Buffer(fs.readFileSync(filePath));
 }
 
+function collectAssetFiles(rootPath) {
+  if (!fs.existsSync(rootPath)) return [];
+  const files = [];
+
+  function visit(currentPath, relativeDir = '') {
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true }).sort((a, b) => (
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    ))) {
+      const fullPath = path.join(currentPath, entry.name);
+      const relativePath = path.join(relativeDir, entry.name).replace(/\\/g, '/');
+      const stat = fs.lstatSync(fullPath);
+      if (stat.isSymbolicLink()) throw new Error(`Design assets cannot contain symbolic links: ${relativePath}`);
+      if (stat.isDirectory()) visit(fullPath, relativePath);
+      else if (stat.isFile()) files.push({ fullPath, relativePath, size: stat.size });
+      else throw new Error(`Unsupported design asset: ${relativePath}`);
+    }
+  }
+
+  visit(rootPath);
+  return files;
+}
+
+function updateBundleHash(hash, name, content) {
+  const nameBuffer = Buffer.from(name);
+  hash.update(Buffer.from(`${nameBuffer.length}:${content.length}:`));
+  hash.update(nameBuffer);
+  hash.update(content);
+}
+
+function hashDocumentAndAssets(documentBuffer, assetsPath) {
+  const assets = collectAssetFiles(assetsPath);
+  if (assets.length === 0) return sha256Buffer(documentBuffer);
+  const hash = crypto.createHash('sha256');
+  hash.update('devsphere-design-bundle-v1\0');
+  updateBundleHash(hash, 'document', documentBuffer);
+  for (const asset of assets) {
+    updateBundleHash(hash, asset.relativePath, fs.readFileSync(asset.fullPath));
+  }
+  return `sha256:${hash.digest('hex')}`;
+}
+
 function semanticHash(raw) {
   const normalized = raw
     .replace(/<!--([\s\S]*?)-->/g, '')
@@ -153,6 +213,16 @@ function semanticHash(raw) {
     .filter(Boolean)
     .join('\n');
   return sha256Buffer(Buffer.from(normalized));
+}
+
+function designSemanticHash(raw, assetsPath) {
+  const normalized = raw
+    .replace(/<!--([\s\S]*?)-->/g, '')
+    .split('\n')
+    .map(line => line.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .join('\n');
+  return hashDocumentAndAssets(Buffer.from(normalized), assetsPath);
 }
 
 function parseFrontmatter(filePath) {
@@ -180,10 +250,16 @@ function readDraftRef(taskPath, designType) {
   const frontmatter = parseFrontmatter(file);
   if (!frontmatter) return null;
   const raw = fs.readFileSync(file, 'utf8');
+  const assetsPath = draftAssetsPath(taskPath, designType);
   return {
     ...frontmatter,
-    hash: sha256Buffer(Buffer.from(raw)),
-    semanticHash: semanticHash(raw),
+    hash: hashDocumentAndAssets(Buffer.from(raw), assetsPath),
+    semanticHash: designSemanticHash(raw, assetsPath),
+    assets: collectAssetFiles(assetsPath).map(asset => ({
+      path: asset.relativePath,
+      hash: sha256File(asset.fullPath),
+      size: asset.size,
+    })),
   };
 }
 
@@ -198,7 +274,16 @@ function readArtifactRef(taskPath, designType) {
     || frontmatter.artifactId !== `${definition.artifactPrefix}-${state.taskId}`
     || !/^\d+\.\d+\.\d+$/.test(frontmatter.version)
   ) return null;
-  return { ...frontmatter, hash: sha256File(file) };
+  const assetsPath = artifactAssetsPath(taskPath, designType);
+  return {
+    ...frontmatter,
+    hash: hashDocumentAndAssets(fs.readFileSync(file), assetsPath),
+    assets: collectAssetFiles(assetsPath).map(asset => ({
+      path: asset.relativePath,
+      hash: sha256File(asset.fullPath),
+      size: asset.size,
+    })),
+  };
 }
 
 function fileExists(filePath) {
@@ -317,6 +402,7 @@ function initDesign(taskPath, designType) {
   const definition = definitionFor(designType);
   const dir = designDir(taskPath, designType);
   fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(draftAssetsPath(taskPath, designType), { recursive: true });
   const notes = notesPath(taskPath, designType);
   if (!fs.existsSync(notes)) {
     fs.writeFileSync(notes, '# 设计工作笔记\n\n保存恢复所需的事实、已确认设计和开放事项。\n', 'utf8');
@@ -327,6 +413,7 @@ function initDesign(taskPath, designType) {
     dir,
     notes,
     draft: draftPath(taskPath, designType),
+    assets: draftAssetsPath(taskPath, designType),
     guide: `skills/feature-design/references/design-guides/${definition.slug}.md`,
     spec: `skills/feature-design/references/specs/${definition.slug}.md`,
   };
@@ -410,12 +497,76 @@ function sameSets(actual, expected) {
   return actual.length === expected.length && actual.every(value => expected.includes(value));
 }
 
+function canonicalHeading(heading) {
+  return heading.replace(/^\d+(?:\.\d+)*\.?\s+/, '').trim();
+}
+
+function headingValue(heading, definition) {
+  return definition.allowNumberedHeadings ? canonicalHeading(heading) : heading;
+}
+
+function extractDefinitionSection(raw, definition, heading) {
+  if (!definition.allowNumberedHeadings) return extractSection(raw, heading);
+  const section = extractHeadingSections(raw, 2)
+    .find(candidate => canonicalHeading(candidate.heading) === heading);
+  return section ? section.content : '';
+}
+
+function extractDefinitionSubsection(raw, definition, parentHeading, heading) {
+  if (!definition.allowNumberedHeadings) return extractSubsection(raw, parentHeading, heading);
+  const parent = extractDefinitionSection(raw, definition, parentHeading);
+  if (!parent) return '';
+  const subsection = extractHeadingSections(parent, 3)
+    .find(candidate => canonicalHeading(candidate.heading) === heading);
+  return subsection ? subsection.content : '';
+}
+
 function hasSubstantiveSectionContent(content) {
   const normalized = content
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\s+/g, '')
     .replace(/[。；;.]$/u, '');
   return Boolean(normalized) && !['无', '不适用', '沿用现状'].includes(normalized);
+}
+
+function markdownImageTargets(raw) {
+  const targets = [];
+  const pattern = /!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+  let match;
+  while ((match = pattern.exec(raw)) !== null) targets.push(match[1] || match[2]);
+  return targets;
+}
+
+function addDesignAssetChecks(raw, taskPath, designType, checks) {
+  const definition = definitionFor(designType);
+  const assetsRoot = draftAssetsPath(taskPath, designType);
+  const assetFiles = collectAssetFiles(assetsRoot);
+  const expectedPrefix = `${definition.slug}-assets/`;
+  const localTargets = markdownImageTargets(raw)
+    .filter(target => !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(target));
+
+  const referencesValid = localTargets.every(target => {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(target.split(/[?#]/, 1)[0]).replace(/\\/g, '/');
+    } catch {
+      return false;
+    }
+    if (!decoded.startsWith(expectedPrefix)) return false;
+    const resolved = path.resolve(path.dirname(draftPath(taskPath, designType)), decoded);
+    const root = path.resolve(assetsRoot);
+    const relative = path.relative(root, resolved);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+    if (!fs.existsSync(resolved)) return false;
+    const stat = fs.lstatSync(resolved);
+    return stat.isFile() && !stat.isSymbolicLink();
+  });
+
+  const assetsReferenced = assetFiles.every(asset => raw.includes(`${expectedPrefix}${asset.relativePath}`));
+  checks.push({
+    code: 'design asset bundle',
+    result: referencesValid && assetsReferenced ? 'pass' : 'fail',
+  });
 }
 
 function addImplementationChecks(raw, definition, checks) {
@@ -500,6 +651,99 @@ function addImplementationChecks(raw, definition, checks) {
   });
 }
 
+function addSolutionChecks(raw, definition, checks) {
+  const implementationPrinciple = extractDefinitionSection(raw, definition, '特性/功能实现原理');
+  const principleSections = extractHeadingSections(implementationPrinciple, 3);
+  const architectureViews = principleSections
+    .find(section => canonicalHeading(section.heading) === '4+1 架构视图');
+  const featurePointDesign = principleSections
+    .find(section => canonicalHeading(section.heading) === '功能点设计');
+
+  const views = architectureViews ? extractHeadingSections(architectureViews.content, 4) : [];
+  checks.push({
+    code: 'solution view order',
+    result: sameValues(views.map(view => canonicalHeading(view.heading)), definition.solutionViewSubsections)
+      ? 'pass'
+      : 'fail',
+  });
+  for (const viewName of definition.solutionViewSubsections) {
+    const view = views.find(candidate => canonicalHeading(candidate.heading) === viewName);
+    checks.push({
+      code: `solution view:${viewName}`,
+      result: view && hasSubstantiveSectionContent(view.content) ? 'pass' : 'fail',
+    });
+  }
+
+  const featurePoints = featurePointDesign
+    ? extractHeadingSections(featurePointDesign.content, 4)
+    : [];
+  const featurePointNames = featurePoints
+    .map(section => canonicalHeading(section.heading).replace(/^功能点[：:]\s*/, '').trim());
+  checks.push({
+    code: 'solution feature point count',
+    result: featurePoints.length > 0 ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'solution feature point names',
+    result: featurePointNames.length > 0
+      && featurePointNames.every(Boolean)
+      && new Set(featurePointNames).size === featurePointNames.length
+      ? 'pass'
+      : 'fail',
+  });
+
+  for (const featurePoint of featurePoints) {
+    const featurePointName = canonicalHeading(featurePoint.heading)
+      .replace(/^功能点[：:]\s*/, '')
+      .trim();
+    const subsections = extractHeadingSections(featurePoint.content, 5);
+    checks.push({
+      code: `solution feature point subsection order:${featurePointName}`,
+      result: sameValues(
+        subsections.map(section => canonicalHeading(section.heading)),
+        definition.requiredFeaturePointSubsections,
+      )
+        ? 'pass'
+        : 'fail',
+    });
+    for (const subsectionName of definition.requiredFeaturePointSubsections) {
+      const subsection = subsections
+        .find(candidate => canonicalHeading(candidate.heading) === subsectionName);
+      checks.push({
+        code: `required feature point subsection:${featurePointName}/${subsectionName}`,
+        result: subsection && hasSubstantiveSectionContent(subsection.content) ? 'pass' : 'fail',
+      });
+    }
+  }
+
+  const mapping = parseMarkdownTable(
+    extractDefinitionSubsection(raw, definition, '特性需求概述', '需求功能点清单'),
+  );
+  const mappingHeader = ['功能点', '关联需求', '主要变更类型', '设计目标与边界', '详细设计位置'];
+  const allowedChangeTypes = ['新增', '修改', '删除', '保持不变'];
+  const mappedFeaturePoints = mapping ? [...new Set(mapping.rows.map(row => row[0]))] : [];
+  checks.push({
+    code: 'solution feature point mapping table',
+    result: mapping
+      && sameValues(mapping.header, mappingHeader)
+      && mapping.rows.length > 0
+      && mappedFeaturePoints.length === mapping.rows.length
+      && mapping.rows.every(row => {
+        if (row.length !== mappingHeader.length) return false;
+        const changeTypes = row[2].split(/[/、,，]/).map(value => value.trim()).filter(Boolean);
+        return row.every(hasSubstantiveSectionContent)
+          && changeTypes.length > 0
+          && changeTypes.every(value => allowedChangeTypes.includes(value));
+      })
+      ? 'pass'
+      : 'fail',
+  });
+  checks.push({
+    code: 'solution feature point mapping coverage',
+    result: sameSets(mappedFeaturePoints, featurePointNames) ? 'pass' : 'fail',
+  });
+}
+
 function checklistPath(checklistId) {
   return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
@@ -528,7 +772,9 @@ function lintDraft(taskPath, designType) {
   });
   checks.push({
     code: 'placeholder',
-    result: /<[^>]+>|\{\{[^}]+\}\}|\b(?:TODO|TBD)\b/i.test(raw) ? 'fail' : 'pass',
+    result: /<[A-Za-z][A-Za-z0-9_.:/-]*>|\{\{[^}\r\n]+\}\}|\b(?:TODO|TBD)\b/i.test(raw)
+      ? 'fail'
+      : 'pass',
   });
   if (definition.documentTitle) {
     const titles = raw.split(/\r?\n/).filter(line => /^#\s+/.test(line));
@@ -538,7 +784,7 @@ function lintDraft(taskPath, designType) {
     });
   }
   if (definition.exactSectionOrder) {
-    const headings = extractLevelTwoHeadings(raw);
+    const headings = extractLevelTwoHeadings(raw).map(heading => headingValue(heading, definition));
     checks.push({
       code: 'core section order',
       result: headings.length === definition.coreSections.length
@@ -548,8 +794,10 @@ function lintDraft(taskPath, designType) {
     });
   }
   if (definition.unitSectionPrefix) addImplementationChecks(raw, definition, checks);
+  if (definition.hasSolutionFeaturePoints) addSolutionChecks(raw, definition, checks);
+  addDesignAssetChecks(raw, taskPath, designType, checks);
   for (const section of definition.coreSections) {
-    const content = extractSection(raw, section);
+    const content = extractDefinitionSection(raw, definition, section);
     checks.push({
       code: `core section:${section}`,
       result: hasSubstantiveSectionContent(content) ? 'pass' : 'fail',
@@ -559,7 +807,7 @@ function lintDraft(taskPath, designType) {
     for (const subsection of subsections) {
       checks.push({
         code: `required subsection:${parent}/${subsection}`,
-        result: extractSubsection(raw, parent, subsection) ? 'pass' : 'fail',
+        result: extractDefinitionSubsection(raw, definition, parent, subsection) ? 'pass' : 'fail',
       });
     }
   }
@@ -576,7 +824,7 @@ function lintDraft(taskPath, designType) {
   const result = {
     designType,
     draftHash: draftRef ? draftRef.hash : sha256Buffer(Buffer.from(raw)),
-    semanticHash: semanticHash(raw),
+    semanticHash: draftRef ? draftRef.semanticHash : semanticHash(raw),
     status: checks.some(check => check.result === 'fail') ? 'fail' : 'pass',
     checks,
   };
@@ -730,29 +978,44 @@ function publish(taskPath, designType) {
   if (!approval || approval.draftHash !== draft.hash || approval.approvedBy !== 'human') throw new Error('Current human approval is missing');
 
   const source = draftPath(taskPath, designType);
+  const sourceAssets = draftAssetsPath(taskPath, designType);
   const target = artifactPath(taskPath, designType);
+  const targetAssets = artifactAssetsPath(taskPath, designType);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   if (fs.existsSync(target)) {
-    if (sha256File(source) !== sha256File(target)) {
+    const artifact = readArtifactRef(taskPath, designType);
+    if (!artifact || draft.hash !== artifact.hash) {
       throw new Error('Existing Baseline differs from approved Draft; explicitly reopen this design before publishing');
     }
     unlinkIfExists(reviewSummaryPath(taskPath, designType));
     return {
       designType,
       artifactPath: target,
-      hash: sha256File(target),
+      assetsPath: artifact.assets.length > 0 ? targetAssets : undefined,
+      hash: artifact.hash,
       version: draft.version,
       idempotent: true,
     };
   }
   if (!review || review.status !== 'pass' || review.draftHash !== draft.hash) throw new Error('Current review is not passing');
-  fs.copyFileSync(source, target);
-  if (sha256File(source) !== sha256File(target)) throw new Error('Published Artifact differs from approved Draft');
+  if (fs.existsSync(targetAssets)) throw new Error('Design Baseline assets already exist without a Baseline document');
+  try {
+    fs.copyFileSync(source, target);
+    copyAssetFiles(sourceAssets, targetAssets);
+    const artifact = readArtifactRef(taskPath, designType);
+    if (!artifact || artifact.hash !== draft.hash) throw new Error('Published Artifact bundle differs from approved Draft bundle');
+  } catch (error) {
+    unlinkIfExists(target);
+    removeDirectoryIfExists(targetAssets);
+    throw error;
+  }
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
+  const artifact = readArtifactRef(taskPath, designType);
   return {
     designType,
     artifactPath: target,
-    hash: sha256File(target),
+    assetsPath: artifact.assets.length > 0 ? targetAssets : undefined,
+    hash: artifact.hash,
     version: draft.version,
   };
 }
@@ -774,20 +1037,49 @@ function unlinkIfExists(filePath) {
   }
 }
 
+function removeDirectoryIfExists(dirPath) {
+  if (fs.existsSync(dirPath)) fs.rmSync(dirPath, { recursive: true, force: true });
+}
+
+function copyAssetFiles(sourceRoot, targetRoot) {
+  const files = collectAssetFiles(sourceRoot);
+  if (files.length === 0) return false;
+  fs.mkdirSync(targetRoot, { recursive: true });
+  for (const asset of files) {
+    const target = path.join(targetRoot, ...asset.relativePath.split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(asset.fullPath, target);
+  }
+  return true;
+}
+
 function reopenDesign(taskPath, designType) {
-  definitionFor(designType);
+  const definition = definitionFor(designType);
   const artifact = artifactPath(taskPath, designType);
+  const artifactAssets = artifactAssetsPath(taskPath, designType);
   const ref = readArtifactRef(taskPath, designType);
   if (!ref) throw new Error(`No valid Baseline to reopen: ${designType}`);
-  const history = path.join(taskPath, 'artifacts', 'history', definitionFor(designType).slug, `${ref.version}.md`);
-  fs.mkdirSync(path.dirname(history), { recursive: true });
+  const historyDir = path.join(taskPath, 'artifacts', 'history', definition.slug, ref.version);
+  const history = path.join(historyDir, 'design.md');
+  const historyAssets = path.join(historyDir, `${definition.slug}-assets`);
+  fs.mkdirSync(historyDir, { recursive: true });
   fs.copyFileSync(artifact, history);
+  copyAssetFiles(artifactAssets, historyAssets);
   initDesign(taskPath, designType);
+  removeDirectoryIfExists(draftAssetsPath(taskPath, designType));
+  copyAssetFiles(artifactAssets, draftAssetsPath(taskPath, designType));
   fs.writeFileSync(draftPath(taskPath, designType), bumpMajorVersion(fs.readFileSync(artifact, 'utf8')), 'utf8');
   unlinkIfExists(artifact);
+  removeDirectoryIfExists(artifactAssets);
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
   unlinkIfExists(approvalPath(taskPath, designType));
-  return { designType, historyFile: history, draft: draftPath(taskPath, designType) };
+  return {
+    designType,
+    historyFile: history,
+    historyAssets: ref.assets.length > 0 ? historyAssets : undefined,
+    draft: draftPath(taskPath, designType),
+    draftAssets: ref.assets.length > 0 ? draftAssetsPath(taskPath, designType) : undefined,
+  };
 }
 
 function parseJSONArg(raw, name) {
@@ -832,12 +1124,15 @@ module.exports = {
   requiredDesignTypes,
   designDir,
   draftPath,
+  draftAssetsPath,
   notesPath,
   artifactPath,
+  artifactAssetsPath,
   reviewSummaryPath,
   approvalPath,
   sha256File,
   semanticHash,
+  designSemanticHash,
   parseDraftFrontmatter: parseFrontmatter,
   readDraftRef,
   readArtifactRef,

@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">升级处置工作台列表页低保真线框图</title>
+  <desc id="desc">桌面端内部运维页面，包含全局导航、筛选、状态概览和待处置升级列表。</desc>
+  <defs>
+    <style>
+      .bg { fill: #f5f7fa; }
+      .surface { fill: #ffffff; stroke: #c8d0da; stroke-width: 1.5; }
+      .nav { fill: #1f2937; }
+      .nav2 { fill: #2f3b4c; }
+      .line { stroke: #c8d0da; stroke-width: 1.5; }
+      .text { fill: #253043; font: 15px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .small { fill: #596579; font: 13px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .heading { fill: #172033; font: 700 26px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .label { fill: #3c485c; font: 600 13px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .white { fill: #ffffff; font: 14px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .accent { fill: #1769e0; }
+      .accentText { fill: #ffffff; font: 600 14px "Segoe UI", "Microsoft YaHei", sans-serif; }
+      .chipWarn { fill: #fff4d6; stroke: #d49b17; }
+      .chipError { fill: #fde8e8; stroke: #c74343; }
+      .chipInfo { fill: #e8f1ff; stroke: #4b79b7; }
+      .callout { fill: #1769e0; stroke: #ffffff; stroke-width: 2; }
+      .calloutText { fill: #ffffff; font: 700 13px "Segoe UI", sans-serif; text-anchor: middle; dominant-baseline: central; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1440" height="900"/>
+  <rect class="nav" width="1440" height="64"/>
+  <text class="white" x="28" y="39" style="font-weight:700;font-size:18px">内部运维门户</text>
+  <text class="white" x="1210" y="38">租户：华东一区</text>
+  <circle cx="1372" cy="32" r="17" fill="#64748b"/>
+  <text class="white" x="1366" y="37">值</text>
+
+  <rect class="nav2" y="64" width="220" height="836"/>
+  <text class="white" x="24" y="110" style="opacity:.65">审批运行状态</text>
+  <rect x="12" y="129" width="196" height="44" rx="6" fill="#1769e0"/>
+  <text class="white" x="28" y="157" style="font-weight:600">SLA 升级</text>
+  <text class="white" x="28" y="206" style="opacity:.75">任务健康度</text>
+  <text class="white" x="28" y="246" style="opacity:.75">通知交付</text>
+  <text class="white" x="28" y="286" style="opacity:.75">审计查询</text>
+
+  <g transform="translate(252,92)">
+    <text class="small" x="0" y="0">审批运行状态 / SLA 升级</text>
+    <text class="heading" x="0" y="42">升级处置工作台</text>
+    <text class="small" x="0" y="70">定位停滞升级，理解系统下一动作，并在授权范围内安全恢复。</text>
+
+    <rect class="surface" x="0" y="96" width="1156" height="132" rx="8"/>
+    <text class="label" x="20" y="124">处理状态</text>
+    <rect class="surface" x="20" y="136" width="176" height="38" rx="5"/>
+    <text class="text" x="34" y="160">人工处置（3）⌄</text>
+    <text class="label" x="216" y="124">停滞阶段</text>
+    <rect class="surface" x="216" y="136" width="176" height="38" rx="5"/>
+    <text class="text" x="230" y="160">全部阶段 ⌄</text>
+    <text class="label" x="412" y="124">发生时间</text>
+    <rect class="surface" x="412" y="136" width="232" height="38" rx="5"/>
+    <text class="text" x="426" y="160">最近 24 小时 ⌄</text>
+    <text class="label" x="664" y="124">任务编号</text>
+    <rect class="surface" x="664" y="136" width="230" height="38" rx="5"/>
+    <text class="small" x="678" y="160">输入脱敏任务编号</text>
+    <rect class="accent" x="914" y="136" width="92" height="38" rx="5"/>
+    <text class="accentText" x="938" y="160">查询</text>
+    <text class="text" x="1026" y="160" style="fill:#1769e0">重置</text>
+    <text class="small" x="20" y="204">当前租户范围由登录权限确定；筛选条件保存在 URL，不包含人员或通知标识。</text>
+
+    <g transform="translate(0,250)">
+      <rect class="surface" width="268" height="92" rx="8"/>
+      <text class="small" x="18" y="27">需要人工处置</text>
+      <text class="heading" x="18" y="64" style="font-size:28px">3</text>
+      <text class="small" x="52" y="62">项</text>
+      <rect class="surface" x="288" width="268" height="92" rx="8"/>
+      <text class="small" x="306" y="27">自动重试等待</text>
+      <text class="heading" x="306" y="64" style="font-size:28px">12</text>
+      <text class="small" x="350" y="62">项</text>
+      <rect class="surface" x="576" width="268" height="92" rx="8"/>
+      <text class="small" x="594" y="27">最老停滞时长</text>
+      <text class="heading" x="594" y="64" style="font-size:28px">47 分钟</text>
+      <rect class="surface" x="864" width="292" height="92" rx="8"/>
+      <text class="small" x="882" y="27">下一自动对账</text>
+      <text class="heading" x="882" y="64" style="font-size:22px">1 分 32 秒后</text>
+    </g>
+
+    <rect class="surface" x="0" y="364" width="1156" height="372" rx="8"/>
+    <text class="label" x="20" y="395">待处置升级</text>
+    <text class="small" x="1020" y="395">最后刷新 14:32:08</text>
+    <line class="line" x1="0" y1="414" x2="1156" y2="414"/>
+    <text class="label" x="20" y="443">任务编号</text>
+    <text class="label" x="168" y="443">升级级别</text>
+    <text class="label" x="274" y="443">处理状态</text>
+    <text class="label" x="446" y="443">停滞阶段</text>
+    <text class="label" x="614" y="443">停滞时长</text>
+    <text class="label" x="748" y="443">下一动作</text>
+    <text class="label" x="1008" y="443">更新时间</text>
+
+    <g transform="translate(0,458)">
+      <rect x="1" width="1154" height="70" fill="#f8fbff"/>
+      <text class="text" x="20" y="42">AP-82••19</text>
+      <text class="text" x="168" y="42">L2</text>
+      <rect class="chipError" x="274" y="18" width="132" height="30" rx="15"/>
+      <text class="small" x="292" y="38" style="fill:#8e2828">需要人工处置</text>
+      <text class="text" x="446" y="42">通知结果未知</text>
+      <text class="text" x="614" y="42">47 分钟</text>
+      <text class="text" x="748" y="31">等待人工判断</text>
+      <text class="small" x="748" y="51">自动恢复已停止</text>
+      <text class="small" x="1008" y="42">14:31:42</text>
+      <text class="text" x="1120" y="42" style="fill:#1769e0">›</text>
+    </g>
+    <line class="line" x1="0" y1="528" x2="1156" y2="528"/>
+    <g transform="translate(0,528)">
+      <text class="text" x="20" y="42">AP-11••73</text>
+      <text class="text" x="168" y="42">L1</text>
+      <rect class="chipWarn" x="274" y="18" width="132" height="30" rx="15"/>
+      <text class="small" x="292" y="38" style="fill:#805d10">自动重试等待</text>
+      <text class="text" x="446" y="42">组织查询</text>
+      <text class="text" x="614" y="42">12 分钟</text>
+      <text class="text" x="748" y="31">2 分钟后重试</text>
+      <text class="small" x="748" y="51">第 4 次 / 上限 24 小时</text>
+      <text class="small" x="1008" y="42">14:30:18</text>
+      <text class="text" x="1120" y="42" style="fill:#1769e0">›</text>
+    </g>
+    <line class="line" x1="0" y1="598" x2="1156" y2="598"/>
+    <g transform="translate(0,598)">
+      <text class="text" x="20" y="42">AP-67••04</text>
+      <text class="text" x="168" y="42">L3</text>
+      <rect class="chipInfo" x="274" y="18" width="132" height="30" rx="15"/>
+      <text class="small" x="292" y="38" style="fill:#315d92">等待通知结果</text>
+      <text class="text" x="446" y="42">渠道投递</text>
+      <text class="text" x="614" y="42">8 分钟</text>
+      <text class="text" x="748" y="31">23 小时后对账</text>
+      <text class="small" x="748" y="51">通知服务负责交付</text>
+      <text class="small" x="1008" y="42">14:29:05</text>
+      <text class="text" x="1120" y="42" style="fill:#1769e0">›</text>
+    </g>
+    <line class="line" x1="0" y1="668" x2="1156" y2="668"/>
+    <text class="small" x="20" y="714">显示 1–3，共 15 项</text>
+    <rect class="surface" x="1048" y="690" width="40" height="30" rx="4"/>
+    <text class="small" x="1064" y="710">‹</text>
+    <rect class="surface" x="1096" y="690" width="40" height="30" rx="4"/>
+    <text class="small" x="1112" y="710">›</text>
+
+    <circle class="callout" cx="1100" cy="118" r="14"/><text class="calloutText" x="1100" y="118">1</text>
+    <circle class="callout" cx="1128" cy="272" r="14"/><text class="calloutText" x="1128" y="272">2</text>
+    <circle class="callout" cx="1134" cy="438" r="14"/><text class="calloutText" x="1134" y="438">3</text>
+  </g>
+
+  <text class="small" x="252" y="858">① 筛选与权限范围同屏可见　② 先展示处置优先级与下一自动动作　③ 列表只负责定位，不提供高危操作</text>
+</svg>

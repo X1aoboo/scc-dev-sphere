@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="980" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
+  <title id="title">升级处置工作台详情页低保真线框图</title>
+  <desc id="desc">详情页左侧展示业务事实，中部展示状态时间线，右侧展示自动恢复信息与授权操作。</desc>
+  <defs>
+    <style>
+      .bg { fill:#f5f7fa; }
+      .surface { fill:#fff; stroke:#c8d0da; stroke-width:1.5; }
+      .nav { fill:#1f2937; }
+      .text { fill:#253043; font:15px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .small { fill:#5d687b; font:13px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .heading { fill:#172033; font:700 25px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .section { fill:#2d3a4f; font:700 15px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .white { fill:#fff; font:14px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .line { stroke:#c8d0da; stroke-width:1.5; }
+      .timeline { stroke:#7b8ba1; stroke-width:2; }
+      .dot { fill:#fff; stroke:#1769e0; stroke-width:3; }
+      .accent { fill:#1769e0; }
+      .accentText { fill:#fff; font:600 14px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .warning { fill:#fff4d6; stroke:#d49b17; }
+      .danger { fill:#fde8e8; stroke:#c74343; }
+      .callout { fill:#1769e0; stroke:#fff; stroke-width:2; }
+      .calloutText { fill:#fff; font:700 13px "Segoe UI",sans-serif; text-anchor:middle; dominant-baseline:central; }
+    </style>
+  </defs>
+  <rect class="bg" width="1440" height="980"/>
+  <rect class="nav" width="1440" height="64"/>
+  <text class="white" x="28" y="39" style="font-weight:700;font-size:18px">内部运维门户</text>
+  <text class="white" x="1202" y="38">租户：华东一区　值班用户</text>
+
+  <g transform="translate(48,92)">
+    <text class="small" x="0" y="0">SLA 升级 / AP-82••19</text>
+    <text class="heading" x="0" y="42">升级详情</text>
+    <rect class="danger" x="142" y="17" width="132" height="30" rx="15"/>
+    <text class="small" x="162" y="37" style="fill:#8e2828">需要人工处置</text>
+    <text class="small" x="0" y="70">最后更新 14:31:42　·　版本 18　·　尚未确认通知结果</text>
+    <rect class="surface" x="1162" y="10" width="112" height="38" rx="5"/>
+    <text class="text" x="1183" y="35">复制诊断链接</text>
+    <rect class="surface" x="1286" y="10" width="58" height="38" rx="5"/>
+    <text class="text" x="1303" y="35">刷新</text>
+
+    <rect class="surface" x="0" y="96" width="300" height="752" rx="8"/>
+    <text class="section" x="20" y="128">业务事实</text>
+    <line class="line" x1="20" y1="143" x2="280" y2="143"/>
+    <text class="small" x="20" y="174">任务编号</text><text class="text" x="20" y="198">AP-82••19</text>
+    <text class="small" x="20" y="232">升级级别</text><text class="text" x="20" y="256">L2</text>
+    <text class="small" x="20" y="290">SLA 违约时间</text><text class="text" x="20" y="314">2026-07-30 13:44:00</text>
+    <text class="small" x="20" y="348">当前任务状态</text><text class="text" x="20" y="372">PENDING</text>
+    <text class="small" x="20" y="406">升级发生时处理人</text><text class="text" x="20" y="430">用户 •••• 2198</text>
+    <text class="small" x="20" y="464">升级对象</text><text class="text" x="20" y="488">用户 •••• 7731</text>
+    <text class="small" x="20" y="522">通知状态</text><text class="text" x="20" y="546">尚未确认通知结果</text>
+    <rect x="20" y="580" width="260" height="92" rx="6" fill="#f5f7fa" stroke="#d4dae3"/>
+    <text class="small" x="36" y="608">系统解释</text>
+    <text class="text" x="36" y="636">通知请求已被接受，</text>
+    <text class="text" x="36" y="660">但尚未取得最终交付结论。</text>
+    <text class="text" x="20" y="718" style="fill:#1769e0">展开诊断标识与 Trace ›</text>
+
+    <rect class="surface" x="320" y="96" width="628" height="752" rx="8"/>
+    <text class="section" x="342" y="128">处理时间线</text>
+    <text class="small" x="800" y="128">所有时间为 Asia/Shanghai</text>
+    <line class="line" x1="342" y1="143" x2="926" y2="143"/>
+    <line class="timeline" x1="374" y1="180" x2="374" y2="720"/>
+
+    <circle class="dot" cx="374" cy="190" r="8"/>
+    <text class="small" x="402" y="185">13:44:00</text>
+    <text class="text" x="488" y="185" style="font-weight:600">升级事实已创建</text>
+    <text class="small" x="488" y="208">事务提交；eventId 已进入 Outbox</text>
+
+    <circle class="dot" cx="374" cy="268" r="8"/>
+    <text class="small" x="402" y="263">13:44:04</text>
+    <text class="text" x="488" y="263" style="font-weight:600">已解析升级对象</text>
+    <text class="small" x="488" y="286">按 breachedAt 找到历史直属上级</text>
+
+    <circle class="dot" cx="374" cy="346" r="8"/>
+    <text class="small" x="402" y="341">13:44:07</text>
+    <text class="text" x="488" y="341" style="font-weight:600">通知请求已接受</text>
+    <text class="small" x="488" y="364">notificationId：NT-•••-912　·　等待最终结果</text>
+
+    <circle cx="374" cy="446" r="8" fill="#fff4d6" stroke="#d49b17" stroke-width="3"/>
+    <text class="small" x="402" y="429">14:14:07</text>
+    <text class="text" x="488" y="429" style="font-weight:600">主动对账：结果仍未知</text>
+    <rect class="warning" x="488" y="446" width="386" height="66" rx="6"/>
+    <text class="small" x="504" y="470" style="fill:#704f08">通知服务确认请求存在，但供应商尚未返回终态。</text>
+    <text class="small" x="504" y="494" style="fill:#704f08">审批侧不重复发送渠道通知。</text>
+
+    <circle cx="374" cy="570" r="8" fill="#fde8e8" stroke="#c74343" stroke-width="3"/>
+    <text class="small" x="402" y="565">14:31:42</text>
+    <text class="text" x="488" y="565" style="font-weight:600">进入人工处置</text>
+    <text class="small" x="488" y="588">自动恢复达到策略边界；等待授权人员判断</text>
+    <rect x="488" y="612" width="386" height="66" rx="6" fill="#f5f7fa" stroke="#d4dae3"/>
+    <text class="small" x="504" y="637">关联 Trace　b7d9•••11a2</text>
+    <text class="small" x="504" y="660">审计记录　AUD-•••-472</text>
+
+    <rect class="surface" x="968" y="96" width="376" height="752" rx="8"/>
+    <text class="section" x="990" y="128">恢复责任与操作</text>
+    <line class="line" x1="990" y1="143" x2="1322" y2="143"/>
+    <text class="small" x="990" y="176">当前恢复责任</text>
+    <text class="text" x="990" y="201" style="font-weight:600">审批平台值班组</text>
+    <text class="small" x="990" y="238">下一自动动作</text>
+    <text class="text" x="990" y="263">已停止自动重试</text>
+    <text class="small" x="990" y="300">允许的人工动作</text>
+    <rect class="accent" x="990" y="318" width="332" height="44" rx="5"/>
+    <text class="accentText" x="1100" y="346">对账通知结果</text>
+    <rect class="surface" x="990" y="374" width="332" height="44" rx="5"/>
+    <text class="text" x="1092" y="402">重试当前步骤</text>
+    <rect class="surface" x="990" y="430" width="332" height="44" rx="5"/>
+    <text class="text" x="1056" y="458">保持人工处置并停止自动重试</text>
+    <rect class="warning" x="990" y="506" width="332" height="104" rx="6"/>
+    <text class="small" x="1008" y="534" style="fill:#704f08">操作前会再次校验权限和版本。</text>
+    <text class="small" x="1008" y="560" style="fill:#704f08">页面不会直接把记录设为“已送达”。</text>
+    <text class="small" x="1008" y="586" style="fill:#704f08">版本冲突时必须刷新并重新确认。</text>
+    <text class="small" x="990" y="654">无权操作？</text>
+    <text class="text" x="990" y="680" style="fill:#1769e0">查看权限说明与申请流程 ›</text>
+
+    <circle class="callout" cx="280" cy="120" r="14"/><text class="calloutText" x="280" y="120">1</text>
+    <circle class="callout" cx="924" cy="120" r="14"/><text class="calloutText" x="924" y="120">2</text>
+    <circle class="callout" cx="1320" cy="120" r="14"/><text class="calloutText" x="1320" y="120">3</text>
+  </g>
+  <text class="small" x="48" y="952">① 业务事实回答“这是什么”　② 时间线回答“发生了什么”　③ 操作区回答“系统还会做什么、我现在能做什么”</text>
+</svg>

@@ -7,10 +7,12 @@ const path = require('node:path');
 const { makeTask } = require('./helpers');
 const { businessDraft } = require('./fixtures/business-design');
 const { implementationDraft } = require('./fixtures/implementation-design');
+const { installSolutionAssets, solutionDraft } = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
   initDesign,
   draftPath,
+  artifactAssetsPath,
   artifactPath,
   lintDraft,
   recordReview,
@@ -18,74 +20,13 @@ const {
   publish,
   syncDesignState,
   inspectWorkspace,
+  readDraftRef,
 } = require('../devsphere-design');
 const { approveDesign } = require('../devsphere-approval');
 
 const DRAFTS = {
   businessDesign: businessDraft('FEAT-DRY-001', 'existing'),
-  solutionDesign: `---
-artifactId: "SD-FEAT-DRY-001"
-version: "1.0.0"
----
-
-# 审批任务 SLA 自动升级方案设计
-
-## 概述
-为审批任务增加 SLA 自动升级，供研发、测试和运维人员共同使用。
-
-## 特性需求与设计上下文
-这是存量增强；新增自动升级，影响审批状态和通知，保持组织数据所有权不变，不包含组织架构维护。
-
-## 总体方案
-调度器发现逾期任务，升级服务原子创建升级事件，Outbox 异步驱动上级解析、通知和审计。
-
-## 4+1 架构视图
-
-### 场景视图
-逾期任务触发一次升级；重复扫描、撤回竞态和通知失败具有明确结果。
-
-### 逻辑视图
-审批服务拥有任务状态，组织服务拥有上下级关系，通知服务负责送达。
-
-### 进程视图
-扫描、原子建事件、异步消费和通知形成可重试链路，eventId 阻止重复升级。
-
-### 开发视图
-审批服务新增调度、升级和 Outbox 组件，通知服务沿用现有消费入口。
-
-### 物理视图
-复用现有部署和消息设施，扫描任务使用独立并发配额保护在线请求。
-
-## 接口与集成设计
-组织查询设置超时和有限重试，通知事件至少一次投递并以 eventId 幂等。
-
-## 数据设计
-审批服务拥有升级状态和 Outbox，审计表只追加，组织关系不复制为权威数据。
-
-## 可靠性、可用性与功能安全设计
-依赖失败保留待处理事件并退避重试，积压和重试耗尽触发告警；不涉及功能安全。
-
-## 安全、隐私与韧性设计
-沿用审批权限边界，操作者标识最小化展示，通知消费不能绕过租户校验。
-
-## 非功能质量属性设计
-扫描批次和并发配额保护在线请求；升级延迟和积压深度可监控、可验证。
-
-## 关键技术决策、取舍与风险
-选择事务 Outbox 取得可靠投递，接受通知最终一致；外部组织查询失败采用退避重试。
-
-## 下游设计约束与交接
-相关活动可消费事务边界、幂等键、乐观锁、失败语义和质量目标。
-
-## 需求追溯与覆盖关系
-自动升级落到调度与升级事件，可靠通知落到 Outbox，审计要求落到追加记录。
-
-## 词汇表
-升级事件：一次 SLA 违约产生的唯一业务事件。
-
-## 参考资料
-采用当前任务需求、审批状态模型和组织服务接口合同。
-`,
+  solutionDesign: solutionDraft('FEAT-DRY-001'),
   implementationDesign: implementationDraft('FEAT-DRY-001'),
   testDesign: `---
 artifactId: "TD-FEAT-DRY-001"
@@ -117,11 +58,15 @@ version: "1.0.0"
 `,
 };
 
-const CHECKLIST = {
-  businessDesign: 'business-semantic-consistency',
-  solutionDesign: 'architecture-consistency',
-  implementationDesign: 'implementation-feasibility',
-  testDesign: 'risk-coverage',
+const CHECKLISTS = {
+  businessDesign: ['business-semantic-consistency'],
+  solutionDesign: [
+    'architecture-consistency',
+    'architecture-documentation-quality',
+    'design-traceability',
+  ],
+  implementationDesign: ['implementation-feasibility'],
+  testDesign: ['risk-coverage'],
 };
 
 test('tradeoff-rich feature follows the fixed design sequence and synchronizes readiness', () => {
@@ -139,16 +84,28 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
     assert.strictEqual(validateDesignEntry(taskPath, designType).valid, true);
     initDesign(taskPath, designType);
     fs.writeFileSync(draftPath(taskPath, designType), DRAFTS[designType], 'utf8');
+    if (designType === 'solutionDesign') installSolutionAssets(taskPath);
     assert.strictEqual(lintDraft(taskPath, designType).status, 'pass');
-    const draftHash = require('../devsphere-design').sha256File(draftPath(taskPath, designType));
+    const draftHash = readDraftRef(taskPath, designType).hash;
     assert.strictEqual(recordReview(taskPath, designType, {
       draftHash,
-      checklists: [{ checklistId: CHECKLIST[designType], result: 'pass', summary: '通过', findings: [] }],
+      checklists: CHECKLISTS[designType].map(checklistId => ({
+        checklistId,
+        result: 'pass',
+        summary: '通过',
+        findings: [],
+      })),
       notApplicable: [],
     }).status, 'pass');
     approveCurrentDesign(taskPath, designType, { approvedBy: 'human', acceptedRisks: [] });
     publish(taskPath, designType);
     assert.strictEqual(fs.readFileSync(artifactPath(taskPath, designType), 'utf8'), DRAFTS[designType]);
+    if (designType === 'solutionDesign') {
+      assert.strictEqual(
+        fs.existsSync(path.join(artifactAssetsPath(taskPath, designType), 'ucd', 'escalation-list-wireframe.svg')),
+        true,
+      );
+    }
     const synced = syncDesignState(taskPath);
     if (designType !== 'testDesign') assert.strictEqual(synced.status, 'designing');
   }

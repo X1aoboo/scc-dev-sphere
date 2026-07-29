@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="820" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
+  <title id="title">恢复操作确认、版本冲突和结果未知状态低保真线框图</title>
+  <desc id="desc">并列展示高危操作确认对话框、版本冲突提示和提交结果未知提示。</desc>
+  <defs>
+    <style>
+      .bg { fill:#eef1f5; }
+      .panel { fill:#fff; stroke:#bdc7d3; stroke-width:1.5; }
+      .text { fill:#253043; font:15px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .small { fill:#5c687a; font:13px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .heading { fill:#172033; font:700 21px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .label { fill:#3c485c; font:600 13px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .line { stroke:#c8d0da; stroke-width:1.5; }
+      .primary { fill:#1769e0; }
+      .primaryText { fill:#fff; font:600 14px "Segoe UI","Microsoft YaHei",sans-serif; }
+      .warning { fill:#fff4d6; stroke:#d49b17; }
+      .danger { fill:#fde8e8; stroke:#c74343; }
+      .info { fill:#e8f1ff; stroke:#4b79b7; }
+    </style>
+  </defs>
+  <rect class="bg" width="1440" height="820"/>
+  <text class="heading" x="42" y="46" style="font-size:26px">恢复操作关键状态</text>
+  <text class="small" x="42" y="72">三种状态使用不同标题、说明和主操作；版本冲突与结果未知均不得呈现成功反馈。</text>
+
+  <g transform="translate(42,104)">
+    <rect class="panel" width="430" height="650" rx="10"/>
+    <text class="small" x="20" y="34">A. 操作前确认</text>
+    <line class="line" x1="0" y1="52" x2="430" y2="52"/>
+    <text class="heading" x="28" y="92">确认对账通知结果？</text>
+    <text class="small" x="28" y="121">系统将使用原 notificationId 查询正式结果，</text>
+    <text class="small" x="28" y="143">不会由操作者直接选择“已送达”。</text>
+    <rect x="28" y="168" width="374" height="116" rx="6" fill="#f5f7fa" stroke="#d4dae3"/>
+    <text class="label" x="46" y="197">目标升级</text><text class="text" x="158" y="197">AP-82••19 / L2</text>
+    <text class="label" x="46" y="229">当前状态</text><text class="text" x="158" y="229">需要人工处置</text>
+    <text class="label" x="46" y="261">状态版本</text><text class="text" x="158" y="261">18</text>
+    <rect class="warning" x="28" y="304" width="374" height="78" rx="6"/>
+    <text class="small" x="46" y="332" style="fill:#704f08">提交前服务端会重新校验权限和版本。</text>
+    <text class="small" x="46" y="358" style="fill:#704f08">若状态已变化，本次操作不会覆盖新结果。</text>
+    <text class="label" x="28" y="418">操作原因（必填，10–500 字）</text>
+    <rect class="panel" x="28" y="434" width="374" height="104" rx="5"/>
+    <text class="small" x="44" y="464">已核对供应商工单，需主动查询正式结果…</text>
+    <text class="small" x="360" y="520">24 / 500</text>
+    <rect class="panel" x="218" y="568" width="86" height="42" rx="5"/>
+    <text class="text" x="245" y="595">取消</text>
+    <rect class="primary" x="316" y="568" width="86" height="42" rx="5"/>
+    <text class="primaryText" x="338" y="595">确认提交</text>
+    <text class="small" x="28" y="634">actionId 在打开确认框时生成；重试保持不变。</text>
+  </g>
+
+  <g transform="translate(504,104)">
+    <rect class="panel" width="430" height="650" rx="10"/>
+    <text class="small" x="20" y="34">B. 状态版本冲突</text>
+    <line class="line" x1="0" y1="52" x2="430" y2="52"/>
+    <rect class="warning" x="28" y="78" width="374" height="118" rx="7"/>
+    <text class="heading" x="48" y="116" style="font-size:18px">状态已发生变化</text>
+    <text class="small" x="48" y="146" style="fill:#704f08">自动恢复或其他人员已推进该升级。</text>
+    <text class="small" x="48" y="170" style="fill:#704f08">原操作未执行，请刷新后重新判断。</text>
+    <text class="label" x="28" y="234">提交时看到</text>
+    <rect x="28" y="250" width="374" height="78" rx="6" fill="#f5f7fa" stroke="#d4dae3"/>
+    <text class="text" x="46" y="280">版本 18　·　需要人工处置</text>
+    <text class="small" x="46" y="306">动作：对账通知结果</text>
+    <text class="label" x="28" y="366">当前服务端状态</text>
+    <rect class="info" x="28" y="382" width="374" height="94" rx="6"/>
+    <text class="text" x="46" y="414">版本 19　·　已完成</text>
+    <text class="small" x="46" y="440">14:34:09 收到迟到送达结果</text>
+    <text class="small" x="46" y="462">恢复动作已不再允许</text>
+    <text class="label" x="28" y="516">你填写的原因已暂时保留</text>
+    <text class="small" x="28" y="544">刷新后若仍有允许动作，需要重新确认。</text>
+    <rect class="primary" x="250" y="576" width="152" height="42" rx="5"/>
+    <text class="primaryText" x="286" y="603">刷新并查看最新状态</text>
+  </g>
+
+  <g transform="translate(966,104)">
+    <rect class="panel" width="430" height="650" rx="10"/>
+    <text class="small" x="20" y="34">C. 提交结果未知</text>
+    <line class="line" x1="0" y1="52" x2="430" y2="52"/>
+    <rect class="danger" x="28" y="78" width="374" height="132" rx="7"/>
+    <text class="heading" x="48" y="116" style="font-size:18px">尚未确认操作结果</text>
+    <text class="small" x="48" y="146" style="fill:#8e2828">请求超时，服务端可能已经接受操作。</text>
+    <text class="small" x="48" y="170" style="fill:#8e2828">不要关闭告警或使用新的操作编号重提。</text>
+    <text class="small" x="48" y="194" style="fill:#8e2828">页面不会把当前状态标记为成功。</text>
+    <text class="label" x="28" y="250">操作摘要</text>
+    <rect x="28" y="266" width="374" height="118" rx="6" fill="#f5f7fa" stroke="#d4dae3"/>
+    <text class="small" x="46" y="296">目标　AP-82••19 / L2</text>
+    <text class="small" x="46" y="324">动作　对账通知结果</text>
+    <text class="small" x="46" y="352">actionId　ACT-•••-8821</text>
+    <text class="label" x="28" y="430">接下来可以</text>
+    <text class="text" x="48" y="462">1. 使用原 actionId 查询操作结果</text>
+    <text class="text" x="48" y="492">2. 查询仍未知时，用原 actionId 重试</text>
+    <text class="text" x="48" y="522">3. 保留页面上下文并联系值班组</text>
+    <rect class="panel" x="76" y="576" width="126" height="42" rx="5"/>
+    <text class="text" x="100" y="603">复制诊断信息</text>
+    <rect class="primary" x="214" y="576" width="188" height="42" rx="5"/>
+    <text class="primaryText" x="255" y="603">查询原操作结果</text>
+  </g>
+</svg>

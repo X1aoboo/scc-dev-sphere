@@ -42,6 +42,8 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /work\/<slug>\/draft\.md.*目标文件/s);
   assert.match(task3, /design-draft.*完成对照检查/s);
   assert.match(task3, /devsphere-design\.js lint <taskPath> <designType>/);
+  assert.match(task3, /不判断方案是否具体、专业或语义成立/);
+  assert.match(task3, /Design Guide 收敛标准、适用 Checklist 和用户评审/);
   assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);
   assert.match(task3, /重新调用 `feature-design-analysis`/);
   assert.match(task3, /最终有效设计及必要上下文.*完整、忠实/s);
@@ -139,6 +141,10 @@ test('Design Guides contain professional differences and Specs remain independen
     if (slug === 'business-design') {
       assert.match(spec, /十四个主章节固定存在/);
       assert.match(spec, /低影响或沿用现状/);
+    } else if (slug === 'solution-design') {
+      assert.match(spec, /十二个主章节.*固定骨架/s);
+      assert.match(spec, /功能点作为纵向主线/);
+      assert.match(spec, /完成标准/);
     } else {
       assert.match(spec, /核心章节/);
       assert.match(spec, /条件章节/);
@@ -248,44 +254,136 @@ test('business review navigation has two required checklists and one conditional
 test('solution design reference defines target-state architecture without a second workflow', () => {
   const guide = read('skills/feature-design/references/design-guides/solution-design.md');
   const spec = read('skills/feature-design/references/specs/solution-design.md');
+  const documentationQuality = read('skills/feature-design/references/review-checklists/architecture-documentation-quality.md');
+  const analysis = read('skills/feature-design-analysis/SKILL.md');
+  const golden = read('scripts/test/fixtures/solution-design.golden.md');
+  const fixtureSource = read('scripts/test/fixtures/solution-design.js');
+  const {
+    assetsPath,
+    installSolutionAssets,
+    solutionDraft,
+  } = require('./fixtures/solution-design');
 
   for (const phrase of [
     /目标态/,
     /新建特性/,
     /存量特性增强/,
-    /新增.*受影响.*保持不变.*非目标/s,
+    /新增.*修改.*删除.*保持不变.*非目标/s,
+    /具体如何实现和运行/,
+    /实现链/,
     /4\+1/,
     /场景视图.*逻辑视图.*进程视图.*开发视图.*物理视图/s,
-    /必须关闭的系统级决策/,
-    /系统责任边界.*架构与微服务职责.*接口与集成契约.*数据归属与一致性.*关键质量属性.*异常与失败语义/s,
+    /需求功能点.*纵向主线/,
+    /触发与前置条件.*参与系统、服务和关键组件.*处理步骤、判断和分支.*数据和状态.*接口、事件.*事务、并发、幂等和一致性.*异常、超时、重复.*最终业务结果.*部署、兼容、迁移、回退/s,
+    /只写.*采用 Outbox.*不是实现链/s,
+    /用户交互与前端设计透镜/,
+    /初始、加载、空、成功、校验失败、业务失败、技术失败、部分成功、无权限、数据过期和刷新后的界面状态/,
+    /Mermaid 不用于替代线框图或视觉稿/,
+    /用户研究、现状观察、支持工单、可用性数据或明确待验证假设/,
+    /关键设计至少经过一次.*walkthrough、原型评审或用户可用性验证/s,
+    /关键页面同时保留评审快照/,
+    /不涉及用户界面时.*不生成空页面清单/s,
+    /必须关闭的系统级设计/,
+    /责任与流程.*接口与集成.*数据与状态.*正确性机制.*可靠性与运维.*安全与隐私.*质量属性.*部署与演进/s,
+    /architecture-consistency.*architecture-documentation-quality.*design-traceability/s,
   ]) assert.match(guide, phrase);
 
-  for (const heading of [
-    '概述',
-    '特性需求与设计上下文',
-    '总体方案',
-    '4\\+1 架构视图',
-    '接口与集成设计',
-    '数据设计',
-    '可靠性、可用性与功能安全设计',
-    '安全、隐私与韧性设计',
-    '非功能质量属性设计',
-    '关键技术决策、取舍与风险',
-    '下游设计约束与交接',
-    '需求追溯与覆盖关系',
-    '词汇表',
-    '参考资料',
-  ]) assert.match(spec, new RegExp(`^## ${heading}$`, 'm'));
+  for (const [number, heading] of [
+    ['1', '概述'],
+    ['2', '特性需求概述'],
+    ['3', '需求场景与影响分析'],
+    ['4', '特性\\/功能实现原理'],
+    ['5', '接口与集成设计'],
+    ['6', '数据设计'],
+    ['7', '可靠性、可用性与功能安全设计'],
+    ['8', '安全、隐私与韧性设计'],
+    ['9', '非功能质量属性设计'],
+    ['10', '关键技术决策、取舍与风险'],
+    ['11', '需求分解分配与下游交接'],
+    ['12', '词汇表与参考资料'],
+  ]) assert.match(spec, new RegExp(`^## ${number}\\. ${heading}$`, 'm'));
 
-  for (const view of ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图']) {
-    assert.match(spec, new RegExp(`^### ${view}$`, 'm'));
+  for (const [number, subsection] of [
+    ['4\\.1', '总体方案'],
+    ['4\\.2', '4\\+1 架构视图'],
+    ['4\\.3', '功能点设计'],
+  ]) {
+    assert.match(spec, new RegExp(`^### ${number} ${subsection}$`, 'm'));
+  }
+  for (const [index, view] of ['场景视图', '逻辑视图', '进程视图', '开发视图', '物理视图'].entries()) {
+    assert.match(spec, new RegExp(`^#### 4\\.2\\.${index + 1} ${view}$`, 'm'));
+  }
+  for (const subsection of ['关联需求与设计目标', '当前设计', '本次变更', '目标态设计', '设计影响、约束与风险']) {
+    assert.match(spec, new RegExp(`^##### ${subsection}$`, 'm'));
   }
 
   assert.match(spec, /内容合同.*design tree\/frontier/s);
-  assert.match(spec, /新建.*存量增强/s);
+  assert.match(spec, /新建/);
+  assert.match(spec, /存量增强/);
   assert.match(spec, /目标态正文|完整目标态/);
+  assert.match(spec, /功能点 \| 关联需求 \| 主要变更类型 \| 设计目标与边界 \| 详细设计位置/);
+  assert.match(spec, /只写.*采用某技术.*属于方案结论，不是完整设计/s);
+  assert.match(spec, /用户交互与前端设计（按影响触发）/);
+  assert.match(spec, /在现有章节中承载前端方案，不新增固定主章节/);
+  assert.match(spec, /用户旅程、导航和页面状态.*页面布局与视觉层级/s);
+  assert.match(spec, /服务端权威状态与 URL、筛选、草稿、缓存、乐观状态/s);
+  assert.match(spec, /目标用户、关键任务、使用环境、痛点、用户研究或运行证据、待验证假设和可用性目标/);
+  assert.match(spec, /页面区域表只能补充.*不能.*替代视觉产物/s);
+  assert.match(spec, /Draft、配套资产、Review、人工批准和发布必须绑定同一设计包版本/);
+  assert.match(spec, /不涉及界面时.*不生成空内容/s);
+  assert.match(spec, /用户能够评审具体方案，下游只需在已确定边界内细化服务内部实现/);
+  assert.match(documentationQuality, /具体如何实现和运行/);
+  assert.match(documentationQuality, /不以最低字数、段落数、图示数或关键词出现次数/);
+  assert.match(documentationQuality, /必须阻断的表现/);
+  assert.match(documentationQuality, /只写采用某项技术.*没有说明具体如何工作/s);
+  assert.match(documentationQuality, /用户交互与前端（按影响触发）/);
+  assert.match(documentationQuality, /目标用户、关键任务、使用环境、痛点、用户研究或运行证据/);
+  assert.match(documentationQuality, /关键页面线框图\/原型快照/);
+  assert.match(documentationQuality, /walkthrough、原型评审或用户可用性验证/);
+  assert.match(documentationQuality, /设计资产.*Draft、Review、人工批准和发布.*同一版本/s);
+  assert.match(documentationQuality, /初始、加载、空、成功、校验失败、业务失败、技术失败、部分成功、无权限、数据过期和刷新状态/);
+  assert.match(documentationQuality, /需求改变用户界面.*只有页面名称、静态截图或 Happy Path/s);
+  assert.match(documentationQuality, /下游必须重新发明跨服务流程、事务、数据状态或失败恢复/);
+  assert.match(fixtureSource, /readFileSync\(templatePath, 'utf8'\)/);
+  assert.match(fixtureSource, /solution-design\.golden\.md/);
+  assert.match(fixtureSource, /function installSolutionAssets/);
+  assert.strictEqual(typeof installSolutionAssets, 'function');
+  assert.doesNotMatch(fixtureSource, /# 审批任务 SLA 自动升级方案设计/);
+  assert.strictEqual(solutionDraft('FEAT-GOLD-001'), golden.replaceAll('<TASK_ID>', 'FEAT-GOLD-001'));
+  for (const phrase of [
+    /业务唯一键定义为/,
+    /Command Handler 在一个本地数据库事务内执行/,
+    /升级处理状态机如下/,
+    /故障模式与恢复/,
+    /质量属性场景/,
+    /REQ-SLA-008/,
+    /升级处置工作台/,
+    /UCD-SLA-001/,
+    /UCD 依据与可用性目标/,
+    /关键页面线框图/,
+    /solution-design-assets\/ucd\/escalation-list-wireframe\.svg/,
+    /第一轮 walkthrough.*第二轮原型评审/s,
+    /页面信息结构/,
+    /界面状态与反馈/,
+    /服务端权威状态/,
+    /actionId.*expectedVersion/s,
+    /结果未知/,
+    /WCAG 2\.2 AA/,
+    /Implementation Design 约束/,
+  ]) assert.match(golden, phrase);
+  for (const file of [
+    'escalation-list-wireframe.svg',
+    'escalation-detail-wireframe.svg',
+    'recovery-states-wireframe.svg',
+  ]) {
+    const svg = fs.readFileSync(path.join(assetsPath, 'ucd', file), 'utf8');
+    assert.match(svg, /^<svg[\s>]/);
+    assert.match(svg, /aria-labelledby=/);
+    assert.match(svg, /<title/);
+  }
   assert.doesNotMatch(guide, /inspect-workspace|init-design|record-review|approve-current-design|publish|sync-state/);
   assert.doesNotMatch(spec, /businessDesign\s*→\s*solutionDesign|Business Baseline.*必须|固定前置|外层 Workflow/);
+  assert.doesNotMatch(analysis, /需求功能点清单|功能点分析透镜|4\+1 架构视图/);
 });
 
 test('every Review Checklist is Chinese and defines applicability, rules, and concrete items', () => {
