@@ -198,10 +198,14 @@ test('business design Guide is a semantic reference with the approved coverage a
   for (const phrase of [
     /业务语义目标态/,
     /新建特性.*存量增强/s,
-    /业务概念与度量语义.*适用范围、参与者与业务责任.*业务规则与判定逻辑.*时间、状态与生命周期语义.*业务场景、异常与结果语义.*存量影响与业务验收契约/s,
+    /业务概念与度量语义.*适用范围、参与者与业务责任.*业务规则与判定逻辑.*时间、状态与生命周期语义.*业务场景、异常与结果语义.*存量影响与业务验收契约.*用户任务与业务交互语义/s,
     /返回需求澄清.*留在业务设计.*留给方案设计/s,
-    /business-semantic-consistency.*design-traceability.*business-change-impact-review/s,
+    /业务功能点.*当前业务设计.*新增\/修改\/删除.*完整业务行为/s,
+    /business-semantic-consistency.*business-documentation-quality.*design-traceability.*business-change-impact-review/s,
   ]) assert.match(guide, phrase);
+  for (const phrase of [/用户研究/, /用户任务/, /服务蓝图/, /业务概念原型/, /walkthrough/, /可用性/]) {
+    assert.match(guide, phrase);
+  }
   assert.doesNotMatch(guide, /businessType|impactLevel|KPI 专属|init-design|record-review|approve-current-design|publish/);
 });
 
@@ -209,39 +213,58 @@ test('business design Spec defines exactly fourteen content chapters without a q
   const spec = read('skills/feature-design/references/specs/business-design.md');
   const headings = [...spec.matchAll(/^## (.+)$/gm)].map(match => match[1]);
   assert.deepStrictEqual(headings, [
-    '概述',
-    '需求基线与业务设计范围',
-    '业务目标态总览',
-    '业务概念、对象与度量语义',
-    '业务参与者、责任与适用范围',
-    '业务场景与业务行为',
-    '业务规则与判定逻辑',
-    '时间、状态与生命周期语义',
-    '异常、边界与业务结果',
-    '关键业务决策、约束与风险',
-    '业务验收与需求追溯',
-    '下游设计约束与交接',
-    '词汇表',
-    '参考资料',
+    '1. 概述',
+    '2. 需求基线与业务设计范围',
+    '3. 业务目标态总览',
+    '4. 业务概念、对象与度量语义',
+    '5. 业务参与者、责任与适用范围',
+    '6. 业务功能点与业务场景设计',
+    '7. 业务规则与判定逻辑',
+    '8. 时间、状态与生命周期语义',
+    '9. 异常、边界与业务结果',
+    '10. 关键业务决策、约束与风险',
+    '11. 业务验收与需求追溯',
+    '12. 下游设计约束与交接',
+    '13. 词汇表',
+    '14. 参考资料',
   ]);
   assert.match(spec, /内容合同.*不规定分析步骤、提问顺序/s);
   assert.match(spec, /低影响.*核验范围、当前结论、判断依据/s);
   assert.match(spec, /不规定.*图表数量/);
+  assert.match(spec, /功能点 \| 关联需求 \| 变更类型 \| 业务目标与边界 \| 详细设计位置/);
+  for (const subsection of [
+    '关联需求、业务目标与结果责任',
+    '当前业务设计与依据',
+    '本次业务变化',
+    '目标态业务行为',
+    '适用规则、状态和时间语义',
+    '异常、边界与可观察结果',
+    '业务验收实例',
+  ]) assert.match(spec, new RegExp(`^#### 6\\.x\\.\\d ${subsection}$`, 'm'));
+  assert.match(spec, /UCD 依据、用户任务与可用性目标（按影响触发）/);
+  assert.match(spec, /低保真概念原型.*不确定最终页面、组件、像素和 Design Token/s);
+  assert.match(spec, /Requirement\/NFR → 业务功能点 → 权威规则 → 代表场景 → 必须得到的业务结果/);
   assert.doesNotMatch(spec, /businessType|impactLevel|designMode|status:|checklists:|固定问卷|Outbox|Kafka|MySQL|Redis/);
 });
 
-test('business review navigation has two required checklists and one conditional change-impact checklist', () => {
+test('business review navigation has three required checklists and one conditional change-impact checklist', () => {
   const guide = read('skills/feature-design/references/design-guides/business-design.md');
   const semantic = read('skills/feature-design/references/review-checklists/business-semantic-consistency.md');
+  const documentationQuality = read('skills/feature-design/references/review-checklists/business-documentation-quality.md');
   const traceability = read('skills/feature-design/references/review-checklists/design-traceability.md');
   const impact = read('skills/feature-design/references/review-checklists/business-change-impact-review.md');
 
-  assert.strictEqual((guide.match(/\.\.\/review-checklists\//g) || []).length, 3);
+  assert.strictEqual((guide.match(/\.\.\/review-checklists\//g) || []).length, 4);
   assert.match(semantic, /概念.*规则引用.*适用.*优先级.*时间.*状态.*场景.*异常.*验收.*目标态.*技术.*Solution Design/s);
+  assert.match(documentationQuality, /当前设计.*本次变化.*完整目标态/s);
+  assert.match(documentationQuality, /当前业务设计与依据.*本次新增\/修改\/删除.*完整业务行为/s);
+  assert.match(documentationQuality, /用户能够评审.*Solution Design.*Test Design/s);
+  assert.match(documentationQuality, /人机交互.*用户任务.*必要信息.*动作.*反馈/s);
+  assert.match(documentationQuality, /不按最低字数、段落数、图示数或关键词出现次数/);
   assert.match(traceability, /Requirement 目标.*正式范围.*结果责任.*Requirement Acceptance.*方案偏好.*最迟决策点.*下游交接/s);
   assert.match(impact, /仅当存量增强实质改变/);
   assert.match(impact, /可信现状.*新增、受影响、保持不变和非目标.*历史对象.*完整业务目标态/s);
-  for (const checklist of [semantic, traceability, impact]) {
+  for (const checklist of [semantic, documentationQuality, traceability, impact]) {
     assert.match(checklist, /blocking.*advisory.*risk/s);
     assert.match(checklist, /不与用户交互/);
     assert.match(checklist, /对 Draft 和正式 Artifact 保持只读/);
@@ -249,6 +272,52 @@ test('business review navigation has two required checklists and one conditional
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/review-checklists/business-coverage.md')), false);
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/review-checklists/business-traceability.md')), false);
   assert.doesNotMatch(guide, /KPI|privacy-review|流程评审|权限评审/);
+});
+
+test('business golden fixture is the reviewable design contract with versioned UCD assets', () => {
+  const golden = read('scripts/test/fixtures/business-design.golden.md');
+  const fixtureSource = read('scripts/test/fixtures/business-design.js');
+  const {
+    assetsPath,
+    businessDraft,
+    installBusinessAssets,
+  } = require('./fixtures/business-design');
+
+  assert.match(fixtureSource, /readFileSync\(templatePath, 'utf8'\)/);
+  assert.match(fixtureSource, /business-design\.golden\.md/);
+  assert.match(fixtureSource, /function installBusinessAssets/);
+  assert.strictEqual(typeof installBusinessAssets, 'function');
+  assert.strictEqual(businessDraft('FEAT-GOLD-001'), golden.replaceAll('<TASK_ID>', 'FEAT-GOLD-001'));
+
+  for (const phrase of [
+    /REQ-SLA-008/,
+    /NFR-SLA-004/,
+    /业务功能点清单/,
+    /当前业务设计与依据/,
+    /本次业务变化/,
+    /目标态业务行为/,
+    /业务处置服务蓝图/,
+    /UCD-SLA-001/,
+    /UCD 依据、用户任务与可用性目标/,
+    /business-design-assets\/ucd\/escalation-list-business-concept\.svg/,
+    /第一轮 walkthrough.*第二轮评审/s,
+    /情况已变化.*尚未确认/s,
+    /WCAG 2\.2 AA/,
+    /需求—功能点—规则—场景关系/,
+    /Solution Design 必须保持的业务语义/,
+  ]) assert.match(golden, phrase);
+
+  for (const file of [
+    'escalation-list-business-concept.svg',
+    'escalation-detail-business-concept.svg',
+    'escalation-recovery-business-concept.svg',
+  ]) {
+    const svg = fs.readFileSync(path.join(assetsPath, 'ucd', file), 'utf8');
+    assert.match(svg, /^<svg[\s>]/);
+    assert.match(svg, /aria-labelledby=/);
+    assert.match(svg, /<title/);
+    assert.match(svg, /<desc/);
+  }
 });
 
 test('solution design reference defines target-state architecture without a second workflow', () => {

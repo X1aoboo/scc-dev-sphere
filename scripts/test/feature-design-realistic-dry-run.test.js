@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
-const { businessDraft } = require('./fixtures/business-design');
+const { businessDraft, installBusinessAssets } = require('./fixtures/business-design');
 const { implementationDraft } = require('./fixtures/implementation-design');
 const { installSolutionAssets, solutionDraft } = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
@@ -25,7 +25,7 @@ const {
 const { approveDesign } = require('../devsphere-approval');
 
 const DRAFTS = {
-  businessDesign: businessDraft('FEAT-DRY-001', 'existing'),
+  businessDesign: businessDraft('FEAT-DRY-001'),
   solutionDesign: solutionDraft('FEAT-DRY-001'),
   implementationDesign: implementationDraft('FEAT-DRY-001'),
   testDesign: `---
@@ -59,7 +59,11 @@ version: "1.0.0"
 };
 
 const CHECKLISTS = {
-  businessDesign: ['business-semantic-consistency'],
+  businessDesign: [
+    'business-semantic-consistency',
+    'business-documentation-quality',
+    'design-traceability',
+  ],
   solutionDesign: [
     'architecture-consistency',
     'architecture-documentation-quality',
@@ -84,6 +88,7 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
     assert.strictEqual(validateDesignEntry(taskPath, designType).valid, true);
     initDesign(taskPath, designType);
     fs.writeFileSync(draftPath(taskPath, designType), DRAFTS[designType], 'utf8');
+    if (designType === 'businessDesign') installBusinessAssets(taskPath);
     if (designType === 'solutionDesign') installSolutionAssets(taskPath);
     assert.strictEqual(lintDraft(taskPath, designType).status, 'pass');
     const draftHash = readDraftRef(taskPath, designType).hash;
@@ -100,6 +105,12 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
     approveCurrentDesign(taskPath, designType, { approvedBy: 'human', acceptedRisks: [] });
     publish(taskPath, designType);
     assert.strictEqual(fs.readFileSync(artifactPath(taskPath, designType), 'utf8'), DRAFTS[designType]);
+    if (designType === 'businessDesign') {
+      assert.strictEqual(
+        fs.existsSync(path.join(artifactAssetsPath(taskPath, designType), 'ucd', 'escalation-list-business-concept.svg')),
+        true,
+      );
+    }
     if (designType === 'solutionDesign') {
       assert.strictEqual(
         fs.existsSync(path.join(artifactAssetsPath(taskPath, designType), 'ucd', 'escalation-list-wireframe.svg')),

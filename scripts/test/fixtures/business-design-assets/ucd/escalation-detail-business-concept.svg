@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="detailTitle detailDesc">
+  <title id="detailTitle">升级处置详情业务概念线框图</title>
+  <desc id="detailDesc">以业务事实、责任时间线、当前责任和允许动作解释一个停滞升级的原因与下一步。</desc>
+  <defs><style>
+    .bg{fill:#f4f7fb}.surface{fill:#fff;stroke:#c7d2e3;stroke-width:1.5}.nav{fill:#0f2747}.blue{fill:#1769e0}.soft{fill:#eaf2ff}.amber{fill:#fff4d6;stroke:#e0a11b}.red{fill:#fdeaea;stroke:#dc3b3b}.green{fill:#e8f7ef;stroke:#2d8a57}.line{stroke:#b9c7db;stroke-width:2}
+    .h1{font:700 28px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#10233f}.h2{font:700 18px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#10233f}.text{font:15px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#253858}.small{font:13px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#617089}.label{font:600 13px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#44536a}.white{font:600 15px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#fff}.call{fill:#1769e0;stroke:#fff;stroke-width:2}.callText{font:700 13px Arial,sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central}
+  </style></defs>
+  <rect class="bg" width="1440" height="900"/><rect class="nav" width="1440" height="64"/><text class="white" x="32" y="40" style="font-size:19px">业务概念原型｜审批 SLA 升级处置</text><text class="white" x="1238" y="39" style="font-weight:400">详情与判断</text>
+  <g transform="translate(60,88)">
+    <text class="small" x="0" y="0">需要关注的升级　/　AP-****-2418</text><text class="h1" x="0" y="38">升级处置详情</text>
+    <rect class="red" x="1090" y="6" width="190" height="40" rx="20"/><text class="text" x="1120" y="32" style="fill:#a32626;font-weight:600">需要人工处置</text>
+    <rect class="soft" x="0" y="66" width="1320" height="58" rx="9" stroke="#8fb5ef"/><text class="text" x="22" y="101">本页必须回答：发生了什么？为什么是这个结果？现在由谁负责？是否还会自动处理？我能做什么？</text>
+
+    <rect class="surface" x="0" y="148" width="370" height="610" rx="10"/><text class="h2" x="22" y="183">业务事实</text><circle class="call" cx="340" cy="174" r="16"/><text class="callText" x="340" y="174">1</text>
+    <text class="label" x="22" y="224">受控任务标识</text><text class="text" x="22" y="250">AP-****-2418</text>
+    <text class="label" x="22" y="292">影响租户</text><text class="text" x="22" y="318">华东一部（当前授权范围）</text>
+    <text class="label" x="22" y="360">违约发生</text><text class="text" x="22" y="386">2026-07-28 09:00</text><text class="small" x="22" y="409">第 1 级 SLA，规则版本 3.2</text>
+    <text class="label" x="22" y="451">升级结果</text><rect class="green" x="22" y="466" width="142" height="34" rx="17"/><text class="small" x="53" y="488" style="fill:#216b45">升级已成立</text><text class="small" x="22" y="523">成立于 09:03，后续任务完成不删除历史</text>
+    <text class="label" x="22" y="565">原审批责任</text><text class="text" x="22" y="591">用户 37**（09:00 时点）</text>
+    <text class="label" x="22" y="633">升级责任</text><text class="text" x="22" y="659">直属上级 81**（09:00 时点）</text>
+    <text class="label" x="22" y="701">通知义务</text><text class="text" x="22" y="727">已成立，尚未完成</text>
+
+    <rect class="surface" x="394" y="148" width="526" height="610" rx="10"/><text class="h2" x="418" y="183">发生了什么</text><text class="small" x="418" y="208">统一业务时间线，不要求用户拼接多个诊断来源</text><circle class="call" cx="890" cy="174" r="16"/><text class="callText" x="890" y="174">2</text>
+    <line class="line" x1="452" y1="250" x2="452" y2="675"/>
+    <circle cx="452" cy="268" r="9" fill="#1769e0"/><text class="label" x="480" y="264">09:00　发生 SLA 违约</text><text class="small" x="480" y="288">任务仍待审批，采用创建时固化的截止时间</text>
+    <circle cx="452" cy="356" r="9" fill="#1769e0"/><text class="label" x="480" y="352">09:03　升级结果成立</text><text class="small" x="480" y="376">第 1 级升级；责任关系按 09:00 判断</text>
+    <circle cx="452" cy="444" r="9" fill="#2d8a57"/><text class="label" x="480" y="440">09:04　通知义务开始</text><text class="small" x="480" y="464">升级结果已经有效，不依赖通知是否送达</text>
+    <circle cx="452" cy="532" r="9" fill="#e0a11b"/><text class="label" x="480" y="528">09:28　尚未确认通知结果</text><text class="small" x="480" y="552">自动核对仍在继续，尚不能解释为通知失败</text>
+    <circle cx="452" cy="620" r="9" fill="#dc3b3b"/><text class="label" x="480" y="616">09:50　进入人工处置</text><text class="small" x="480" y="640">超过自动处理边界；升级事实保持不变</text>
+    <rect class="amber" x="480" y="675" width="390" height="52" rx="8"/><text class="small" x="498" y="698" style="fill:#7e570e">关键解释：问题停在通知义务，不是审批失败，</text><text class="small" x="498" y="718" style="fill:#7e570e">也不是升级未成立。</text>
+
+    <rect class="surface" x="944" y="148" width="376" height="610" rx="10"/><text class="h2" x="968" y="183">当前责任与下一步</text><circle class="call" cx="1290" cy="174" r="16"/><text class="callText" x="1290" y="174">3</text>
+    <text class="label" x="968" y="228">当前业务责任</text><text class="text" x="968" y="256">租户运营协调通知业务负责人</text>
+    <text class="label" x="968" y="300">下一自动动作</text><text class="text" x="968" y="328">无；自动处理边界已结束</text>
+    <text class="label" x="968" y="372">允许的业务动作</text>
+    <rect class="soft" x="968" y="388" width="328" height="62" rx="8" stroke="#8fb5ef"/><text class="text" x="986" y="414">核对同一通知义务的送达结果</text><text class="small" x="986" y="437">需要正式外部证据与处置原因</text>
+    <rect class="surface" x="968" y="466" width="328" height="62" rx="8"/><text class="text" x="986" y="492">继续同一通知义务</text><text class="small" x="986" y="515">不创建第二个升级或通知义务</text>
+    <text class="label" x="968" y="570">明确禁止</text><text class="small" x="968" y="596">× 修改违约时间、级次或历史责任人</text><text class="small" x="968" y="622">× 直接标记通知已送达</text><text class="small" x="968" y="648">× 绕过租户、角色或业务范围</text>
+    <rect class="blue" x="968" y="684" width="328" height="48" rx="7"/><text class="white" x="1046" y="714">查看并确认允许动作</text>
+
+    <g transform="translate(0,792)"><circle class="call" cx="16" cy="0" r="16"/><text class="callText" x="16" y="0">1</text><text class="small" x="42" y="5">事实固定“对象与结果”。</text><circle class="call" cx="370" cy="0" r="16"/><text class="callText" x="370" y="0">2</text><text class="small" x="396" y="5">时间线解释“为何如此”。</text><circle class="call" cx="744" cy="0" r="16"/><text class="callText" x="744" y="0">3</text><text class="small" x="770" y="5">动作前说明责任、自动行为与禁区。</text></g>
+  </g>
+</svg>

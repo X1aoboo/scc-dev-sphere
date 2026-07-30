@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="recoveryTitle recoveryDesc">
+  <title id="recoveryTitle">恢复确认与结果反馈业务概念线框图</title>
+  <desc id="recoveryDesc">并列展示恢复动作确认、情况已变化和结果尚未确认三类业务反馈，避免误导性成功。</desc>
+  <defs><style>
+    .bg{fill:#f4f7fb}.surface{fill:#fff;stroke:#c7d2e3;stroke-width:1.5}.nav{fill:#0f2747}.blue{fill:#1769e0}.soft{fill:#eaf2ff}.amber{fill:#fff4d6;stroke:#e0a11b}.red{fill:#fdeaea;stroke:#dc3b3b}.muted{fill:#eef2f7}.line{stroke:#c7d2e3;stroke-width:1.5}
+    .h1{font:700 28px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#10233f}.h2{font:700 18px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#10233f}.text{font:15px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#253858}.small{font:13px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#617089}.label{font:600 13px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#44536a}.white{font:600 15px "Microsoft YaHei","Noto Sans SC",Arial,sans-serif;fill:#fff}.call{fill:#1769e0;stroke:#fff;stroke-width:2}.callText{font:700 13px Arial,sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:central}
+  </style></defs>
+  <rect class="bg" width="1440" height="900"/><rect class="nav" width="1440" height="64"/><text class="white" x="32" y="40" style="font-size:19px">业务概念原型｜恢复动作与结果语义</text><text class="white" x="1192" y="39" style="font-weight:400">三种状态不可混淆</text>
+  <g transform="translate(54,92)">
+    <text class="h1" x="0" y="30">确认、变化与未知结果</text><text class="small" x="0" y="58">业务设计固定反馈含义；Solution Design 决定并发控制、查询和重试等技术机制。</text>
+    <rect class="soft" x="0" y="82" width="1332" height="58" rx="9" stroke="#8fb5ef"/><text class="text" x="22" y="117">共同原则：只有权威结果明确生效才能显示成功；状态变化与结果未知都必须保留业务上下文。</text>
+
+    <g transform="translate(0,170)">
+      <rect class="surface" width="420" height="568" rx="12"/><rect class="blue" width="420" height="58" rx="12"/><text class="white" x="22" y="36" style="font-size:18px">A　执行前：确认允许动作</text><circle class="call" cx="390" cy="58" r="17"/><text class="callText" x="390" y="58">1</text>
+      <text class="label" x="24" y="100">处置对象</text><text class="text" x="24" y="126">AP-****-2418｜华东一部</text>
+      <line class="line" x1="24" y1="148" x2="396" y2="148"/>
+      <text class="label" x="24" y="180">当前业务结果</text><text class="text" x="24" y="206">升级已成立；通知义务需人工处置</text>
+      <text class="label" x="24" y="248">选择的业务动作</text><text class="text" x="24" y="274">核对同一通知义务的送达结果</text>
+      <text class="label" x="24" y="316">动作影响</text><text class="small" x="24" y="342">若正式证据有效，通知义务结束；</text><text class="small" x="24" y="364">升级事实、责任人与审批结果不变。</text>
+      <text class="label" x="24" y="406">处置原因与证据（必填）</text><rect class="surface" x="24" y="420" width="372" height="72" rx="7"/><text class="small" x="40" y="447">说明业务依据，不填写审批正文或通知正文</text>
+      <rect class="muted" x="178" y="512" width="92" height="40" rx="6"/><text class="text" x="208" y="538">取消</text><rect class="blue" x="282" y="512" width="114" height="40" rx="6"/><text class="white" x="309" y="538">确认执行</text>
+    </g>
+
+    <g transform="translate(456,170)">
+      <rect class="surface" width="420" height="568" rx="12"/><rect class="amber" width="420" height="58" rx="12"/><text class="h2" x="22" y="36" style="fill:#7e570e">B　提交时：情况已变化</text><circle class="call" cx="390" cy="58" r="17"/><text class="callText" x="390" y="58">2</text>
+      <circle cx="210" cy="118" r="32" fill="#fff4d6" stroke="#e0a11b" stroke-width="2"/><text x="210" y="128" text-anchor="middle" style="font:700 30px Arial;fill:#b3770f">!</text>
+      <text class="h2" x="112" y="174">情况已变化，请重新判断</text>
+      <text class="text" x="30" y="214">你确认期间，自动处理或其他人员已经推进状态。</text>
+      <rect class="soft" x="30" y="240" width="360" height="116" rx="8" stroke="#8fb5ef"/><text class="label" x="48" y="268">变化后的业务事实</text><text class="small" x="48" y="294">通知义务：已完成</text><text class="small" x="48" y="318">完成时间：10:02</text><text class="small" x="48" y="342">原动作：不再适用，未执行</text>
+      <text class="label" x="30" y="402">必须保持的反馈</text><text class="small" x="30" y="428">• 不显示成功，也不自动重放旧动作</text><text class="small" x="30" y="452">• 保留原处置原因，供用户重新评估</text><text class="small" x="30" y="476">• 先展示新事实，再决定是否仍需行动</text>
+      <rect class="blue" x="222" y="512" width="168" height="40" rx="6"/><text class="white" x="258" y="538">查看最新业务事实</text>
+    </g>
+
+    <g transform="translate(912,170)">
+      <rect class="surface" width="420" height="568" rx="12"/><rect class="red" width="420" height="58" rx="12"/><text class="h2" x="22" y="36" style="fill:#9e2929">C　提交后：尚未确认结果</text><circle class="call" cx="390" cy="58" r="17"/><text class="callText" x="390" y="58">3</text>
+      <circle cx="210" cy="118" r="32" fill="#fdeaea" stroke="#dc3b3b" stroke-width="2"/><text x="210" y="128" text-anchor="middle" style="font:700 28px Arial;fill:#b92d2d">?</text>
+      <text class="h2" x="119" y="174">尚未确认操作结果</text>
+      <text class="text" x="30" y="214">请求已经发出，但当前无法确认业务动作是否生效。</text>
+      <rect class="amber" x="30" y="240" width="360" height="116" rx="8"/><text class="label" x="48" y="268" style="fill:#7e570e">当前业务结论</text><text class="small" x="48" y="294" style="fill:#7e570e">升级事实：保持成立</text><text class="small" x="48" y="318" style="fill:#7e570e">通知义务：结果尚未确认</text><text class="small" x="48" y="342" style="fill:#7e570e">下一核对：1 分钟后</text>
+      <text class="label" x="30" y="402">必须保持的反馈</text><text class="small" x="30" y="428">• 不显示成功，不新建第二个业务动作</text><text class="small" x="30" y="452">• 使用同一处置上下文继续查询或恢复</text><text class="small" x="30" y="476">• 用户离开前明确说明仍需核对</text>
+      <rect class="surface" x="154" y="512" width="102" height="40" rx="6"/><text class="text" x="181" y="538">返回详情</text><rect class="blue" x="268" y="512" width="122" height="40" rx="6"/><text class="white" x="295" y="538">核对结果</text>
+    </g>
+
+    <g transform="translate(0,784)"><circle class="call" cx="16" cy="0" r="16"/><text class="callText" x="16" y="0">1</text><text class="small" x="42" y="5">确认对象、结果、影响、原因。</text><circle class="call" cx="456" cy="0" r="16"/><text class="callText" x="456" y="0">2</text><text class="small" x="482" y="5">变化意味着旧动作未采用，需重判。</text><circle class="call" cx="912" cy="0" r="16"/><text class="callText" x="912" y="0">3</text><text class="small" x="938" y="5">未知不等于失败，更不等于成功。</text></g>
+  </g>
+</svg>

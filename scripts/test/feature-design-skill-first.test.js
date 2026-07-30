@@ -5,7 +5,11 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
-const { businessDraft } = require('./fixtures/business-design');
+const {
+  assetsPath: businessAssetsFixturePath,
+  businessDraft,
+  installBusinessAssets,
+} = require('./fixtures/business-design');
 const { implementationDraft } = require('./fixtures/implementation-design');
 const {
   assetsPath: solutionAssetsFixturePath,
@@ -50,12 +54,22 @@ function setRequired(taskPath, designTypes) {
 function writeDraft(taskPath, designType, content = VALID_DRAFT) {
   initDesign(taskPath, designType);
   fs.writeFileSync(draftPath(taskPath, designType), content, 'utf8');
+  if (designType === 'businessDesign') installBusinessAssets(taskPath);
 }
 
 function passingSummary(taskPath, designType) {
   return {
     draftHash: readDraftRef(taskPath, designType).hash,
-    checklists: [{ checklistId: 'business-semantic-consistency', result: 'pass', summary: '通过', findings: [] }],
+    checklists: [
+      'business-semantic-consistency',
+      'business-documentation-quality',
+      'design-traceability',
+    ].map(checklistId => ({
+      checklistId,
+      result: 'pass',
+      summary: '通过',
+      findings: [],
+    })),
     notApplicable: [],
   };
 }
@@ -137,28 +151,84 @@ test('multiple unfinished activities or conflicting persisted facts require user
   assert.strictEqual(inspectDesign(other, 'businessDesign').recovery, 'needs_user_confirmation');
 });
 
-test('business lint accepts complete new, existing, and low-impact Drafts without semantic judgement', () => {
+test('business lint enforces the numbered structural contract and feature-point mappings without semantic judgement', () => {
   const { taskPath } = makeTask();
-  for (const variant of ['new', 'existing', 'low-impact']) {
-    writeDraft(taskPath, 'businessDesign', businessDraft('FEAT-TEST-001', variant));
-    const pass = lintDraft(taskPath, 'businessDesign');
-    assert.strictEqual(pass.status, 'pass', variant);
-    assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 14);
-    assert.ok(pass.checks.every(check => check.kind !== 'semantic'));
-    assert.strictEqual(fs.existsSync(path.join(taskPath, 'quality-gates')), false);
+  writeDraft(taskPath, 'businessDesign');
+  const pass = lintDraft(taskPath, 'businessDesign');
+  assert.strictEqual(pass.status, 'pass');
+  assert.strictEqual(pass.checks.filter(check => check.code.startsWith('core section:')).length, 14);
+  assert.strictEqual(
+    pass.checks.filter(check => check.code.startsWith('required business feature point subsection:')).length,
+    28,
+  );
+  assert.strictEqual(pass.checks.find(check => check.code === 'business feature point mapping coverage').result, 'pass');
+  assert.ok(pass.checks.every(check => check.kind !== 'semantic'));
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'quality-gates')), false);
+
+  const cases = [
+    {
+      content: VALID_DRAFT.replace('#### 6.2.2 当前业务设计与依据', '#### 6.2.2 现行业务'),
+      code: 'business feature point subsection order:FP-BIZ-01 判定 SLA 违约资格',
+    },
+    {
+      content: VALID_DRAFT.replace(
+        '| FP-BIZ-03 确定升级责任人 | REQ-SLA-004、REQ-SLA-005、REQ-SLA-006 | 新增 | 按违约发生时的有效直属上级关系确定责任并形成通知义务；不维护组织关系或通知渠道 | 6.4 |\n',
+        '',
+      ),
+      code: 'business feature point mapping coverage',
+    },
+  ];
+
+  for (const item of cases) {
+    writeDraft(taskPath, 'businessDesign', item.content);
+    const fail = lintDraft(taskPath, 'businessDesign');
+    assert.strictEqual(fail.status, 'fail');
+    assert.strictEqual(fail.checks.find(check => check.code === item.code).result, 'fail');
   }
+
+  const summaryOnlyTargetState = VALID_DRAFT.replace(
+    /(### 6\.2 FP-BIZ-01[\s\S]*?#### 6\.2\.4 目标态业务行为\r?\n\r?\n)[\s\S]*?(?=\r?\n#### 6\.2\.5 适用规则、状态和时间语义)/,
+    '$1按规则判定任务是否具备升级资格。',
+  );
+  writeDraft(taskPath, 'businessDesign', summaryOnlyTargetState);
+  assert.strictEqual(
+    lintDraft(taskPath, 'businessDesign').status,
+    'pass',
+    'structural lint must not claim to judge professional or semantic completeness',
+  );
+
+  const missingAsset = path.join(
+    draftAssetsPath(taskPath, 'businessDesign'),
+    'ucd',
+    'escalation-list-business-concept.svg',
+  );
+  fs.unlinkSync(missingAsset);
+  assert.strictEqual(
+    lintDraft(taskPath, 'businessDesign').checks.find(check => check.code === 'design asset bundle').result,
+    'fail',
+  );
+
+  installBusinessAssets(taskPath);
+  fs.writeFileSync(path.join(draftAssetsPath(taskPath, 'businessDesign'), 'unreferenced.svg'), '<svg/>', 'utf8');
+  assert.strictEqual(
+    lintDraft(taskPath, 'businessDesign').checks.find(check => check.code === 'design asset bundle').result,
+    'fail',
+  );
 });
 
 test('business lint rejects missing, empty, placeholder, misordered, and invalid-frontmatter Drafts', () => {
   const { taskPath } = makeTask();
   const cases = [
-    VALID_DRAFT.replace('## 词汇表\nSLA 截止时间：任务应完成处理的业务时刻。升级：逾期任务责任上移并形成可观察结果的业务事件。\n\n', ''),
-    VALID_DRAFT.replace('## 词汇表\nSLA 截止时间：任务应完成处理的业务时刻。升级：逾期任务责任上移并形成可观察结果的业务事件。', '## 词汇表\n'),
-    VALID_DRAFT.replace('当前任务 Requirement Baseline', '{{TODO}} Requirement Baseline'),
+    VALID_DRAFT.replace('## 13. 词汇表', '## 13. __TEMP__'),
+    VALID_DRAFT.replace(
+      /(## 13\. 词汇表\r?\n)[\s\S]*?(?=\r?\n## 14\. 参考资料)/,
+      '$1',
+    ),
+    VALID_DRAFT.replace('REQ-SLA-BASELINE-1.0', '{{TODO}}'),
     VALID_DRAFT
-      .replace('## 概述', '## __TEMP__')
-      .replace('## 需求基线与业务设计范围', '## 概述')
-      .replace('## __TEMP__', '## 需求基线与业务设计范围'),
+      .replace('## 1. 概述', '## __TEMP__')
+      .replace('## 2. 需求基线与业务设计范围', '## 1. 概述')
+      .replace('## __TEMP__', '## 2. 需求基线与业务设计范围'),
     VALID_DRAFT.replace('artifactId: "BD-FEAT-TEST-001"\n', 'artifactId: "BD-FEAT-TEST-001"\nstatus: draft\n'),
   ];
 
@@ -392,7 +462,7 @@ test('semantic revision invalidates review while formatting-only change can refr
   fs.writeFileSync(draftPath(taskPath, 'businessDesign'), `${VALID_DRAFT}\n\n`, 'utf8');
   lintDraft(taskPath, 'businessDesign');
   const refreshed = refreshFormattingReview(taskPath, 'businessDesign');
-  assert.strictEqual(refreshed.draftHash, sha256File(draftPath(taskPath, 'businessDesign')));
+  assert.strictEqual(refreshed.draftHash, readDraftRef(taskPath, 'businessDesign').hash);
 });
 
 test('publish copies the approved Draft byte-for-byte without changing top-level state', () => {
@@ -400,6 +470,10 @@ test('publish copies the approved Draft byte-for-byte without changing top-level
   setRequired(taskPath, ['businessDesign']);
   const result = completeBusiness(taskPath);
   assert.strictEqual(fs.readFileSync(result.artifactPath, 'utf8'), VALID_DRAFT);
+  assert.deepStrictEqual(
+    fs.readFileSync(path.join(artifactAssetsPath(taskPath, 'businessDesign'), 'ucd', 'escalation-detail-business-concept.svg')),
+    fs.readFileSync(path.join(businessAssetsFixturePath, 'ucd', 'escalation-detail-business-concept.svg')),
+  );
   assert.strictEqual(fs.existsSync(reviewSummaryPath(taskPath, 'businessDesign')), false);
   assert.strictEqual(publish(taskPath, 'businessDesign').idempotent, true);
   assert.strictEqual(result.state, undefined);
@@ -414,6 +488,10 @@ test('reopen operates on one independent design without changing top-level state
   completeBusiness(taskPath);
   const reopened = reopenDesign(taskPath, 'businessDesign');
   assert.ok(fs.existsSync(reopened.historyFile));
+  assert.strictEqual(
+    fs.existsSync(path.join(reopened.draftAssets, 'ucd', 'escalation-detail-business-concept.svg')),
+    true,
+  );
   assert.match(fs.readFileSync(reopened.draft, 'utf8'), /version: "2\.0\.0"/);
   assert.strictEqual(reopened.state, undefined);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'designing');

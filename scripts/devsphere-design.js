@@ -29,13 +29,14 @@ const DESIGN_TYPES = {
     artifactPrefix: 'BD',
     documentTitle: 'Business Design',
     exactSectionOrder: true,
+    allowNumberedHeadings: true,
     coreSections: [
       '概述',
       '需求基线与业务设计范围',
       '业务目标态总览',
       '业务概念、对象与度量语义',
       '业务参与者、责任与适用范围',
-      '业务场景与业务行为',
+      '业务功能点与业务场景设计',
       '业务规则与判定逻辑',
       '时间、状态与生命周期语义',
       '异常、边界与业务结果',
@@ -44,6 +45,16 @@ const DESIGN_TYPES = {
       '下游设计约束与交接',
       '词汇表',
       '参考资料',
+    ],
+    hasBusinessFeaturePoints: true,
+    requiredBusinessFeaturePointSubsections: [
+      '关联需求、业务目标与结果责任',
+      '当前业务设计与依据',
+      '本次业务变化',
+      '目标态业务行为',
+      '适用规则、状态和时间语义',
+      '异常、边界与可观察结果',
+      '业务验收实例',
     ],
     applicabilityItems: [],
   },
@@ -744,6 +755,84 @@ function addSolutionChecks(raw, definition, checks) {
   });
 }
 
+function canonicalBusinessFeaturePoint(value) {
+  return canonicalHeading(value)
+    .replace(/^(FP-BIZ-\d+)\s*[：:]\s*/i, '$1 ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function addBusinessChecks(raw, definition, checks) {
+  const featurePointDesign = extractDefinitionSection(raw, definition, '业务功能点与业务场景设计');
+  const featurePoints = extractHeadingSections(featurePointDesign, 3)
+    .filter(section => /^FP-BIZ-\d+\s*[：:]/i.test(canonicalHeading(section.heading)));
+  const featurePointNames = featurePoints.map(section => canonicalBusinessFeaturePoint(section.heading));
+
+  checks.push({
+    code: 'business feature point count',
+    result: featurePoints.length > 0 ? 'pass' : 'fail',
+  });
+  checks.push({
+    code: 'business feature point names',
+    result: featurePointNames.length > 0
+      && featurePointNames.every(Boolean)
+      && new Set(featurePointNames).size === featurePointNames.length
+      ? 'pass'
+      : 'fail',
+  });
+
+  for (const featurePoint of featurePoints) {
+    const featurePointName = canonicalBusinessFeaturePoint(featurePoint.heading);
+    const subsections = extractHeadingSections(featurePoint.content, 4);
+    checks.push({
+      code: `business feature point subsection order:${featurePointName}`,
+      result: sameValues(
+        subsections.map(section => canonicalHeading(section.heading)),
+        definition.requiredBusinessFeaturePointSubsections,
+      )
+        ? 'pass'
+        : 'fail',
+    });
+    for (const subsectionName of definition.requiredBusinessFeaturePointSubsections) {
+      const subsection = subsections
+        .find(candidate => canonicalHeading(candidate.heading) === subsectionName);
+      checks.push({
+        code: `required business feature point subsection:${featurePointName}/${subsectionName}`,
+        result: subsection && hasSubstantiveSectionContent(subsection.content) ? 'pass' : 'fail',
+      });
+    }
+  }
+
+  const mapping = parseMarkdownTable(
+    extractDefinitionSubsection(raw, definition, '需求基线与业务设计范围', '业务功能点清单'),
+  );
+  const mappingHeader = ['功能点', '关联需求', '变更类型', '业务目标与边界', '详细设计位置'];
+  const allowedChangeTypes = ['新增', '修改', '删除', '保持不变'];
+  const mappedFeaturePoints = mapping
+    ? [...new Set(mapping.rows.map(row => canonicalBusinessFeaturePoint(row[0])))]
+    : [];
+  checks.push({
+    code: 'business feature point mapping table',
+    result: mapping
+      && sameValues(mapping.header, mappingHeader)
+      && mapping.rows.length > 0
+      && mappedFeaturePoints.length === mapping.rows.length
+      && mapping.rows.every(row => {
+        if (row.length !== mappingHeader.length) return false;
+        const changeTypes = row[2].split(/[/、,，]/).map(value => value.trim()).filter(Boolean);
+        return row.every(hasSubstantiveSectionContent)
+          && changeTypes.length > 0
+          && changeTypes.every(value => allowedChangeTypes.includes(value));
+      })
+      ? 'pass'
+      : 'fail',
+  });
+  checks.push({
+    code: 'business feature point mapping coverage',
+    result: sameSets(mappedFeaturePoints, featurePointNames) ? 'pass' : 'fail',
+  });
+}
+
 function checklistPath(checklistId) {
   return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
@@ -794,6 +883,7 @@ function lintDraft(taskPath, designType) {
     });
   }
   if (definition.unitSectionPrefix) addImplementationChecks(raw, definition, checks);
+  if (definition.hasBusinessFeaturePoints) addBusinessChecks(raw, definition, checks);
   if (definition.hasSolutionFeaturePoints) addSolutionChecks(raw, definition, checks);
   addDesignAssetChecks(raw, taskPath, designType, checks);
   for (const section of definition.coreSections) {
