@@ -6,7 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { makeTask } = require('./helpers');
 const { businessDraft, installBusinessAssets } = require('./fixtures/business-design');
-const { implementationDraft } = require('./fixtures/implementation-design');
+const {
+  implementationDraft,
+  installImplementationAssets,
+} = require('./fixtures/implementation-design');
 const { installSolutionAssets, solutionDraft } = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
 const {
@@ -69,7 +72,11 @@ const CHECKLISTS = {
     'architecture-documentation-quality',
     'design-traceability',
   ],
-  implementationDesign: ['implementation-feasibility'],
+  implementationDesign: [
+    'implementation-feasibility',
+    'implementation-documentation-quality',
+    'design-traceability',
+  ],
   testDesign: ['risk-coverage'],
 };
 
@@ -89,6 +96,7 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
     initDesign(taskPath, designType);
     fs.writeFileSync(draftPath(taskPath, designType), DRAFTS[designType], 'utf8');
     if (designType === 'businessDesign') installBusinessAssets(taskPath);
+    if (designType === 'implementationDesign') installImplementationAssets(taskPath);
     if (designType === 'solutionDesign') installSolutionAssets(taskPath);
     assert.strictEqual(lintDraft(taskPath, designType).status, 'pass');
     const draftHash = readDraftRef(taskPath, designType).hash;

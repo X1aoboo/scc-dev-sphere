@@ -1,0 +1,237 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Notification Command API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/internal/notifications": {
+      "post": {
+        "operationId": "acceptNotification",
+        "description": "Accepts one notification request. Reusing an idempotency key with the same content returns the first notificationId.",
+        "security": [
+          {
+            "serviceToken": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted for asynchronous delivery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationAcceptance"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/IdempotencyConflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/Throttled"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "service-jwt"
+      }
+    },
+    "schemas": {
+      "NotificationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "idempotencyKey",
+          "tenantId",
+          "recipientId",
+          "templateCode",
+          "businessRef",
+          "displayTaskRef",
+          "approvalRoute",
+          "breachedAt",
+          "level",
+          "traceId"
+        ],
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "tenantId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "recipientId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._:-]+$"
+          },
+          "templateCode": {
+            "type": "string",
+            "const": "APPROVAL_SLA_ESCALATION_V1"
+          },
+          "businessRef": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayTaskRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "approvalRoute": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^/(?!/)[A-Za-z0-9/_?=&.-]+$"
+          },
+          "breachedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "traceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      },
+      "NotificationAcceptance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "notificationId",
+          "acceptanceStatus"
+        ],
+        "properties": {
+          "notificationId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "acceptanceStatus": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "ALREADY_ACCEPTED"
+            ]
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "traceId",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "traceId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "Request validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthRequired": {
+        "description": "Service authentication is required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The tenant is outside the service identity scope",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "IdempotencyConflict": {
+        "description": "The idempotency key was previously used with different content",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Throttled": {
+        "description": "The caller exceeded the command quota",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

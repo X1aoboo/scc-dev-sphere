@@ -10,7 +10,10 @@ const {
   businessDraft,
   installBusinessAssets,
 } = require('./fixtures/business-design');
-const { implementationDraft } = require('./fixtures/implementation-design');
+const {
+  implementationDraft,
+  installImplementationAssets,
+} = require('./fixtures/implementation-design');
 const {
   assetsPath: solutionAssetsFixturePath,
   installSolutionAssets,
@@ -55,6 +58,7 @@ function writeDraft(taskPath, designType, content = VALID_DRAFT) {
   initDesign(taskPath, designType);
   fs.writeFileSync(draftPath(taskPath, designType), content, 'utf8');
   if (designType === 'businessDesign') installBusinessAssets(taskPath);
+  if (designType === 'implementationDesign') installImplementationAssets(taskPath);
 }
 
 function passingSummary(taskPath, designType) {
@@ -373,47 +377,44 @@ test('publish and reopen preserve the approved solution design asset bundle', ()
   assert.strictEqual(fs.existsSync(artifactAssetsPath(taskPath, 'solutionDesign')), false);
 });
 
-test('implementation lint accepts feature context, repeated complete service units, and applicability coverage', () => {
+test('implementation lint accepts numbered implementation units, point mappings, and conditional unit structures', () => {
   const { taskPath } = makeTask();
-  writeDraft(
-    taskPath,
-    'implementationDesign',
-    implementationDraft('FEAT-TEST-001', ['approval-service', 'notification-service']),
-  );
+  writeDraft(taskPath, 'implementationDesign', implementationDraft('FEAT-TEST-001'));
 
   const pass = lintDraft(taskPath, 'implementationDesign');
   assert.strictEqual(pass.status, 'pass');
   assert.strictEqual(pass.checks.find(check => check.code === 'implementation unit count').result, 'pass');
   assert.strictEqual(
-    pass.checks.filter(check => check.code.startsWith('required unit subsection:')).length,
-    24,
+    pass.checks.filter(check => check.code.startsWith('implementation unit detail:')).length,
+    4,
   );
+  assert.strictEqual(pass.checks.find(check => check.code === 'implementation point mapping').result, 'pass');
+  assert.strictEqual(pass.checks.find(check => check.code === 'implementation point identifiers').result, 'pass');
   assert.strictEqual(pass.checks.find(check => check.code === 'implementation mapping coverage').result, 'pass');
-  assert.strictEqual(pass.checks.find(check => check.code === 'implementation applicability coverage').result, 'pass');
-
-  for (const handling of ['沿用既有设计', '无新增影响']) {
-    writeDraft(
-      taskPath,
-      'implementationDesign',
-      implementationDraft('FEAT-TEST-001').replace('| 完整设计 |', `| ${handling} |`),
-    );
-    assert.strictEqual(lintDraft(taskPath, 'implementationDesign').status, 'pass', handling);
-  }
 });
 
-test('implementation lint rejects missing or duplicate units, missing mapping, incomplete units, and the legacy applicability list', () => {
+test('implementation lint rejects missing or duplicate units, broken mappings, invalid point ids, and empty units', () => {
   const { taskPath } = makeTask();
   const valid = implementationDraft('FEAT-TEST-001');
   const cases = [
-    implementationDraft('FEAT-TEST-001', []),
-    implementationDraft('FEAT-TEST-001', ['approval-service', 'approval-service']),
-    valid.replace(/^\| approval-service \| 存量 \|.*\n/m, ''),
-    valid.replace(/^### 面向 TDD 的单元行为设计[\s\S]*?(?=^### 开发实现计划交接)/m, ''),
-    valid.replace('| 完整设计 |', '| 部分设计 |'),
     valid.replace(
-      /^## 适用性与裁剪说明[\s\S]*?(?=^## 实现级开放事项与升级项)/m,
-      '## 适用性与裁剪说明\n- 并发：生成：覆盖撤回和升级竞态。\n\n',
+      /^## 4\. 实现单元：`approval-service`[\s\S]*?(?=^## 5\. 实现单元：)/m,
+      '',
     ),
+    valid.replace(
+      /^## 5\. 实现单元：`notification-service`/m,
+      '## 5. 实现单元：`approval-service`',
+    ),
+    valid.replace(
+      /^\| FP-04 处置工作台 \|.*approval-ops-web.*\n/m,
+      '',
+    ),
+    valid.replace('IMP-WEB-01 查询与恢复闭环', 'WEB-01 查询与恢复闭环'),
+    valid.replace(
+      /^## 7\. 实现单元：`approval-ops-web`[\s\S]*?(?=^## 8\. 跨单元失败行为)/m,
+      '## 7. 实现单元：`approval-ops-web`\n\n只有摘要，没有详细结构。\n\n',
+    ),
+    valid.replace(/^## 8\. 跨单元失败行为[\s\S]*?(?=^## 9\. 开发实施与 TDD 交接)/m, ''),
   ];
 
   for (const content of cases) {

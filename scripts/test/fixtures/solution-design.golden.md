@@ -93,7 +93,7 @@ flowchart LR
 - 审批数据库支持本地 ACID 事务、唯一约束和乐观版本字段。
 - 现有消息平台提供至少一次投递，不承诺全局有序。
 - 组织服务支持按 `employeeId + effectiveAt` 查询直属上级，并返回关系版本；如果该能力尚未上线，它是本特性的阻断依赖。
-- 通知服务支持调用方提供幂等键，并异步发布最终交付结果。
+- 通知服务当前能够异步发布最终交付结果，但尚不能接受调用方幂等键；本特性启用前必须完成 `notification-command.v1` 契约和幂等存储改造。
 - 所有跨服务调用都携带服务身份、租户标识、Trace ID 和调用来源。
 
 ## 3. 需求场景与影响分析
@@ -215,6 +215,16 @@ flowchart LR
 
 ### 4.2 4+1 架构视图
 
+本节的视图不是同一流程的重复画法。每个视图分别关闭一种架构问题，并为 Implementation Design 提供可继续细化的边界：
+
+| 视图 | 必须回答的问题 | 本节产物 |
+|---|---|---|
+| 场景视图 | 用户目标如何贯穿各架构元素 | 核心场景与异常路径 |
+| 逻辑视图 | 软件组件、领域对象及其责任如何划分 | UML 组件语义图、UML 类图 |
+| 进程视图 | 并发、进程间通信、租约和事务如何协作 | 运行时交互与并发约束 |
+| 开发视图 | 构建单元、代码模块和依赖方向是什么 | 开发单元依赖图 |
+| 物理视图 | 软件部署到哪些运行节点，故障域如何隔离 | 部署拓扑图 |
+
 #### 4.2.1 场景视图
 
 核心场景由四个阶段组成：
@@ -228,22 +238,96 @@ flowchart LR
 
 #### 4.2.2 逻辑视图
 
+**软件组件视图**
+
+下图采用 UML 组件图语义，以 Mermaid 可渲染形式表达组件、端口和依赖方向。它回答“哪些软件组件共同实现特性”，不展开类和物理部署。
+
 ```mermaid
 flowchart TB
-    subgraph ApprovalDomain["审批领域"]
-        Task["ApprovalTask\n任务状态与 SLA 快照"]
-        Escalation["ApprovalEscalation\n升级事实与处理状态"]
-        Attempt["EscalationAttempt\n外部交互尝试"]
-        Outbox["OutboxEvent\n待发布领域事件"]
-        Inbox["InboxEvent\n已消费事件"]
-        Audit["AuditRecord\n不可变审计"]
+    subgraph Approval["«component» approval-service"]
+        Scanner["«component» SLA Candidate Scanner"]
+        Command["«component» Escalation Command"]
+        Domain["«component» Escalation Domain"]
+        Relay["«component» Outbox Relay"]
+        Orchestrator["«component» Escalation Orchestrator"]
+        Reconciler["«component» Reconciler"]
+        OpsAPI["«component» Query / Recovery API"]
     end
 
-    Task -->|"一对多，不同级别或周期"| Escalation
-    Escalation -->|"记录每次外部尝试"| Attempt
-    Escalation -->|"同事务产生"| Outbox
-    Inbox -->|"保护消费幂等"| Escalation
-    Escalation -->|"状态变化追加"| Audit
+    Web["«component» approval-ops-web"]
+    Contracts["«component» service-contracts"]
+    Org["«component» organization-service"]
+    Notify["«component» notification-service"]
+    Bus["«component» event-platform"]
+    DB[("«database» approval-db")]
+
+    Scanner -->|"candidate command"| Command
+    Command --> Domain
+    Command --> DB
+    Domain -->|"domain event"| Relay
+    Relay --> Bus
+    Bus --> Orchestrator
+    Orchestrator --> Domain
+    Orchestrator --> Org
+    Orchestrator --> Notify
+    Reconciler --> Domain
+    OpsAPI --> Domain
+    Web --> OpsAPI
+    Approval -. "implements schemas" .-> Contracts
+    Web -. "uses Ops API schema" .-> Contracts
+    Notify -. "implements schemas" .-> Contracts
+```
+
+组件依赖必须从入口和基础设施指向应用/领域能力；`Escalation Domain` 不依赖组织、通知、消息或页面实现。`service-contracts` 只稳定跨边界契约，不成为共享业务逻辑库。
+
+**核心领域类图**
+
+```mermaid
+classDiagram
+    class ApprovalTask {
+        +TaskId taskId
+        +TaskState state
+        +long version
+        +SlaSnapshot slaSnapshot
+        +evaluateCandidate()
+    }
+    class ApprovalEscalation {
+        +EscalationId escalationId
+        +EscalationBusinessKey businessKey
+        +ProcessingState state
+        +long processingVersion
+        +transition(signal)
+    }
+    class EscalationBusinessKey {
+        +TenantId tenantId
+        +TaskId taskId
+        +SlaPolicyVersion policyVersion
+        +Instant deadlineAt
+        +EscalationLevel level
+    }
+    class EscalationAttempt {
+        +AttemptId attemptId
+        +ProcessingStep step
+        +ResultCategory result
+        +Instant occurredAt
+    }
+    class DomainEvent {
+        +EventId eventId
+        +EventType type
+        +Instant occurredAt
+    }
+    class AuditRecord {
+        +AuditId auditId
+        +Actor actor
+        +State before
+        +State after
+    }
+
+    ApprovalTask "1" --> "0..*" ApprovalEscalation : produces
+    ApprovalEscalation *-- EscalationBusinessKey
+    ApprovalEscalation "1" *-- "0..*" EscalationAttempt
+    ApprovalEscalation "1" --> "0..*" DomainEvent : emits
+    ApprovalEscalation "1" --> "1..*" AuditRecord : appends
 ```
 
 `ApprovalTask` 保存任务状态、当前处理人、SLA 快照和当前升级级别。`ApprovalEscalation` 表示一次已经成立的业务升级，并独立记录后续通知处理状态。升级状态不能反向决定任务是否完成；任务完成也不能删除升级历史。
@@ -269,6 +353,27 @@ flowchart TB
 | `approval-ops-web` | 升级列表页、详情与时间线、恢复操作面板、API Client、前端监控 | 页面依赖稳定运维 API 和既有设计系统；不依赖审批服务内部实体或数据库模型 |
 | `notification-service` | SLA 通知模板适配、幂等请求处理、交付结果事件发布 | 渠道适配层依赖通知领域，不反向依赖审批模型 |
 | `service-contracts` | 升级事件、通知结果事件和组织查询契约 | 只包含稳定跨服务契约，不包含服务内部实体 |
+
+```mermaid
+flowchart LR
+    Web["«build unit» approval-ops-web"]
+    Approval["«build unit» approval-service"]
+    Notify["«build unit» notification-service"]
+    Contracts["«library» service-contracts"]
+    DesignSystem["«library» operations-design-system"]
+    Platform["«platform API» event / organization"]
+
+    Web --> Contracts
+    Web --> DesignSystem
+    Approval --> Contracts
+    Notify --> Contracts
+    Approval --> Platform
+    Notify --> Platform
+    Approval -. "forbidden" .-> Web
+    Contracts -. "must not depend on" .-> Approval
+```
+
+虚线 `forbidden` 表示禁止依赖，不表示运行调用。Implementation Design 必须把这些构建单元继续映射为包、模块、核心类和生成物，并证明没有形成反向依赖。
 
 Implementation Design 可以调整服务内部模块命名，但不得合并升级事实与通知交付所有权，也不得把组织、通知调用放回审批事务。
 
@@ -697,6 +802,8 @@ flowchart TD
 
 ## 5. 接口与集成设计
 
+本特性新增或修改跨实现单元接口，因此本章适用。若 Feature 不涉及接口新增、修改、复用、废弃或删除，则不生成本章的 API 目录和字段定义。
+
 ### 5.1 集成关系与责任
 
 | 交互 | 调用方 | 提供方 | 模式 | 正确性责任 |
@@ -707,6 +814,28 @@ flowchart TD
 | 通知请求 | Escalation Orchestrator | 通知服务 | 同步接受、异步交付 | 接受前审批侧重试，接受后通知侧重试 |
 | 交付结果 | 通知服务 | 事件总线/审批服务 | 异步、至少一次 | 通知侧保证版本单调，审批侧去重和拒绝旧版本 |
 | 运维查询与恢复 | 升级处置工作台 | Query / Recovery API | 浏览器经内部网关同步调用 | 服务端拥有权限、状态和动作判定；客户端负责明确呈现加载、冲突和结果未知 |
+
+**同步 API 目录**
+
+| API | 变更类型 | 调用方 → 提供方 | 核心语义 | 契约配置 | 下游契约标识 |
+|---|---|---|---|---|---|
+| `GET /internal/organization/managers:resolve` | 复用 | 审批服务 → 组织服务 | 按 `employeeId + effectiveAt` 解析历史直属上级 | `S2S_QUERY` | `organization-history.v1` |
+| `POST /internal/notifications` | 修改 | 审批服务 → 通知服务 | 增加调用方幂等键，接受一次通知请求 | `S2S_IDEMPOTENT_COMMAND` | `notification-command.v1` |
+| `GET /internal/operations/escalations` | 新增 | 工作台 → 审批服务 | 按授权租户、状态、时间和游标查询升级摘要 | `OPS_READ` | `approval-escalation-ops.v1` |
+| `GET /internal/operations/escalations/{escalationId}` | 新增 | 工作台 → 审批服务 | 查询权威状态、时间线和允许动作 | `OPS_READ` | `approval-escalation-ops.v1` |
+| `POST /internal/operations/escalations/{escalationId}/actions` | 新增 | 工作台 → 审批服务 | 使用 `actionId + expectedVersion` 执行受控恢复 | `OPS_WRITE_CSRF_VERSIONED` | `approval-escalation-ops.v1` |
+| `GET /internal/operations/escalation-actions/{actionId}` | 新增 | 工作台 → 审批服务 | 恢复响应丢失后查询首次操作结果 | `OPS_READ` | `approval-escalation-ops.v1` |
+
+本章表格固定方案级架构责任、稳定语义、基本出入参与校验规则；Implementation Design 必须将 `notification-command.v1` 和 `approval-escalation-ops.v1` 分别细化为机器可读 OpenAPI，并保持逐项映射。所有接口携带认证上下文和 Trace ID，错误响应统一包含稳定 `code`、可展示 `message`、`traceId` 和 `retryable`，调用方不得依赖自由文本分支处理。
+
+契约配置只在对应接口适用：
+
+| 配置 | 基本规则 |
+|---|---|
+| `S2S_QUERY` | 服务身份认证、租户范围复核、2秒超时；不要求CSRF或幂等键 |
+| `S2S_IDEMPOTENT_COMMAND` | 服务身份认证、租户范围复核、调用方幂等键和请求内容一致性校验 |
+| `OPS_READ` | 内部会话认证、租户和对象级只读授权、`private, no-store` |
+| `OPS_WRITE_CSRF_VERSIONED` | `OPS_READ`基础上增加恢复权限、CSRF、`actionId`幂等、`expectedVersion`和审计 |
 
 ### 5.2 升级已提交事件
 
@@ -733,9 +862,15 @@ flowchart TD
 
 `ResolveDirectManager(tenantId, employeeId, effectiveAt)` 返回以下业务结果：
 
+| 输入 | 位置/类型 | 必填 | 基本校验 |
+|---|---|---|---|
+| `X-Tenant-Id` | Header / string | 是 | 1—64字符；必须在调用服务获授权的租户范围内 |
+| `employeeId` | Query / string | 是 | 1—64字符，只允许字母、数字、点、下划线、冒号和连字符 |
+| `effectiveAt` | Query / UTC date-time | 是 | ISO 8601；不能晚于当前时间5分钟，且必须在历史关系保留期内 |
+
 | 结果 | 含义 | 审批侧处理 |
 |---|---|---|
-| `FOUND` | 找到在 `effectiveAt` 生效的直属上级 | 验证租户、生效区间和非自环后保存 |
+| `FOUND(managerId, relationVersion, effectiveFrom, effectiveTo)` | 找到在 `effectiveAt` 生效的直属上级 | 验证租户、生效区间和非自环后保存 |
 | `NOT_FOUND` | 该时间点明确不存在直属上级 | 进入 `NO_TARGET` |
 | `HISTORY_NOT_AVAILABLE` | 组织服务无法覆盖该历史时间 | 不可重试，进入人工处置 |
 | `INVALID_RELATION` | 关系循环、跨租户或数据损坏 | 安全告警并进入人工处置 |
@@ -747,19 +882,20 @@ flowchart TD
 
 通知请求的稳定内容包括：
 
-| 字段 | 语义 |
-|---|---|
-| `idempotencyKey` | 同一升级、对象和主通知目的的稳定键 |
-| `tenantId` | 通知数据及模板租户边界 |
-| `recipientId` | 已解析的直属上级 |
-| `templateCode` | `APPROVAL_SLA_ESCALATION_V1` |
-| `businessRef` | `escalationId`，用于查询和回执关联 |
-| `displayTaskRef` | 可展示的受控任务编号，不是数据库主键 |
-| `approvalRoute` | 不携带授权能力的审批页面路由；打开页面时重新认证并校验租户和目标人权限 |
-| `breachedAt`、`level` | 模板需要的业务事实 |
-| `traceId` | 调用追踪 |
+| 字段 | 类型/必填 | 基本校验 | 语义 |
+|---|---|---|---|
+| `idempotencyKey` | string / 是 | 32—128字符；同一键的请求内容Hash必须一致 | 同一升级、对象和主通知目的的稳定键 |
+| `tenantId` | string / 是 | 1—64字符；必须匹配服务身份允许范围 | 通知数据及模板租户边界 |
+| `recipientId` | string / 是 | 1—64字符；不得为空或跨租户 | 已解析的直属上级 |
+| `templateCode` | enum / 是 | 仅允许`APPROVAL_SLA_ESCALATION_V1` | 通知模板 |
+| `businessRef` | UUID / 是 | 合法升级标识 | `escalationId`，用于查询和回执关联 |
+| `displayTaskRef` | string / 是 | 1—64字符，不包含审批正文 | 可展示的受控任务编号 |
+| `approvalRoute` | string / 是 | 1—256字符；只允许以`/`开头的站内相对路由 | 打开页面时重新认证和授权 |
+| `breachedAt` | UTC date-time / 是 | ISO 8601，不能明显晚于当前时间 | SLA违约时间 |
+| `level` | integer / 是 | 1—10 | 升级级别 |
+| `traceId` | string / 是 | 1—64字符 | 调用追踪 |
 
-通知服务对同一幂等键必须返回同一 `notificationId`。请求内容与首次请求不一致时返回 `IDEMPOTENCY_CONFLICT`，审批侧进入人工处置而不是覆盖首次请求。
+成功响应包含 `notificationId` 和 `acceptanceStatus=ACCEPTED|ALREADY_ACCEPTED`。通知服务对同一幂等键必须返回同一 `notificationId`。请求内容与首次请求不一致时返回 `409 IDEMPOTENCY_CONFLICT`，审批侧进入人工处置而不是覆盖首次请求；格式错误返回`400`，身份或租户不匹配返回`401/403`，限流返回`429`。
 
 通知结果事件包含 `eventId`、`tenantId`、`notificationId`、`businessRef`、`deliveryVersion`、`status`、`reasonCategory`、`occurredAt` 和 `traceId`。`reasonCategory` 使用稳定分类，不传递供应商原始错误或通知正文。
 
@@ -777,11 +913,12 @@ flowchart TD
 
 查询契约如下：
 
-| 契约 | 关键输入 | 返回与稳定语义 |
+| 契约 | 关键输入与校验 | 返回与稳定语义 |
 |---|---|---|
-| 升级列表 | `state`、`stage`、`occurredFrom/To`、脱敏 `taskRef`、`sort`、`cursor` | 返回脱敏摘要、`nextCursor` 和服务端规范化筛选；游标不包含可解码的人员或任务信息 |
-| 升级详情 | `escalationId` | 返回业务事实、`version`、`updatedAt`、时间线、Attempt、诊断信息、下一自动动作和 `allowedActions` |
-| 操作结果查询 | `actionId` | 返回 `PENDING`、`SUCCEEDED`、`REJECTED` 或 `UNKNOWN`；成功结果包含审计编号和最新升级版本 |
+| 升级列表 | `state/stage`使用已发布枚举；起止时间为UTC且跨度≤31天；`taskRef`≤64字符；`pageSize`为1—200；`cursor`为服务端签名的不透明字符串 | 返回脱敏摘要、`nextCursor` 和服务端规范化筛选；游标不包含可解码的人员或任务信息 |
+| 升级详情 | `escalationId`必须是UUID | 返回业务事实、`version`、`updatedAt`、时间线、Attempt、诊断信息、下一自动动作和 `allowedActions` |
+| 恢复命令 | `actionId`和`escalationId`为UUID；`expectedVersion≥1`；`action`使用允许枚举；`reason`为10—500字符 | 返回`actionId`、审计编号、最新版本和状态；不返回乐观成功 |
+| 操作结果查询 | `actionId`必须是UUID | 返回 `PENDING`、`SUCCEEDED`、`REJECTED` 或 `UNKNOWN`；成功结果包含审计编号和最新升级版本 |
 
 列表和详情响应使用 `Cache-Control: private, no-store`，禁止 HTTP 缓存和持久缓存。前端只能在当前登录页面内存中最多复用 30 秒查询快照，登出、权限变化、窗口重新聚焦或恢复操作完成后立即失效。详情中的 `allowedActions` 只是当前快照，命令提交时服务端必须重新授权并校验版本。前端取消查询请求只停止客户端等待，不取消已经到达服务端的恢复命令。
 
@@ -1133,6 +1270,8 @@ flowchart LR
 
 审批服务 Implementation Design 必须继续细化：
 
+- 方案组件到代码包、应用服务、领域对象和基础设施适配器的映射；
+- 包/模块依赖图、关键领域类图、核心时序图和实现级运行资源拓扑；
 - Seek 查询的物理索引、Bucket 租约和批处理实现；
 - 升级、Attempt、Inbox、Outbox 和审计的物理表结构；
 - 任务版本、唯一约束和事务传播；
@@ -1145,6 +1284,7 @@ flowchart LR
 
 `approval-ops-web` Implementation Design 必须继续细化：
 
+- 路由、页面组件、Query、客户端状态机和 API Client 的依赖与数据流图；
 - 列表、详情、时间线、恢复面板和确认对话框的组件结构；
 - 路由、查询取消、30 秒缓存失效、焦点重新获取刷新和错误边界实现；
 - `actionId` 生命周期、提交中防重复、版本冲突和结果未知恢复；

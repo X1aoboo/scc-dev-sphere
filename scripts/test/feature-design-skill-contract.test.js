@@ -342,6 +342,7 @@ test('solution design reference defines target-state architecture without a seco
     /实现链/,
     /4\+1/,
     /场景视图.*逻辑视图.*进程视图.*开发视图.*物理视图/s,
+    /UML 组件图、类图.*软件结构.*时序图、状态图.*运行行为/s,
     /需求功能点.*纵向主线/,
     /触发与前置条件.*参与系统、服务和关键组件.*处理步骤、判断和分支.*数据和状态.*接口、事件.*事务、并发、幂等和一致性.*异常、超时、重复.*最终业务结果.*部署、兼容、迁移、回退/s,
     /只写.*采用 Outbox.*不是实现链/s,
@@ -354,8 +355,14 @@ test('solution design reference defines target-state architecture without a seco
     /不涉及用户界面时.*不生成空页面清单/s,
     /必须关闭的系统级设计/,
     /责任与流程.*接口与集成.*数据与状态.*正确性机制.*可靠性与运维.*安全与隐私.*质量属性.*部署与演进/s,
+    /接口与集成.*稳定契约.*输入输出.*校验.*结果语义.*安全与正确性规则.*兼容和恢复责任/s,
     /architecture-consistency.*architecture-documentation-quality.*design-traceability/s,
   ]) assert.match(guide, phrase);
+  assert.doesNotMatch(guide, /^## 接口与 API 设计透镜$/m);
+  const mustClose = guide.match(/## 必须关闭的系统级设计([\s\S]*?)## 高价值矛盾/)[1];
+  const contradictions = guide.match(/## 高价值矛盾([\s\S]*?)## 风险缩放/)[1];
+  assert.doesNotMatch(mustClose, /下游|Implementation Design|机器可读|OpenAPI/);
+  assert.doesNotMatch(contradictions, /下游|Implementation Design|机器可读|OpenAPI/);
 
   for (const [number, heading] of [
     ['1', '概述'],
@@ -400,6 +407,12 @@ test('solution design reference defines target-state architecture without a seco
   assert.match(spec, /页面区域表只能补充.*不能.*替代视觉产物/s);
   assert.match(spec, /Draft、配套资产、Review、人工批准和发布必须绑定同一设计包版本/);
   assert.match(spec, /不涉及界面时.*不生成空内容/s);
+  assert.match(spec, /UML 组件图表达组件与依赖.*UML 类图.*核心类型关系/s);
+  assert.match(spec, /只有需求新增、修改、复用、废弃或删除.*才展开/s);
+  assert.match(spec, /接口 \| 变更类型 \| 调用方 → 提供方 \| 核心语义 \| 适用规则 \| 下游契约标识/);
+  assert.match(spec, /请求与响应关键字段的类型、必填性、业务语义.*基本校验/s);
+  assert.match(spec, /不机械要求每个 API 同时具备身份、租户、CSRF、幂等和版本冲突/);
+  assert.match(spec, /Solution Design 固定架构责任.*Implementation Design.*机器可读定义/s);
   assert.match(spec, /用户能够评审具体方案，下游只需在已确定边界内细化服务内部实现/);
   assert.match(documentationQuality, /具体如何实现和运行/);
   assert.match(documentationQuality, /不以最低字数、段落数、图示数或关键词出现次数/);
@@ -412,6 +425,11 @@ test('solution design reference defines target-state architecture without a seco
   assert.match(documentationQuality, /设计资产.*Draft、Review、人工批准和发布.*同一版本/s);
   assert.match(documentationQuality, /初始、加载、空、成功、校验失败、业务失败、技术失败、部分成功、无权限、数据过期和刷新状态/);
   assert.match(documentationQuality, /需求改变用户界面.*只有页面名称、静态截图或 Happy Path/s);
+  assert.match(documentationQuality, /UML 语义的组件图、类图或等价模型/);
+  assert.match(documentationQuality, /接口目录.*新增、修改、复用、废弃和删除/s);
+  assert.match(documentationQuality, /关键请求\/响应字段、类型、必填性、业务语义和基本校验/);
+  assert.match(documentationQuality, /CSRF、幂等、版本冲突.*按接口适用性/s);
+  assert.match(documentationQuality, /方案表格与机器可读契约各自定义一套语义/);
   assert.match(documentationQuality, /下游必须重新发明跨服务流程、事务、数据状态或失败恢复/);
   assert.match(fixtureSource, /readFileSync\(templatePath, 'utf8'\)/);
   assert.match(fixtureSource, /solution-design\.golden\.md/);
@@ -438,6 +456,12 @@ test('solution design reference defines target-state architecture without a seco
     /actionId.*expectedVersion/s,
     /结果未知/,
     /WCAG 2\.2 AA/,
+    /UML 组件图语义/,
+    /classDiagram/,
+    /API \| 变更类型 \| 调用方 → 提供方 \| 核心语义 \| 契约配置 \| 下游契约标识/,
+    /Implementation Design 必须将.*细化为机器可读 OpenAPI/s,
+    /字段 \| 类型\/必填 \| 基本校验 \| 语义/,
+    /服务身份认证.*CSRF.*actionId.*expectedVersion/s,
     /Implementation Design 约束/,
   ]) assert.match(golden, phrase);
   for (const file of [
@@ -453,6 +477,85 @@ test('solution design reference defines target-state architecture without a seco
   assert.doesNotMatch(guide, /inspect-workspace|init-design|record-review|approve-current-design|publish|sync-state/);
   assert.doesNotMatch(spec, /businessDesign\s*→\s*solutionDesign|Business Baseline.*必须|固定前置|外层 Workflow/);
   assert.doesNotMatch(analysis, /需求功能点清单|功能点分析透镜|4\+1 架构视图/);
+});
+
+test('implementation design reference is code-ready, unit-neutral, and backed by the golden contract', () => {
+  const guide = read('skills/feature-design/references/design-guides/implementation-design.md');
+  const spec = read('skills/feature-design/references/specs/implementation-design.md');
+  const feasibility = read('skills/feature-design/references/review-checklists/implementation-feasibility.md');
+  const documentationQuality = read('skills/feature-design/references/review-checklists/implementation-documentation-quality.md');
+  const golden = read('scripts/test/fixtures/implementation-design.golden.md');
+  const fixtureSource = read('scripts/test/fixtures/implementation-design.js');
+  const {
+    assetsPath,
+    implementationDraft,
+    installImplementationAssets,
+  } = require('./fixtures/implementation-design');
+
+  for (const phrase of [
+    /实现设计不等于微服务设计/,
+    /后端服务.*前端应用.*共享库/s,
+    /实现单元与实现点主线/,
+    /上游目标.*当前实现.*本次变化.*代码落点.*目标执行/s,
+    /软件结构视图/,
+    /组件、包、关键类.*运行资源拓扑/s,
+    /只有涉及跨边界 API、事件或其他集成契约时才展开契约设计/,
+    /不涉及接口时不生成空 API 清单/,
+    /前端实现（按影响触发）/,
+    /implementation-feasibility.*implementation-documentation-quality.*design-traceability/s,
+  ]) assert.match(guide, phrase);
+
+  for (const heading of [
+    '概述',
+    '上游设计基线与实现追溯',
+    '跨实现单元的目标执行路径',
+    '实现单元：<UNIT_NAME>',
+    '跨单元失败行为',
+    '开发实施与 TDD 交接',
+    '开放事项',
+    '参考资料',
+  ]) assert.match(spec, new RegExp(`^## ${heading}$`, 'm'));
+
+  assert.match(spec, /方案功能点 \| 实现点 \| 实现单元 \| 主要入口 \| 变更类型/);
+  assert.match(spec, /实现点：<IMP-ID> <NAME>/);
+  assert.match(spec, /机器可读OpenAPI、AsyncAPI、Avro、Proto或Schema/);
+  assert.match(spec, /不涉及接口时不生成空API表或虚构契约/);
+  assert.match(spec, /不涉及界面时不生成本节/);
+  assert.doesNotMatch(spec, /微服务实现设计：/);
+
+  assert.match(feasibility, /足以实现/);
+  assert.match(documentationQuality, /开发人员无需重新设计即可进入TDD/);
+  assert.match(documentationQuality, /必须阻断的表现/);
+  assert.match(documentationQuality, /每节只有一句结论/);
+  assert.match(documentationQuality, /只有横向技术主题.*纵向实现/s);
+  assert.match(documentationQuality, /不以最低字数、段落数、图示数、代码块数或关键词/);
+
+  assert.match(fixtureSource, /readFileSync\(templatePath, 'utf8'\)/);
+  assert.match(fixtureSource, /implementation-design\.golden\.md/);
+  assert.match(fixtureSource, /function installImplementationAssets/);
+  assert.strictEqual(typeof installImplementationAssets, 'function');
+  assert.strictEqual(implementationDraft('FEAT-GOLD-001'), golden.replaceAll('<TASK_ID>', 'FEAT-GOLD-001'));
+  assert.doesNotMatch(fixtureSource, /function implementationUnit/);
+
+  for (const phrase of [
+    /功能点到实现点映射/,
+    /实现级架构视图索引/,
+    /classDiagram/,
+    /sequenceDiagram/,
+    /stateDiagram-v2/,
+    /运行资源拓扑/,
+    /前端组件与数据流/,
+    /开发人员无需重新设计/,
+  ]) assert.match(golden, phrase);
+
+  for (const [file, pathCount] of [
+    ['approval-escalation-ops.v1.openapi.json', 4],
+    ['notification-command.v1.openapi.json', 1],
+  ]) {
+    const contract = JSON.parse(fs.readFileSync(path.join(assetsPath, 'contracts', file), 'utf8'));
+    assert.strictEqual(contract.openapi, '3.1.0');
+    assert.strictEqual(Object.keys(contract.paths).length, pathCount);
+  }
 });
 
 test('every Review Checklist is Chinese and defines applicability, rules, and concrete items', () => {

@@ -6,22 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { readJSON, writeJSON, readState, writeState } = require('./devsphere-state');
 
-const IMPLEMENTATION_LEADING_SECTIONS = ['概述', '上游设计基线', '微服务实现范围与代码仓映射', '公共工程约束与设计追溯'];
-const IMPLEMENTATION_TRAILING_SECTIONS = ['适用性与裁剪说明', '实现级开放事项与升级项', '词汇表', '参考资料'];
-const IMPLEMENTATION_UNIT_SUBSECTIONS = [
-  '服务实现上下文',
-  '工程事实与实现范围',
-  '目标实现总览',
-  '代码结构、职责与依赖',
-  '接口、类型与不变量',
-  '控制流、数据流、状态与持久化',
-  '核心算法与技术质量属性',
-  '错误、并发、事务与一致性',
-  '兼容、迁移、回滚与运行观测',
-  '设计原则、模式选择与关键技术决策',
-  '面向 TDD 的单元行为设计',
-  '开发实现计划交接',
-];
+const IMPLEMENTATION_LEADING_SECTIONS = ['概述', '上游设计基线与实现追溯', '跨实现单元的目标执行路径'];
+const IMPLEMENTATION_TRAILING_SECTIONS = ['跨单元失败行为', '开发实施与 TDD 交接', '开放事项', '参考资料'];
 
 const DESIGN_TYPES = {
   businessDesign: {
@@ -95,11 +81,11 @@ const DESIGN_TYPES = {
     slug: 'implementation-design',
     artifactPrefix: 'IMPL',
     documentTitle: 'Implementation Design',
+    allowNumberedHeadings: true,
     leadingSections: IMPLEMENTATION_LEADING_SECTIONS,
     trailingSections: IMPLEMENTATION_TRAILING_SECTIONS,
     coreSections: [...IMPLEMENTATION_LEADING_SECTIONS, ...IMPLEMENTATION_TRAILING_SECTIONS],
-    unitSectionPrefix: '微服务实现设计：',
-    requiredUnitSubsections: IMPLEMENTATION_UNIT_SUBSECTIONS,
+    unitSectionPrefix: '实现单元：',
     applicabilityItems: [],
   },
   testDesign: {
@@ -582,10 +568,16 @@ function addDesignAssetChecks(raw, taskPath, designType, checks) {
 
 function addImplementationChecks(raw, definition, checks) {
   const sections = extractHeadingSections(raw, 2);
-  const headings = sections.map(section => section.heading);
-  const units = sections.filter(section => section.heading.startsWith(definition.unitSectionPrefix));
-  const unitNames = units.map(section => section.heading.slice(definition.unitSectionPrefix.length).trim());
-  const expectedOrder = [...definition.leadingSections, ...units.map(section => section.heading), ...definition.trailingSections];
+  const headings = sections.map(section => canonicalHeading(section.heading));
+  const units = sections.filter(section => canonicalHeading(section.heading).startsWith(definition.unitSectionPrefix));
+  const unitNames = units.map(section => (
+    canonicalHeading(section.heading).slice(definition.unitSectionPrefix.length).trim()
+  ));
+  const expectedOrder = [
+    ...definition.leadingSections,
+    ...units.map(section => canonicalHeading(section.heading)),
+    ...definition.trailingSections,
+  ];
 
   checks.push({
     code: 'implementation section order',
@@ -605,28 +597,31 @@ function addImplementationChecks(raw, definition, checks) {
   });
 
   for (const unit of units) {
-    const serviceName = unit.heading.slice(definition.unitSectionPrefix.length).trim();
+    const unitName = canonicalHeading(unit.heading).slice(definition.unitSectionPrefix.length).trim();
     const subsections = extractHeadingSections(unit.content, 3);
     checks.push({
-      code: `implementation unit subsection order:${serviceName}`,
-      result: sameValues(subsections.map(section => section.heading), definition.requiredUnitSubsections)
+      code: `implementation unit detail:${unitName}`,
+      result: hasSubstantiveSectionContent(unit.content)
+        && subsections.length > 0
+        && subsections.every(section => hasSubstantiveSectionContent(section.content))
         ? 'pass'
         : 'fail',
     });
-    for (const subsectionName of definition.requiredUnitSubsections) {
-      const subsection = subsections.find(candidate => candidate.heading === subsectionName);
-      checks.push({
-        code: `required unit subsection:${serviceName}/${subsectionName}`,
-        result: subsection && hasSubstantiveSectionContent(subsection.content) ? 'pass' : 'fail',
-      });
-    }
   }
 
-  const mapping = parseMarkdownTable(extractSection(raw, '微服务实现范围与代码仓映射'));
-  const mappingHeader = ['微服务', '新增/存量', '上游已确定责任', '代码仓或新工程', '构建模块/产物', '详细设计位置'];
-  const mappedServices = mapping ? [...new Set(mapping.rows.map(row => row[0]))] : [];
+  const mapping = parseMarkdownTable(
+    extractDefinitionSubsection(
+      raw,
+      definition,
+      '上游设计基线与实现追溯',
+      '功能点到实现点映射',
+    ),
+  );
+  const mappingHeader = ['方案功能点', '实现点', '实现单元', '主要入口', '变更类型'];
+  const mappedUnits = mapping ? [...new Set(mapping.rows.map(row => row[2]))] : [];
+  const implementationPoints = mapping ? mapping.rows.map(row => row[1]) : [];
   checks.push({
-    code: 'implementation mapping table',
+    code: 'implementation point mapping',
     result: mapping
       && sameValues(mapping.header, mappingHeader)
       && mapping.rows.length > 0
@@ -636,29 +631,15 @@ function addImplementationChecks(raw, definition, checks) {
   });
   checks.push({
     code: 'implementation mapping coverage',
-    result: sameSets(mappedServices, unitNames) ? 'pass' : 'fail',
+    result: sameSets(mappedUnits, unitNames) ? 'pass' : 'fail',
   });
-
-  const applicability = parseMarkdownTable(extractSection(raw, '适用性与裁剪说明'));
-  const applicabilityHeader = ['微服务', '设计维度', '处理方式', '核验范围与依据', '正文落点'];
-  const allowedHandling = ['完整设计', '沿用既有设计', '无新增影响'];
-  const applicableServices = applicability ? [...new Set(applicability.rows.map(row => row[0]))] : [];
   checks.push({
-    code: 'implementation applicability table',
-    result: applicability
-      && sameValues(applicability.header, applicabilityHeader)
-      && applicability.rows.length > 0
-      && applicability.rows.every(row => (
-        row.length === applicabilityHeader.length
-        && row.every(hasSubstantiveSectionContent)
-        && allowedHandling.includes(row[2])
-      ))
+    code: 'implementation point identifiers',
+    result: implementationPoints.length > 0
+      && implementationPoints.every(point => /\bIMP-[A-Z0-9-]+\b/.test(point))
+      && new Set(implementationPoints).size === implementationPoints.length
       ? 'pass'
       : 'fail',
-  });
-  checks.push({
-    code: 'implementation applicability coverage',
-    result: sameSets(applicableServices, unitNames) ? 'pass' : 'fail',
   });
 }
 
@@ -861,7 +842,7 @@ function lintDraft(taskPath, designType) {
   });
   checks.push({
     code: 'placeholder',
-    result: /<[A-Za-z][A-Za-z0-9_.:/-]*>|\{\{[^}\r\n]+\}\}|\b(?:TODO|TBD)\b/i.test(raw)
+    result: /(?<![A-Za-z0-9_<])<[A-Za-z][A-Za-z0-9_.:/-]*>|\{\{[^}\r\n]+\}\}|\b(?:TODO|TBD)\b/i.test(raw)
       ? 'fail'
       : 'pass',
   });
