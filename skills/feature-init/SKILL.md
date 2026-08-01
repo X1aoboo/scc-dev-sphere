@@ -55,10 +55,10 @@ description: 创建新的需求开发任务工作区。初始化 .devsphere 任�
 执行 workspace 脚本创建任务目录：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workspace.js create-feature-task ${CLAUDE_PROJECT_DIR} <task-id>
+devsphere workspace create-feature-task --task-id "<task-id>"
 ```
 
-`${CLAUDE_PROJECT_DIR}` 为项目根目录，脚本会在该目录下创建 `.devsphere/tasks/feature/<task-id>/` 及所有子目录，并初始化只保存顶层工作流事实的 `state.json`（`status=initialized`）。设计阶段完成度由正式 Baseline Artifact 判断，不在 state 中创建阶段游标。
+CLI 在当前项目根目录下创建 `.devsphere/tasks/feature/<task-id>/` 及所有子目录，并初始化只保存顶层工作流事实的 `state.json`（`status=initialized`）。设计阶段完成度由正式 Baseline Artifact 判断，不在 state 中创建阶段游标。
 
 **保存输出结果中的 `taskPath`**（JSON 中的 `taskPath` 字段），下一步需要用到。
 

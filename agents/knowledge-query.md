@@ -27,7 +27,7 @@ background: false
 先运行以下命令读取生效配置：
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/knowledge-query.js" read-config "${CLAUDE_PROJECT_DIR}"
+devsphere knowledge read-config
 ```
 
 根据问题、子问题和各知识源的 `description`，选择最可能提供答案的一个或多个来源：

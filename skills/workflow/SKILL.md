@@ -10,7 +10,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 ## 集成契约
 
 - **入口:** `/scc-dev-sphere:workflow [list|switch <task-id>]`
-- **入参:** 可选子动作通过 `$ARGUMENTS` 传入
+- **入参:** 从调用上下文取得可选子动作 `list` 或 `switch <task-id>`；没有子动作时推进当前任务
 - **输出:** nextAction 展示给用户
 - **完成标准:** nextAction 计算并呈现
 
@@ -18,14 +18,14 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 
 ### 步骤1：解析参数
 
-检查 `$ARGUMENTS`：
+检查调用上下文中的可选子动作：
 - `list` → 列出 `.devsphere/tasks/` 下所有任务及其状态
 - `switch <task-id>` → 更新 `current-task.json` 指向指定任务
 - （空）→ 计算当前活跃任务的下一步动作
 
 ### 步骤2：处理 `list` 子动作
 
-如果 `$ARGUMENTS` 以 `list` 开头：
+如果子动作以 `list` 开头：
 
 1. 读取 `.devsphere/tasks/` 下的所有子目录
 2. 对每个任务目录，读取其 `state.json`
@@ -35,7 +35,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 
 ### 步骤3：处理 `switch` 子动作
 
-如果 `$ARGUMENTS` 以 `switch` 开头：
+如果子动作以 `switch` 开头：
 
 提取 `<task-id>`（`switch` 之后的第二个词）。
 
@@ -62,7 +62,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 运行确定性 workflow resolver：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workflow.js ${CLAUDE_PROJECT_DIR}
+devsphere workflow resolve-next-action
 ```
 
 resolver 会：
@@ -99,7 +99,7 @@ resolver 会：
 执行一次确定性状态同步：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design-status ${CLAUDE_PROJECT_DIR}
+devsphere workflow sync-design-status
 ```
 
 解析命令返回的 JSON：
@@ -161,7 +161,7 @@ instruction 应说明本次需要读取的产物、工作产物路径和正式�
 如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} designing
+devsphere workflow set-task-status --status designing
 ```
 
 这表示设计活动已经开始。直接调用专业 Skill 不承诺推进 Feature Task 顶层状态；`/scc-dev-sphere:workflow` 是正式生命周期入口。
@@ -191,7 +191,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“需求澄清结果已经用户批准”时，才由外层 workflow 完成顶层状态迁移：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} clarified
+   devsphere workflow set-task-status --status clarified
    ```
 
    如果 Skill 暂停等待用户回答、Review 或最终批准，不得更新状态。
@@ -199,7 +199,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 2. **设计状态同步：** 如果刚完成的 skill 是 `feature-design`，只有它明确返回“当前 Design Baseline 已获用户批准并发布”时，执行一次幂等同步：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-design-status ${CLAUDE_PROJECT_DIR}
+   devsphere workflow sync-design-status
    ```
 
    同步根据工作空间中的 Baseline 和 `state.requiredDesignTypes` 判定保持 `designing` 或进入 `design_ready`，不按固定设计类型顺序推进。每次 Skill 只完成一份 Design Baseline；同步后回到步骤4重新计算下一动作。
@@ -207,7 +207,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 3. **外部测试设计完成：** 如果本次 `nextAction.stage === 'external-test-design'`，仅在外部 Skill 正常结束后执行：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js complete-external-test-design ${CLAUDE_PROJECT_DIR}
+   devsphere workflow complete-external-test-design
    ```
 
    命令成功且返回 `status: external_test_design_ready` 才表示完成。Skill 不可用、报错或中断时保持 `design_ready`，展示失败原因并停止本次派发。

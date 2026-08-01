@@ -193,22 +193,24 @@ Requirement → Business Design → Solution Design → Implementation Design �
 /scc-dev-sphere:knowledge-config
 ```
 
-然后用自然语言要求它“查询当前配置”“禁用已有 Repo 来源”或“新增一个 Skill 来源”。Skill 会通过确定性脚本修改配置并回读验证。
+然后用自然语言要求它“查询当前配置”“禁用已有 Repo 来源”或“新增一个 Skill 来源”。Skill 会通过统一 `devsphere` CLI 修改配置并回读验证。
 
-在插件仓库根目录调试脚本时，可以把当前目录作为目标项目执行以下真实命令：
+插件启用时，宿主必须将 `<pluginRoot>/bin` 加入命令执行 PATH；Claude Code 的 Bash Tool 会自动完成该注入。其他宿主需提供等价的 Plugin 适配，Windows PowerShell 通过 `bin/devsphere.cmd` 启动。宿主无法提供 CLI 时应明确报错，不得让 Skill 搜索或猜测脚本位置。
+
+CLI 默认把当前目录作为项目根，也可使用 `--workspace-root <path>` 或 `DEVSPHERE_PROJECT_ROOT` 显式指定。在插件仓库根目录调试时可执行：
 
 ```bash
 # 查询当前生效配置
-node scripts/knowledge-query.js show-config "$PWD"
+devsphere knowledge show-config
 
 # 修改来源类型的启用状态
-node scripts/knowledge-query.js update-config "$PWD" sources.repo.enabled false
+devsphere knowledge update-config --key sources.repo.enabled --value false
 
 # 新增 Repo 来源；同一 type + target 已存在时更新其 description
-node scripts/knowledge-query.js upsert-source "$PWD" repo . "当前项目的代码、测试和文档"
+devsphere knowledge upsert-source --type repo --target . --description "当前项目的代码、测试和文档"
 ```
 
-这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)，CLI 行为见 [`scripts/knowledge-query.js`](scripts/knowledge-query.js)。
+这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)；`devsphere --help` 是公开 CLI 命令清单，原有脚本入口仅保留兼容。
 
 ## 项目结构
 
@@ -216,6 +218,7 @@ node scripts/knowledge-query.js upsert-source "$PWD" repo . "当前项目的代�
 .
 ├── .claude-plugin/        # Claude Code Plugin 元数据
 ├── agents/                # 专业 Agent 定义与工具权限
+├── bin/                   # 统一 devsphere CLI 的 POSIX/Windows launcher
 ├── skills/                # 工作流、Feature 生命周期和专项方法
 ├── scripts/               # 状态、路由、配置和合同校验脚本
 │   ├── workflows/         # taskType 对应的确定性 resolver

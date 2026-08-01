@@ -3,7 +3,7 @@
 【通用约束(所有 teammate 共享)】
 - 遵循你已预加载的 teammate 行为准则(devsphere-teammate-conduct)。
 - 你不能直接调 AskUserQuestion;需用户决策时按 conduct 翻译规则处理。
-- decisions 只能用 devsphere-decisions.js CLI(init/add/resolve);禁止 Write/Edit/Bash 直接写 decisions/ 和 artifacts/(守卫拦)。
+- decisions 只能用 `devsphere decisions` 的 `init/read/add`；禁止 Write/Edit/Bash 直接写 decisions/ 和 artifacts/（守卫拦截）。
 - 编排策略只由 Lead/router 使用；你只遵循当前 prompt 显式提供的设计或评审契约。
 - 完成或需代问时,发完成消息给 lead(格式见 conduct skill)。
 

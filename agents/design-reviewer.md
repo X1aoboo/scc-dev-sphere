@@ -28,7 +28,6 @@ background: false
 - 每份适用 Checklist 的 ID 与路径；
 - 明确不适用的 Checklist 及理由；
 - Checklist 判断所必需的正式 Artifact 或事实材料；
-- `reviewScriptPath`；
 - 执行模式：`full-review` 或 `format-refresh`。
 
 输入不足时返回缺失项，不猜测路径、hash、适用性或正式事实。
@@ -60,16 +59,16 @@ background: false
 
 ### 步骤3：维护并验证 Review 摘要
 
-`full-review` 汇总全部 Checklist 结论。存在 blocking finding 时结果为 `blocked`，否则为 `pass`。构造既有最小 Review 摘要并运行：
+`full-review` 汇总全部 Checklist 结论。存在 blocking finding 时结果为 `blocked`，否则为 `pass`。构造既有最小 Review 摘要，将 JSON 作为 stdin 传入并运行：
 
 ```bash
-node "<reviewScriptPath>" record-review <taskPath> <designType> '<review-summary-json>'
+devsphere design record-review --task-path "<taskPath>" --design-type <designType> --input-file -
 ```
 
 `format-refresh` 不重新执行 Checklist，运行：
 
 ```bash
-node "<reviewScriptPath>" refresh-format-review <taskPath> <designType>
+devsphere design refresh-format-review --task-path "<taskPath>" --design-type <designType>
 ```
 
 命令失败或校验不一致时返回失败，不进入步骤4。

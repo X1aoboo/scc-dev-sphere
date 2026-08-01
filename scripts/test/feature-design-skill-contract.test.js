@@ -41,7 +41,7 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /当前 Spec.*模板/s);
   assert.match(task3, /work\/<slug>\/draft\.md.*目标文件/s);
   assert.match(task3, /design-draft.*完成对照检查/s);
-  assert.match(task3, /devsphere-design\.js lint <taskPath> <designType>/);
+  assert.match(task3, /devsphere design lint --task-path "<taskPath>" --design-type <designType>/);
   assert.match(task3, /不判断方案是否具体、专业或语义成立/);
   assert.match(task3, /Design Guide 收敛标准、适用 Checklist 和用户评审/);
   assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);
@@ -100,6 +100,7 @@ test('feature-design delegates one centralized review and leaves top-level state
   assert.match(skill, /mode=format-refresh/);
   assert.doesNotMatch(skill, /为每份适用 Checklist 创建.*Reviewer/);
   assert.doesNotMatch(skill, /node .*record-review/);
+  assert.doesNotMatch(skill, /reviewScriptPath/);
   assert.match(skill, /approve-current-design/);
   assert.match(skill, /publish/);
   assert.doesNotMatch(skill, /sync-state/);
@@ -119,6 +120,7 @@ test('feature-design turns explicit user approval into the canonical human appro
   assert.match(approvalStep, /"acceptedRisks"\s*:\s*\["<accepted-risk>"\]/);
   assert.match(approvalStep, /不得保留占位符/);
   assert.match(approvalStep, /"summary"\s*:/);
+  assert.match(approvalStep, /--input-file -/);
   assert.match(approvalStep, /主会话.*直接落盘/s);
   assert.match(approvalStep, /无需外部审批接口/);
 });

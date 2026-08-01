@@ -20,7 +20,7 @@ version: "1.0.0"
 
 `version` 表示正式 Baseline 版本。评审轮次内的语义修订只改变 Draft hash；Baseline 后显式重开才递增正式版本。外层 Workflow 通过 `state.requiredDesignTypes` 声明当前 Feature 需要哪些设计类型，该集合不表达顺序。
 
-`scripts/devsphere-design.js publish` 在当前 Lint、完整 Checklist Review 和人工设计批准都绑定同一 Draft hash 后，将 Draft 原样复制成 Artifact。发布后两者的字节与 hash 必须一致，并触发顶层状态同步。
+`devsphere design publish` 在当前 Lint、完整 Checklist Review 和人工设计批准都绑定同一 Draft hash 后，将 Draft 原样复制成 Artifact。发布后两者的字节与 hash 必须一致，并触发顶层状态同步。
 
 状态、owner、依赖、Evidence/Decision 引用和内容 hash 不手填进 frontmatter：
 

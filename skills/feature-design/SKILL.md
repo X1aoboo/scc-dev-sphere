@@ -26,7 +26,7 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 从调用上下文取得 `<taskPath>`，运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js inspect-workspace <taskPath>
+devsphere design inspect-workspace --task-path "<taskPath>"
 ```
 
 结合检查结果和用户目标识别当前设计活动：
@@ -39,7 +39,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js inspect-workspace <ta
 以唯一未完成 Work/Draft、调用目标和用户确认组成当前活动的正向证据。确认 `<designType>` 后运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath> <designType>
+devsphere design init-design --task-path "<taskPath>" --design-type <designType>
 ```
 
 根据返回的 `slug` 读取且只读取当前类型的：
@@ -68,7 +68,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js init-design <taskPath
 调用期间当前顶层任务保持 `in_progress`。只有 `design-draft` 已完成对照检查，确认最终有效设计及必要上下文均已充分写入 Draft，才能运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js lint <taskPath> <designType>
+devsphere design lint --task-path "<taskPath>" --design-type <designType>
 ```
 
 Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时只修复确定性问题；专业完整性仍由 Design Guide 收敛标准、适用 Checklist 和用户评审确认。
@@ -87,7 +87,6 @@ Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明
 - 冻结 Draft 的路径、Draft hash 和 semantic hash；
 - 全部适用 Checklist 的 ID 与路径，以及明确不适用项的理由；
 - Checklist 判断所必需的相关正式 Artifact 或事实材料；
-- `reviewScriptPath=${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js`；
 - `mode=full-review`。
 
 收到结果后由主会话分析重复、关联和冲突，向用户说明对 Confirmed Design 的影响，再讨论修订。所有 blocking findings 必须关闭；advisory 和残余 risk 必须向用户揭示并形成明确处理结论。主会话可以读取 Review 状态，但不创建、修改或刷新 Review 摘要。
@@ -106,20 +105,28 @@ Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-review
 
 用户明确批准后，由主会话直接落盘，无需外部审批接口。`approvedBy` 固定为 `"human"`，表示批准决定来自用户。
 
-根据是否存在用户接受的残余风险，选择一条批准命令：
+根据是否存在用户接受的残余风险，构造对应的 Approval JSON，并将其作为 stdin 传给批准命令：
 
 ```bash
-# 无残余风险
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '{"approvedBy":"human","acceptedRisks":[],"summary":"用户已批准当前 Design Draft 作为 Baseline"}'
+devsphere design approve-current-design --task-path "<taskPath>" --design-type <designType> --input-file -
+```
 
-# 有残余风险：将 <accepted-risk> 替换为实际风险，不得保留占位符
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js approve-current-design <taskPath> <designType> '{"approvedBy":"human","acceptedRisks":["<accepted-risk>"],"summary":"用户已接受所列残余风险，并批准当前 Design Draft 作为 Baseline"}'
+无残余风险输入：
+
+```json
+{"approvedBy":"human","acceptedRisks":[],"summary":"用户已批准当前 Design Draft 作为 Baseline"}
+```
+
+存在残余风险时，将 `<accepted-risk>` 替换为实际风险，不得保留占位符：
+
+```json
+{"approvedBy":"human","acceptedRisks":["<accepted-risk>"],"summary":"用户已接受所列残余风险，并批准当前 Design Draft 作为 Baseline"}
 ```
 
 批准成功后运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <designType>
+devsphere design publish --task-path "<taskPath>" --design-type <designType>
 ```
 
 批准失败时检查 JSON 和 Draft/Lint/Review hash。
@@ -127,7 +134,7 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js publish <taskPath> <d
 `publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-design.js reopen <taskPath> <designType>
+devsphere design reopen --task-path "<taskPath>" --design-type <designType>
 ```
 
 本 Skill 不修改顶层工作流状态，也不硬编码总体需要哪些设计活动。调用者负责根据最新工作空间事实和外层合同同步顶层状态。

@@ -12,7 +12,7 @@ description: 对 Feature Design Baseline 集合执行总体人工批准；用于
 运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-approval.js validate-design-ready <taskPath>
+devsphere approval validate-design-ready --task-path "<taskPath>"
 ```
 
 必须满足：
@@ -28,8 +28,10 @@ node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-approval.js validate-design-rea
 用户批准时运行：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-approval.js approve-design <taskPath> '<approval-json>'
+devsphere approval approve-design --task-path "<taskPath>" --input-file -
 ```
+
+将 Approval JSON 作为 stdin 传入，不放入命令行参数。
 
 命令把当前 Baseline 集合及其 hash 写入 `approvals/design-final-approval.json`，然后将顶层状态更新为 `approved_for_implementation`。
 
