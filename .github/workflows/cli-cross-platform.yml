@@ -43,6 +43,10 @@ jobs:
           node-version: 20
       - name: Run focused CLI tests
         run: node --test scripts/test/devsphere-bash-path.test.js scripts/test/devsphere-cli.test.js scripts/test/skill-contracts.test.js
+      - name: Smoke test plugin launcher through Bash
+        shell: bash
+        run: |
+          "$GITHUB_WORKSPACE/bin/devsphere" --help
       - name: Smoke test POSIX launcher
         if: runner.os != 'Windows'
         run: ./bin/devsphere --help
