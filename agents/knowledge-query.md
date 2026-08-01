@@ -27,7 +27,7 @@ background: false
 先运行以下命令读取生效配置：
 
 ```bash
-devsphere knowledge read-config
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge read-config
 ```
 
 根据问题、子问题和各知识源的 `description`，选择最可能提供答案的一个或多个来源：

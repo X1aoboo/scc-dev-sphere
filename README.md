@@ -212,7 +212,7 @@ devsphere knowledge upsert-source --type repo --target . --description "当前�
 
 这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)；`devsphere --help` 是公开 CLI 命令清单，原有脚本入口仅保留兼容。`devsphere guard ...` 是供宿主 Hook 适配器调用的可移植守卫入口，不依赖 Claude 的输入变量。
 
-Claude 的 SessionStart Hook 会在 `startup`、`resume`、`clear`、`compact` 时通过 `--env-file "$CLAUDE_ENV_FILE"` 将插件 `bin/` 注入后续 Bash 工具的 PATH。其他 Bash 宿主可按自身环境机制选择以下任一操作：
+Claude Code 会在插件启用时自动将插件 `bin/` 加入 Bash 工具的 PATH，因此 Skill 和 Agent 不需要 SessionStart PATH Hook。其他 Bash 宿主可按自身环境机制选择以下任一操作：
 
 ```bash
 # Hook 能 source 脚本时
@@ -222,7 +222,7 @@ source /absolute/plugin/path/scripts/setup-devsphere-bash-path.sh
 /absolute/plugin/path/scripts/setup-devsphere-bash-path.sh --env-file "$AGENT_SESSION_ENV_FILE"
 ```
 
-直接执行脚本不能修改父进程 PATH，因此未使用 `source` 或 `--env-file` 时会失败。不同 Agent 的会话环境文件变量由对应宿主决定。该注入只服务于 Bash 工具；PreToolUse Hook 仍通过 `${CLAUDE_PLUGIN_ROOT}` 绝对定位统一 CLI。
+直接执行脚本不能修改父进程 PATH，因此未使用 `source` 或 `--env-file` 时会失败。不同 Agent 的会话环境文件变量由对应宿主决定。Claude PreToolUse Hook 通过 `${CLAUDE_PLUGIN_ROOT}/bin/devsphere` 绝对定位统一 CLI。
 
 ## 项目结构
 
@@ -275,7 +275,7 @@ git status --short --untracked-files=all
 ## 当前边界
 
 - 插件依赖 Claude Code 的 Plugin、Skill、Agent、Hook 和会话能力；仓库没有声明其他宿主的兼容性。
-- Guard 规则由统一 CLI 提供；Claude PreToolUse Hook 使用 `${CLAUDE_PLUGIN_ROOT}` 绝对定位，SessionStart PATH 注入仅让后续 Bash 工具可以使用裸 `devsphere`。其他宿主可复用 CLI 和通用 PATH 脚本，但需要提供自己的 Hook 适配器。
+- Guard 规则由统一 CLI 提供；Claude Skill、Agent 和 PreToolUse Hook 使用 `${CLAUDE_PLUGIN_ROOT}/bin/devsphere` 绝对定位。其他宿主可替换对应的插件根变量并复用 CLI，或使用通用 PATH 脚本，但需要提供自己的 Hook 适配器。
 - Workflow resolver 当前只支持 `feature` taskType，不支持通用任务编排。
 - 插件不实现独立 Agent Runtime、Agent 生命周期或后台调度服务。
 - Requirement、各 Design Baseline、总体设计、首次代码变更和部分高风险计划仍需要人工确认。

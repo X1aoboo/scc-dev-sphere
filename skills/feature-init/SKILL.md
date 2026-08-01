@@ -55,7 +55,7 @@ description: 创建新的需求开发任务工作区。初始化 .devsphere 任�
 执行 workspace 脚本创建任务目录：
 
 ```bash
-devsphere workspace create-feature-task --task-id "<task-id>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workspace create-feature-task --task-id "<task-id>"
 ```
 
 CLI 在当前项目根目录下创建 `.devsphere/tasks/feature/<task-id>/` 及所有子目录，初始化 `evidence/evidence-registry.json`，并初始化只保存顶层工作流事实的 `state.json`（`status=initialized`）。设计阶段完成度由正式 Baseline Artifact 判断，不在 state 中创建阶段游标。

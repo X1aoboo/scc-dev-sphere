@@ -12,7 +12,7 @@ description: 对 Feature Design Baseline 集合执行总体人工批准；用于
 运行：
 
 ```bash
-devsphere approval validate-design-ready --task-path "<taskPath>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" approval validate-design-ready --task-path "<taskPath>"
 ```
 
 必须满足：
@@ -28,7 +28,7 @@ devsphere approval validate-design-ready --task-path "<taskPath>"
 用户批准时运行：
 
 ```bash
-devsphere approval approve-design --task-path "<taskPath>" --input-file -
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" approval approve-design --task-path "<taskPath>" --input-file -
 ```
 
 将 Approval JSON 作为 stdin 传入，不放入命令行参数。

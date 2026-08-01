@@ -26,7 +26,7 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 从调用上下文取得 `<taskPath>`，运行：
 
 ```bash
-devsphere design inspect-workspace --task-path "<taskPath>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design inspect-workspace --task-path "<taskPath>"
 ```
 
 结合检查结果和用户目标识别当前设计活动：
@@ -39,7 +39,7 @@ devsphere design inspect-workspace --task-path "<taskPath>"
 以唯一未完成 Work/Draft、调用目标和用户确认组成当前活动的正向证据。确认 `<designType>` 后运行：
 
 ```bash
-devsphere design init-design --task-path "<taskPath>" --design-type <designType>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design init-design --task-path "<taskPath>" --design-type <designType>
 ```
 
 根据返回的 `slug` 读取且只读取当前类型的：
@@ -68,7 +68,7 @@ devsphere design init-design --task-path "<taskPath>" --design-type <designType>
 调用期间当前顶层任务保持 `in_progress`。只有 `design-draft` 已完成对照检查，确认最终有效设计及必要上下文均已充分写入 Draft，才能运行：
 
 ```bash
-devsphere design lint --task-path "<taskPath>" --design-type <designType>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design lint --task-path "<taskPath>" --design-type <designType>
 ```
 
 Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时只修复确定性问题；专业完整性仍由 Design Guide 收敛标准、适用 Checklist 和用户评审确认。
@@ -108,7 +108,7 @@ Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-review
 根据是否存在用户接受的残余风险，构造对应的 Approval JSON，并将其作为 stdin 传给批准命令：
 
 ```bash
-devsphere design approve-current-design --task-path "<taskPath>" --design-type <designType> --input-file -
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design approve-current-design --task-path "<taskPath>" --design-type <designType> --input-file -
 ```
 
 无残余风险输入：
@@ -126,7 +126,7 @@ devsphere design approve-current-design --task-path "<taskPath>" --design-type <
 批准成功后运行：
 
 ```bash
-devsphere design publish --task-path "<taskPath>" --design-type <designType>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design publish --task-path "<taskPath>" --design-type <designType>
 ```
 
 批准失败时检查 JSON 和 Draft/Lint/Review hash。
@@ -134,7 +134,7 @@ devsphere design publish --task-path "<taskPath>" --design-type <designType>
 `publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
 
 ```bash
-devsphere design reopen --task-path "<taskPath>" --design-type <designType>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --task-path "<taskPath>" --design-type <designType>
 ```
 
 本 Skill 不修改顶层工作流状态，也不硬编码总体需要哪些设计活动。调用者负责根据最新工作空间事实和外层合同同步顶层状态。

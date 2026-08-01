@@ -12,13 +12,13 @@ description: 查询和维护项目知识源配置。用于查看当前生效的 
 运行：
 
 ```bash
-devsphere knowledge show-config
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge show-config
 ```
 
 需要检查精确字段、确认已有目标或验证修改结果时运行：
 
 ```bash
-devsphere knowledge read-config
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge read-config
 ```
 
 直接展示生效来源、启用状态、目标和 description，并说明当前使用插件默认配置还是项目配置。
@@ -30,25 +30,25 @@ devsphere knowledge read-config
 修改来源类型的启用状态：
 
 ```bash
-devsphere knowledge update-config --key sources.<type>.enabled --value <true|false>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge update-config --key sources.<type>.enabled --value <true|false>
 ```
 
 修改已有来源的 description：
 
 ```bash
-devsphere knowledge upsert-source --type <type> --target "<target>" --description "<description>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge upsert-source --type <type> --target "<target>" --description "<description>"
 ```
 
 修改 Web description：
 
 ```bash
-devsphere knowledge upsert-source --type web --description "<description>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge upsert-source --type web --description "<description>"
 ```
 
 `type + target` 是来源身份。修改目标时，先新增新目标；新增成功后再删除旧目标：
 
 ```bash
-devsphere knowledge remove-source --type <type> --target "<old-target>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge remove-source --type <type> --target "<old-target>"
 ```
 
 每次修改后运行 `read-config`，确认目标、description 和实际 `enabled` 与请求一致。
@@ -58,7 +58,7 @@ devsphere knowledge remove-source --type <type> --target "<old-target>"
 从用户输入取得来源类型、目标和非空 description。缺少其中任何一项时，只补问缺少的信息；Web 只需要 description。
 
 ```bash
-devsphere knowledge upsert-source --type <type> --target "<target>" --description "<description>"
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge upsert-source --type <type> --target "<target>" --description "<description>"
 ```
 
 类型与目标对应关系：
@@ -75,4 +75,4 @@ description 要具体说明该来源能够回答的知识范围，使 `knowledge
 
 ## 边界
 
-配置变更只通过 `devsphere knowledge` 执行。保持插件默认配置不变；项目级修改写入 `.devsphere/config/knowledge-sources.json`。用户只要求查询时保持只读。
+配置变更只通过 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" knowledge` 执行。保持插件默认配置不变；项目级修改写入 `.devsphere/config/knowledge-sources.json`。用户只要求查询时保持只读。

@@ -41,7 +41,7 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /当前 Spec.*模板/s);
   assert.match(task3, /work\/<slug>\/draft\.md.*目标文件/s);
   assert.match(task3, /design-draft.*完成对照检查/s);
-  assert.match(task3, /devsphere design lint --task-path "<taskPath>" --design-type <designType>/);
+  assert.match(task3, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" design lint --task-path "<taskPath>" --design-type <designType>/);
   assert.match(task3, /不判断方案是否具体、专业或语义成立/);
   assert.match(task3, /Design Guide 收敛标准、适用 Checklist 和用户评审/);
   assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);

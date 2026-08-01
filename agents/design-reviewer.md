@@ -62,13 +62,13 @@ background: false
 `full-review` 汇总全部 Checklist 结论。存在 blocking finding 时结果为 `blocked`，否则为 `pass`。构造既有最小 Review 摘要，将 JSON 作为 stdin 传入并运行：
 
 ```bash
-devsphere design record-review --task-path "<taskPath>" --design-type <designType> --input-file -
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design record-review --task-path "<taskPath>" --design-type <designType> --input-file -
 ```
 
 `format-refresh` 不重新执行 Checklist，运行：
 
 ```bash
-devsphere design refresh-format-review --task-path "<taskPath>" --design-type <designType>
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design refresh-format-review --task-path "<taskPath>" --design-type <designType>
 ```
 
 命令失败或校验不一致时返回失败，不进入步骤4。

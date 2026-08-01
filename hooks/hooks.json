@@ -1,28 +1,16 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/setup-devsphere-bash-path.sh\" --env-file \"$CLAUDE_ENV_FILE\""
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js", "guard", "evidence-write"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/devsphere\" guard evidence-write"
           },
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js", "guard", "knowledge-config-write"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/devsphere\" guard knowledge-config-write"
           }
         ]
       },
@@ -31,13 +19,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js", "guard", "evidence-shell"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/devsphere\" guard evidence-shell"
           },
           {
             "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js", "guard", "knowledge-config-shell"]
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/devsphere\" guard knowledge-config-shell"
           }
         ]
       }

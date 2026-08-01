@@ -44,24 +44,18 @@ test('a bare devsphere hook command runs after PATH setup', { skip: skipWithoutB
   assert.strictEqual(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
 });
 
-test('the registered SessionStart hook injects bin into the Bash environment file', { skip: skipWithoutBash }, t => {
-  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devsphere-session-start-'));
+test('registered PreToolUse commands execute from a plugin path containing spaces', { skip: skipWithoutBash }, t => {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devsphere hook path '));
   t.after(() => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
-  const envFile = path.join(fixtureRoot, 'claude.env');
+  const pluginLink = path.join(fixtureRoot, 'plugin root');
+  fs.symlinkSync(root, pluginLink, 'dir');
   const hooks = JSON.parse(fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8')).hooks;
-  const command = hooks.SessionStart[0].hooks[0].command
-    .replaceAll('${CLAUDE_PLUGIN_ROOT}', root);
-  let result = spawnSync(command, {
-    encoding: 'utf8',
-    shell: true,
-    env: { ...process.env, CLAUDE_ENV_FILE: envFile },
-  });
+  const command = hooks.PreToolUse[0].hooks[0].command
+    .replaceAll('${CLAUDE_PLUGIN_ROOT}', pluginLink);
+  const input = JSON.stringify({ tool_input: { file_path: '/project/evidence/knowledge/EV-001.json' } });
+  const result = spawnSync(command, { encoding: 'utf8', shell: true, input });
   assert.strictEqual(result.status, 0, result.stderr);
-  result = runBash(['-c', 'source "$1"; command -v devsphere', 'bash', envFile], {
-    env: { ...process.env, PATH: '/usr/bin:/bin' },
-  });
-  assert.strictEqual(result.status, 0, result.stderr);
-  assert.strictEqual(result.stdout.trim(), path.join(root, 'bin', 'devsphere'));
+  assert.strictEqual(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
 });
 
 test('env-file mode supports a plugin path containing spaces and is idempotent when loaded', { skip: skipWithoutBash }, t => {

@@ -62,7 +62,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 运行确定性 workflow resolver：
 
 ```bash
-devsphere workflow resolve-next-action
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow resolve-next-action
 ```
 
 resolver 会：
@@ -99,7 +99,7 @@ resolver 会：
 执行一次确定性状态同步：
 
 ```bash
-devsphere workflow sync-design-status
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status
 ```
 
 解析命令返回的 JSON：
@@ -161,7 +161,7 @@ instruction 应说明本次需要读取的产物、工作产物路径和正式�
 如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：
 
 ```bash
-devsphere workflow set-task-status --status designing
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow set-task-status --status designing
 ```
 
 这表示设计活动已经开始。直接调用专业 Skill 不承诺推进 Feature Task 顶层状态；`/scc-dev-sphere:workflow` 是正式生命周期入口。
@@ -191,7 +191,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“需求澄清结果已经用户批准”时，才由外层 workflow 完成顶层状态迁移：
 
    ```bash
-   devsphere workflow set-task-status --status clarified
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow set-task-status --status clarified
    ```
 
    如果 Skill 暂停等待用户回答、Review 或最终批准，不得更新状态。
@@ -199,7 +199,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 2. **设计状态同步：** 如果刚完成的 skill 是 `feature-design`，只有它明确返回“当前 Design Baseline 已获用户批准并发布”时，执行一次幂等同步：
 
    ```bash
-   devsphere workflow sync-design-status
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status
    ```
 
    同步根据工作空间中的 Baseline 和 `state.requiredDesignTypes` 判定保持 `designing` 或进入 `design_ready`，不按固定设计类型顺序推进。每次 Skill 只完成一份 Design Baseline；同步后回到步骤4重新计算下一动作。
@@ -207,7 +207,7 @@ main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程�
 3. **外部测试设计完成：** 如果本次 `nextAction.stage === 'external-test-design'`，仅在外部 Skill 正常结束后执行：
 
    ```bash
-   devsphere workflow complete-external-test-design
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow complete-external-test-design
    ```
 
    命令成功且返回 `status: external_test_design_ready` 才表示完成。Skill 不可用、报错或中断时保持 `design_ready`，展示失败原因并停止本次派发。

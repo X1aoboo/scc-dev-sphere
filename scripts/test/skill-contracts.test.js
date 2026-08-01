@@ -8,37 +8,41 @@ const path = require('node:path');
 const root = path.join(__dirname, '..', '..');
 const readSkill = name => fs.readFileSync(path.join(root, 'skills', name, 'SKILL.md'), 'utf8');
 
-test('active skills and agents use the unified CLI without host path placeholders', () => {
+test('active skills, agents, and hooks use the plugin CLI launcher through CLAUDE_PLUGIN_ROOT', () => {
   const skillNames = fs.readdirSync(path.join(root, 'skills'))
     .filter(name => fs.existsSync(path.join(root, 'skills', name, 'SKILL.md')));
+  const cliSkills = new Set([
+    'feature-approve', 'feature-design', 'feature-init', 'knowledge-config', 'status', 'workflow',
+  ]);
+  const bareCli = /(^|[\s`])devsphere\s+(?:workspace|workflow|design|approval|knowledge|state|guard)\b/m;
   for (const name of skillNames) {
     const skill = readSkill(name);
-    assert.doesNotMatch(skill, /\$\{CLAUDE_(?:SKILL_DIR|PLUGIN_ROOT|PROJECT_DIR)\}|\$ARGUMENTS/, name);
+    assert.doesNotMatch(skill, /\$\{CLAUDE_(?:SKILL_DIR|PROJECT_DIR)\}|\$ARGUMENTS/, name);
+    assert.doesNotMatch(skill, /\$\{CLAUDE_PLUGIN_ROOT\}(?!\/bin\/devsphere)/, name);
+    assert.doesNotMatch(skill, bareCli, name);
     assert.doesNotMatch(skill, /node\s+[^\n]*scripts\/[\w/-]+\.js/, name);
+    if (cliSkills.has(name)) assert.match(skill, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere"/, name);
   }
   for (const name of ['design-reviewer.md', 'knowledge-query.md']) {
     const agent = fs.readFileSync(path.join(root, 'agents', name), 'utf8');
-    assert.doesNotMatch(agent, /\$\{CLAUDE_(?:SKILL_DIR|PLUGIN_ROOT|PROJECT_DIR)\}|reviewScriptPath/, name);
+    assert.doesNotMatch(agent, /\$\{CLAUDE_(?:SKILL_DIR|PROJECT_DIR)\}|reviewScriptPath/, name);
+    assert.doesNotMatch(agent, /\$\{CLAUDE_PLUGIN_ROOT\}(?!\/bin\/devsphere)/, name);
+    assert.doesNotMatch(agent, bareCli, name);
+    assert.match(agent, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere"/, name);
     assert.doesNotMatch(agent, /node\s+[^\n]*scripts\/[\w/-]+\.js/, name);
   }
   const hooksText = fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8');
   assert.match(hooksText, /\$\{CLAUDE_PLUGIN_ROOT\}/);
   assert.doesNotMatch(hooksText, /scripts\/(?:devsphere-guard|knowledge-query)\.js/);
   const hooks = JSON.parse(hooksText).hooks;
-  assert.strictEqual(hooks.SessionStart.length, 1);
-  assert.strictEqual(Object.prototype.hasOwnProperty.call(hooks.SessionStart[0], 'matcher'), false);
-  assert.deepStrictEqual(hooks.SessionStart[0].hooks, [{
-    type: 'command',
-    command: '"${CLAUDE_PLUGIN_ROOT}/scripts/setup-devsphere-bash-path.sh" --env-file "$CLAUDE_ENV_FILE"',
-  }]);
-  const hookCommands = hooks.PreToolUse
-    .flatMap(entry => entry.hooks)
-    .map(hook => ({ command: hook.command, args: hook.args }));
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(hooks, 'SessionStart'), false);
+  const preToolHooks = hooks.PreToolUse.flatMap(entry => entry.hooks);
+  for (const hook of preToolHooks) {
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(hook, 'args'), false);
+  }
   for (const action of ['evidence-write', 'evidence-shell', 'knowledge-config-write', 'knowledge-config-shell']) {
-    assert.ok(hookCommands.some(hook => hook.command === 'node'
-      && hook.args[0] === '${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js'
-      && hook.args[1] === 'guard'
-      && hook.args[2] === action), action);
+    assert.ok(preToolHooks.some(hook => hook.command
+      === `"${'${CLAUDE_PLUGIN_ROOT}'}/bin/devsphere" guard ${action}`), action);
   }
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'scripts', 'setup-devsphere-bash-path.sh'), 'utf8'), /--claude-session/);
   for (const relative of ['bin/devsphere', 'bin/devsphere.cmd', 'scripts/devsphere-cli.js', 'scripts/setup-devsphere-bash-path.sh']) {
@@ -85,7 +89,7 @@ test('knowledge-query routes by relevance, expands on missing information, and r
   assert.strictEqual((agent.match(/^完成标准：/gm) || []).length, 1);
   assert.match(agent, /可以包含多个子问题/);
   assert.match(agent, /返回所缺信息及其影响，由调用方补充后重新调用/);
-  assert.match(agent, /devsphere knowledge read-config/);
+  assert.match(agent, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" knowledge read-config/);
   assert.match(agent, /问题、子问题和各知识源的 `description`/);
   assert.match(agent, /选择最可能提供答案的一个或多个来源/);
   assert.match(agent, /尚有缺口.*扩展到该来源/s);
@@ -106,8 +110,8 @@ test('knowledge-config queries, modifies, and adds knowledge sources through the
   assert.match(skill, /^name: knowledge-config$/m);
   assert.match(skill, /^description: 查询和维护项目知识源配置/m);
   assert.match(skill, /^## 查询当前配置$/m);
-  assert.match(skill, /devsphere knowledge show-config/);
-  assert.match(skill, /devsphere knowledge read-config/);
+  assert.match(skill, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" knowledge show-config/);
+  assert.match(skill, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" knowledge read-config/);
   assert.match(skill, /^## 修改已有配置$/m);
   assert.match(skill, /update-config --key sources\.<type>\.enabled --value <true\|false>/);
   assert.match(skill, /先用 `read-config` 确认来源存在/);
@@ -207,7 +211,7 @@ test('workflow executes every no-Agent action in the main session', () => {
   assert.match(section[0], /nextAction\.args/);
   assert.match(section[0], /调用 instruction/i);
   assert.match(section[0], /feature-design/);
-  assert.match(section[0], /devsphere workflow set-task-status --status designing/);
+  assert.match(section[0], /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" workflow set-task-status --status designing/);
 });
 
 test('workflow declares every feature-clarify required artifact as a requirement source', () => {
@@ -222,7 +226,7 @@ test('workflow owns clarified state sync only after the approved baseline comple
   assert.match(clarify, /需求澄清结果已经用户批准/);
   assert.match(clarify, /不要自行读取或修改外层工作流状态/);
   assert.match(workflow, /仅当它明确返回“需求澄清结果已经用户批准”时/);
-  assert.match(workflow, /devsphere workflow set-task-status --status clarified/);
+  assert.match(workflow, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" workflow set-task-status --status clarified/);
   assert.match(workflow, /暂停等待用户回答、Review 或最终批准，不得更新状态/);
 });
 
@@ -231,9 +235,9 @@ test('workflow owns design entry and completion state synchronization', () => {
   const workflow = readSkill('workflow');
   assert.doesNotMatch(design, /sync-state/);
   assert.match(design, /当前 Design Baseline 已获用户批准并发布/);
-  assert.match(workflow, /devsphere workflow set-task-status --status designing/);
+  assert.match(workflow, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" workflow set-task-status --status designing/);
   assert.match(workflow, /当前 Design Baseline 已获用户批准并发布/);
-  assert.match(workflow, /devsphere workflow sync-design-status/);
+  assert.match(workflow, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" workflow sync-design-status/);
 });
 
 test('workflow handles external test design as a confirmed one-shot main-session action', () => {
@@ -243,6 +247,6 @@ test('workflow handles external test design as a confirmed one-shot main-session
   assert.match(workflow, /nextAction\.stage === 'external-test-design'/);
   assert.match(workflow, /taskPath\/nextAction\.args\.outputDir/);
   assert.match(workflow, /Skill 执行过程中不再发起人工交互/);
-  assert.match(workflow, /devsphere workflow complete-external-test-design/);
+  assert.match(workflow, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" workflow complete-external-test-design/);
   assert.match(workflow, /status: external_test_design_ready/);
 });
