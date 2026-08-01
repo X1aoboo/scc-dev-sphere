@@ -1,0 +1,40 @@
+name: CLI cross-platform
+
+on:
+  push:
+    paths:
+      - 'bin/**'
+      - 'scripts/devsphere-cli.js'
+      - 'scripts/test/devsphere-cli.test.js'
+      - '.github/workflows/cli-cross-platform.yml'
+  pull_request:
+    paths:
+      - 'bin/**'
+      - 'scripts/devsphere-cli.js'
+      - 'scripts/test/devsphere-cli.test.js'
+      - '.github/workflows/cli-cross-platform.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run focused CLI tests
+        run: node --test scripts/test/devsphere-cli.test.js
+      - name: Smoke test POSIX launcher
+        if: runner.os != 'Windows'
+        run: ./bin/devsphere --help
+      - name: Smoke test Windows launcher
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\bin\devsphere.cmd --help
