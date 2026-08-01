@@ -49,34 +49,32 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /最终有效设计及必要上下文.*完整、忠实/s);
 });
 
-test('feature-design keeps external evidence and decision persistence out of its contract', () => {
+test('feature-design keeps external Evidence persistence commands out of its contract', () => {
   const skill = read('skills/feature-design/SKILL.md');
   const taskHarness = skill.match(/## 步骤0\. 创建执行任务([\s\S]*?)## (?:步骤)?1\./)[1];
 
   assert.strictEqual((taskHarness.match(/^\d\. \*\*/gm) || []).length, 5);
   assert.match(taskHarness, /2\. \*\*完成并确认核心设计\*\*/);
   assert.match(taskHarness, /4\. \*\*集中 Review 并修订至满足发布条件\*\*/);
-  assert.strictEqual((skill.match(/^## Evidence 与 Decision$/gm) || []).length, 0);
-  assert.doesNotMatch(skill, /register-evidence-record|devsphere-decisions\.js add|devsphere-decisions\.js init/);
+  assert.doesNotMatch(skill, /register-evidence-record/);
+  assert.doesNotMatch(skill, /devsphere decisions|devsphere-decisions|Decision 文件|supersedes/);
 });
 
 test('feature-design delegates analysis without embedding persistence commands', () => {
   const skill = read('skills/feature-design/SKILL.md');
   assert.match(skill, /feature-design-analysis/);
-  assert.doesNotMatch(skill, /register-evidence-record|devsphere-decisions\.js add|devsphere-decisions\.js init/);
+  assert.doesNotMatch(skill, /register-evidence-record/);
 });
 
-test('feature-design maintains only semantic knowledge introduced by Review', () => {
+test('feature-design registers adopted Review knowledge and keeps confirmed trade-offs in the Draft', () => {
   const skill = read('skills/feature-design/SKILL.md');
   const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
 
   assert.match(task4, /Reviewer finding.*不.*Evidence/s);
   assert.match(task4, /知识缺口.*调用 `knowledge-query` Agent.*采用.*Evidence/s);
-  assert.match(task4, /用户.*确认.*新.*实质取舍.*Decision/s);
-  assert.match(task4, /supersedes.*当前有效/s);
+  assert.match(task4, /用户.*确认.*新.*实质取舍.*写入 Draft/s);
   assert.match(task4, /排版|措辞/);
-  assert.doesNotMatch(task4, /register-evidence-record|devsphere-decisions\.js add/);
-  assert.doesNotMatch(skill, /固定.*Evidence\/Decision.*章节|Evidence\/Decision.*状态机|第六个.*任务/);
+  assert.doesNotMatch(task4, /register-evidence-record|devsphere decisions|devsphere-decisions|supersedes/);
 });
 
 test('feature-design progressively loads one Design Guide and Spec without stage orchestration', () => {

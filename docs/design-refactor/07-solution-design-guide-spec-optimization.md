@@ -76,7 +76,7 @@
 - 单个隔离 `design-reviewer` 串行执行全部适用 Checklist 的 Review 机制；
 - 现有 Review Checklist 的评审规则和检查项；
 - `requiredDesignTypes` 外层策略；
-- `knowledge-query`、Evidence 与 Decision 边界；
+- `knowledge-query` 与 Evidence 边界；
 - 跨任务的长期设计知识库、唯一特性文档定位和自动合并机制。
 
 ## 4. 信息层级与单一事实源
@@ -402,7 +402,7 @@ Draft 使用以下顺序和标题：
 - 选择理由和关键代价；
 - 不可逆或高成本决策；
 - 架构风险、缓解措施和残余风险；
-- 实际支持结论的重要 Evidence 和 Decision。
+- 实际支持结论的重要 Evidence。
 
 本章集中呈现影响方案成立和评审判断的关键决策，不汇总普通设计细节。
 

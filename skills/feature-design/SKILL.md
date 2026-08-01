@@ -47,7 +47,7 @@ devsphere design init-design --task-path "<taskPath>" --design-type <designType>
 - `references/design-guides/<slug>.md`：专业方法、透镜、风险和收敛标准；
 - `references/specs/<slug>.md`：Draft 内容合同。
 
-完整读取调用上下文 `requiredArtifacts` 中的全部文件。`inputs/` 目录内的所有文件都是当前需求输入，不得只读取 `proposal.md`、`requirement-clarification.md` 或自行筛选其中一部分。另读取当前阶段所需的上游 Design Baseline、现有 Draft/notes、被设计实际采用的既有 Evidence/Decision，以及项目代码和文档。Decision 文件不存在只表示当前没有既有记录。
+完整读取调用上下文 `requiredArtifacts` 中的全部文件。`inputs/` 目录内的所有文件都是当前需求输入，不得只读取 `proposal.md`、`requirement-clarification.md` 或自行筛选其中一部分。另读取当前阶段所需的上游 Design Baseline、现有 Draft/notes、被设计实际采用的既有 Evidence，以及项目代码和文档。
 
 完成条件：当前设计类型和恢复位置有可靠证据；工作区已恢复或初始化；Design Guide、Spec 和必要事实已进入上下文。
 
@@ -55,7 +55,7 @@ devsphere design init-design --task-path "<taskPath>" --design-type <designType>
 
 直接执行 `/scc-dev-sphere:feature-design-analysis` 调用专业设计分析 Skill，使用步骤1已经加载的当前设计上下文、Design Guide 和 Spec 完成交互式分析与设计确认。
 
-调用期间当前顶层任务保持 `in_progress`。本步骤触发的 Evidence/Decision 仍按照本 Skill 的维护合同处理。
+调用期间当前顶层任务保持 `in_progress`。本步骤采用外部知识时，只有实际支持或改变设计的结论才登记为 Evidence。
 
 只有用户已经确认完整设计收敛，并明确允许进入 Draft，才能完成当前任务。不得在分析完成前生成或修改 Draft。
 
@@ -91,13 +91,13 @@ Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明
 
 收到结果后由主会话分析重复、关联和冲突，向用户说明对 Confirmed Design 的影响，再讨论修订。所有 blocking findings 必须关闭；advisory 和残余 risk 必须向用户揭示并形成明确处理结论。主会话可以读取 Review 状态，但不创建、修改或刷新 Review 摘要。
 
-Reviewer finding 本身不直接登记为 Evidence/Decision。finding 暴露知识缺口时，由主会话调查或调用 `knowledge-query` Agent，只有随后被采用的知识结论才按任务 2 的合同登记 Evidence。finding 促使用户确认新的实质取舍时，按任务 2 的合同新增 Decision；新取舍推翻既有决定时，用 `supersedes` 引用被替代的当前有效 Decision。纯排版、措辞和不改变语义的修订不产生新记录。
+Reviewer finding 本身不直接登记为 Evidence。finding 暴露知识缺口时，由主会话调查或调用 `knowledge-query` Agent，只有随后被采用的知识结论才登记 Evidence。finding 促使用户确认新的实质取舍时，将最终取舍、理由和影响完整写入 Draft 的对应设计章节；纯排版、措辞和不改变语义的修订不产生 Evidence。
 
 Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-reviewer` 完整评审全部适用 Checklist。纯排版、错别字或不改变含义的修正重新 Lint 后，以同样输入调用 `design-reviewer`，但传入 `mode=format-refresh`，由它运行刷新命令，不重新执行 Checklist。
 
 临时摘要只保存 Draft hash、Checklist 结论、必要 findings 和明确不适用理由，由 `design-reviewer` 独占维护。
 
-完成条件：摘要绑定当前 Draft hash；每份适用 Checklist 都已执行；所有 blocking findings 已关闭；语义修订后已完整复评；Review 状态为 `pass`；Review 已触发的维护动作已成功，或未解决的失败已按任务 2 的合同揭示。
+完成条件：摘要绑定当前 Draft hash；每份适用 Checklist 都已执行；所有 blocking findings 已关闭；语义修订后已完整复评；Review 状态为 `pass`；Review 采用的外部知识已登记为 Evidence，或未解决的登记失败已明确揭示。
 
 ## 步骤5. 批准并发布 Baseline
 

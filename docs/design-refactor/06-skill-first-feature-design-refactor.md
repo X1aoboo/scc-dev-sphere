@@ -207,11 +207,11 @@ Baseline 发布后立即重新检查设计工作空间并同步状态：
 
 `feature-design` 调用状态同步，但不在 Skill 中硬编码总体需要哪些设计活动。
 
-## 9. Knowledge、Evidence 与 Decision
+## 9. Knowledge 与 Evidence
 
 独立知识主题可以调用 `knowledge-query`。查询 Subagent 只返回候选知识、来源、冲突和 gap；主会话决定是否采用。只有实际支持或改变设计的查询结果才登记为 Evidence。
 
-Decision 只记录实质取舍，包括背景、用户补充、候选方案、推荐、最终决定、理由、影响和 Evidence 引用。Evidence 与 Decision 保存知识，不控制对话、Draft、Review 或发布。
+用户确认的实质取舍直接进入 Draft 的对应设计章节，包括背景、候选方案、最终选择、理由、影响和必要的 Evidence 引用，不再维护独立 Decision 文件。Evidence 保存被采用的知识，不控制对话、Draft、Review 或发布。
 
 ## 10. Testing Decisions
 

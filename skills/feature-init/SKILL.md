@@ -11,8 +11,8 @@ description: 创建新的需求开发任务工作区。初始化 .devsphere 任�
 
 - **入口:** `/scc-dev-sphere:feature-init`
 - **入参:** 任务 ID（必选，默认为 `FEAT-<精炼摘要>`，支持自定义）、需求描述（来自用户）
-- **输出:** 任务工作区（含原始 `inputs/proposal.md` 和 `state.json`，status=initialized），`current-task.json` 已更新
-- **完成标准:** `inputs/proposal.md` 已原样保存用户输入，`state.json` 存在且 status=initialized，目录结构已创建
+- **输出:** 任务工作区（含原始 `inputs/proposal.md`、空的 `evidence/evidence-registry.json` 和 `state.json`，status=initialized），`current-task.json` 已更新
+- **完成标准:** `inputs/proposal.md` 已原样保存用户输入，`evidence/evidence-registry.json` 已由 CLI 初始化为 `{"evidences": []}`，`state.json` 存在且 status=initialized，目录结构已创建
 
 ## 执行步骤
 
@@ -58,14 +58,13 @@ description: 创建新的需求开发任务工作区。初始化 .devsphere 任�
 devsphere workspace create-feature-task --task-id "<task-id>"
 ```
 
-CLI 在当前项目根目录下创建 `.devsphere/tasks/feature/<task-id>/` 及所有子目录，并初始化只保存顶层工作流事实的 `state.json`（`status=initialized`）。设计阶段完成度由正式 Baseline Artifact 判断，不在 state 中创建阶段游标。
+CLI 在当前项目根目录下创建 `.devsphere/tasks/feature/<task-id>/` 及所有子目录，初始化 `evidence/evidence-registry.json`，并初始化只保存顶层工作流事实的 `state.json`（`status=initialized`）。设计阶段完成度由正式 Baseline Artifact 判断，不在 state 中创建阶段游标。
 
 **保存输出结果中的 `taskPath`**（JSON 中的 `taskPath` 字段），下一步需要用到。
 
 ### 步骤4：创建初始文件
 
 - 将用户需求描述原样写入 `inputs/proposal.md`。它只保存原始需求提案。**不得**把用户输入作为 shell 参数拼接或插值，从而避免空格、引号或 shell 特殊字符改变输入。
-- 初始化 `evidence/evidence-registry.json` 为 `{"evidences": []}`。
 
 ### 步骤5：确认创建
 

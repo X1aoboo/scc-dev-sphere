@@ -156,7 +156,7 @@ Requirement → Business Design → Solution Design → Implementation Design �
 - 创建 `.devsphere` 工作区并读写顶层状态；
 - 按 Feature 状态计算下一项 Skill 和执行者；
 - 检查 Design Draft 结构、hash、Review、Approval 和 Baseline 一致性；
-- 维护 Evidence、Decision 和知识源配置；
+- 维护 Evidence 和知识源配置；
 - 为关键入口、Evidence 和配置写入提供 Hook 守卫；
 - 通过 [`scripts/test/`](scripts/test/) 中的合同测试验证上述行为。
 
@@ -210,7 +210,19 @@ devsphere knowledge update-config --key sources.repo.enabled --value false
 devsphere knowledge upsert-source --type repo --target . --description "当前项目的代码、测试和文档"
 ```
 
-这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)；`devsphere --help` 是公开 CLI 命令清单，原有脚本入口仅保留兼容。
+这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)；`devsphere --help` 是公开 CLI 命令清单，原有脚本入口仅保留兼容。`devsphere guard ...` 是供宿主 Hook 适配器调用的可移植守卫入口，不依赖 Claude 的输入变量。
+
+Claude 的 SessionStart Hook 会在 `startup`、`resume`、`clear`、`compact` 时通过 `--env-file "$CLAUDE_ENV_FILE"` 将插件 `bin/` 注入后续 Bash 工具的 PATH。其他 Bash 宿主可按自身环境机制选择以下任一操作：
+
+```bash
+# Hook 能 source 脚本时
+source /absolute/plugin/path/scripts/setup-devsphere-bash-path.sh
+
+# Hook 通过环境文件向后续工具调用持久化变量时
+/absolute/plugin/path/scripts/setup-devsphere-bash-path.sh --env-file "$AGENT_SESSION_ENV_FILE"
+```
+
+直接执行脚本不能修改父进程 PATH，因此未使用 `source` 或 `--env-file` 时会失败。不同 Agent 的会话环境文件变量由对应宿主决定。该注入只服务于 Bash 工具；PreToolUse Hook 仍通过 `${CLAUDE_PLUGIN_ROOT}` 绝对定位统一 CLI。
 
 ## 项目结构
 
@@ -244,7 +256,6 @@ devsphere knowledge upsert-source --type repo --target . --description "当前�
     ├── implementation/
     ├── verification/
     ├── links/
-    ├── decisions/
     └── evidence/
 ```
 
@@ -264,6 +275,7 @@ git status --short --untracked-files=all
 ## 当前边界
 
 - 插件依赖 Claude Code 的 Plugin、Skill、Agent、Hook 和会话能力；仓库没有声明其他宿主的兼容性。
+- Guard 规则由统一 CLI 提供；Claude PreToolUse Hook 使用 `${CLAUDE_PLUGIN_ROOT}` 绝对定位，SessionStart PATH 注入仅让后续 Bash 工具可以使用裸 `devsphere`。其他宿主可复用 CLI 和通用 PATH 脚本，但需要提供自己的 Hook 适配器。
 - Workflow resolver 当前只支持 `feature` taskType，不支持通用任务编排。
 - 插件不实现独立 Agent Runtime、Agent 生命周期或后台调度服务。
 - Requirement、各 Design Baseline、总体设计、首次代码变更和部分高风险计划仍需要人工确认。
@@ -276,7 +288,6 @@ git status --short --untracked-files=all
 - [完整中文使用指南](docs/guides/scc-dev-sphere-user-guide.md)：面向实际使用者的工作空间、Feature 生命周期、阶段输入输出、人工闸口、恢复、故障处理和端到端示例。
 - [SDLC Agentic Workflow](docs/workflows/sdlc-agentic-workflow.md)：Feature 主流程、Review、批准和失败处理概览。
 - [Feature Design Skill-first 重构设计规格](docs/design-refactor/06-skill-first-feature-design-refactor.md)：主会话协作设计、职责边界和恢复模型。
-- [Feature Design Evidence/Decision 维护规格](docs/design-refactor/08-feature-design-evidence-decision-maintenance.md)：Evidence 与 Decision 的准入和维护边界。
 - [Artifact Contract](docs/governance/artifact-registry-contract.md)：正式 Artifact 的标识、依赖和 hash 合同。
 - [Feature Design 领域语言](docs/matt/CONTEXT.md)：当前设计术语和语义边界。
 - [Knowledge Config Skill](skills/knowledge-config/SKILL.md)：知识源配置的查询、修改和新增方法。

@@ -24,7 +24,6 @@ const DIRS = [
   'implementation',
   'verification',
   'links',
-  'decisions',
   'work',
   'evidence/knowledge',
   'evidence/repository',
@@ -37,6 +36,12 @@ function ensureDirectories(taskPath) {
       fs.mkdirSync(fullPath, { recursive: true });
     }
   }
+}
+
+function initEvidenceRegistry(taskPath) {
+  const registryPath = path.join(taskPath, 'evidence', 'evidence-registry.json');
+  fs.writeFileSync(registryPath, `${JSON.stringify({ evidences: [] }, null, 2)}\n`, 'utf8');
+  return registryPath;
 }
 
 function initState(taskPath, opts = {}) {
@@ -67,6 +72,7 @@ function createFeatureTask(workspaceRoot, taskId, opts = {}) {
 
   const testDesignConfig = readEffectiveTestDesignConfig(workspaceRoot);
   ensureDirectories(taskPath);
+  initEvidenceRegistry(taskPath);
   if (testDesignConfig.mode === 'external') {
     fs.mkdirSync(path.join(taskPath, EXTERNAL_TEST_DESIGN_OUTPUT_DIR), { recursive: true });
   }
@@ -118,5 +124,6 @@ module.exports = {
   EXTERNAL_REQUIRED_DESIGN_TYPES,
   createFeatureTask,
   ensureDirectories,
+  initEvidenceRegistry,
   initState,
 };

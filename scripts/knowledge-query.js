@@ -244,10 +244,7 @@ function getRegistryPath(workspaceRoot) {
 function readRegistry(workspaceRoot) {
   const registryPath = getRegistryPath(workspaceRoot);
   let registry = readJSON(registryPath);
-  if (!registry) {
-    registry = { evidences: [] };
-    writeJSON(registryPath, registry);
-  }
+  if (!registry) registry = { evidences: [] };
   if (!registry.evidences) {
     registry.evidences = [];
   }
@@ -329,7 +326,7 @@ function guardWrite(stdinJson) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${target} 禁止直接 Write/Edit。数据源配置须通过 knowledge-query.js CLI（update-config / upsert-source / remove-source / reset-config）修改。`,
+      permissionDecisionReason: `${target} 禁止直接 Write/Edit。数据源配置须通过 devsphere knowledge（update-config / upsert-source / remove-source / reset-config）修改。`,
     },
   };
 }
@@ -340,13 +337,11 @@ function guardBash(stdinJson) {
   const command = ti.command;
   const targetsConfig = /knowledge-sources\.json/.test(command);
   if (!targetsConfig) return null;
-  const isCLI = command.includes('knowledge-query.js');
-  if (isCLI) return null;
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'knowledge-sources.json 禁止通过 Bash 直接操作；数据源配置须通过 knowledge-query.js CLI 修改。',
+      permissionDecisionReason: 'knowledge-sources.json 禁止通过 Shell 直接操作；数据源配置须通过 devsphere knowledge 修改。',
     },
   };
 }

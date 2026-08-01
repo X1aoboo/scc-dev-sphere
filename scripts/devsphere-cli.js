@@ -10,8 +10,8 @@ const workflow = require('./devsphere-workflow');
 const featureWorkflow = require('./workflows/feature-workflow');
 const design = require('./devsphere-design');
 const approval = require('./devsphere-approval');
-const decisions = require('./devsphere-decisions');
 const knowledge = require('./knowledge-query');
+const guard = require('./devsphere-guard');
 
 const HELP = `Usage: devsphere <domain> <action> [options]
 
@@ -23,10 +23,11 @@ Domains:
              record-review | refresh-format-review | approve-current-design |
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
-  decisions  init | read | add
   knowledge  read-config | show-config | update-config | upsert-source |
              remove-source | reset-config | register-evidence-record | read-evidence
   state      read-state | read-current-task | get-task-path
+  guard      evidence-write | evidence-shell | knowledge-config-write |
+             knowledge-config-shell
 
 Common options:
   --workspace-root <path>  Project root (fallback: DEVSPHERE_PROJECT_ROOT, cwd)
@@ -98,6 +99,16 @@ function readStructuredInput(options, io) {
     throw new Error('Structured input must be a JSON object');
   }
   return value;
+}
+
+function readHookInput(io) {
+  const raw = io.stdin === undefined ? fs.readFileSync(0, 'utf8') : io.stdin;
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch (error) {
+    return null;
+  }
 }
 
 function dispatchWorkspace(action, options, io) {
@@ -184,25 +195,6 @@ function dispatchApproval(action, options, io) {
   throw new Error(`Unknown approval action: ${action}`);
 }
 
-function dispatchDecisions(action, options, io) {
-  const inputOptions = action === 'add' ? ['input-file'] : [];
-  const initOptions = action === 'init' ? ['task-id', 'stage-name'] : [];
-  requireAllowedOptions(options, ['task-path', 'slug', ...inputOptions, ...initOptions]);
-  const taskPath = resolvePathOption(options, 'task-path', io);
-  const slug = requireOption(options, 'slug');
-  if (action === 'init') {
-    return decisions.initDecisions(
-      taskPath,
-      slug,
-      requireOption(options, 'task-id'),
-      requireOption(options, 'stage-name'),
-    );
-  }
-  if (action === 'read') return decisions.readDecisions(taskPath, slug);
-  if (action === 'add') return decisions.addDecision(taskPath, slug, readStructuredInput(options, io));
-  throw new Error(`Unknown decisions action: ${action}`);
-}
-
 function dispatchKnowledge(action, options, io) {
   const workspaceRoot = resolveWorkspaceRoot(options, io);
   const actionOptions = {
@@ -249,15 +241,27 @@ function dispatchState(action, options, io) {
   throw new Error(`Unknown state action: ${action}`);
 }
 
+function dispatchGuard(action, options, io) {
+  requireAllowedOptions(options, []);
+  const input = readHookInput(io);
+  switch (action) {
+    case 'evidence-write': return guard.checkEvidenceWritesFromStdin(input);
+    case 'evidence-shell': return guard.checkEvidenceBashFromStdin(input);
+    case 'knowledge-config-write': return knowledge.guardWrite(input);
+    case 'knowledge-config-shell': return knowledge.guardBash(input);
+    default: throw new Error(`Unknown guard action: ${action}`);
+  }
+}
+
 function dispatch(domain, action, options, io) {
   switch (domain) {
     case 'workspace': return dispatchWorkspace(action, options, io);
     case 'workflow': return dispatchWorkflow(action, options, io);
     case 'design': return dispatchDesign(action, options, io);
     case 'approval': return dispatchApproval(action, options, io);
-    case 'decisions': return dispatchDecisions(action, options, io);
     case 'knowledge': return dispatchKnowledge(action, options, io);
     case 'state': return dispatchState(action, options, io);
+    case 'guard': return dispatchGuard(action, options, io);
     default: throw new Error(`Unknown domain: ${domain}`);
   }
 }
@@ -290,7 +294,8 @@ function main(argv = process.argv.slice(2), overrides = {}) {
     const dispatched = dispatch(domain, action, options, io);
     const wrapped = dispatched && Object.prototype.hasOwnProperty.call(dispatched, 'exitCode')
       && Object.prototype.hasOwnProperty.call(dispatched, 'value');
-    writeResult(io.stdout, wrapped ? dispatched.value : dispatched);
+    const value = wrapped ? dispatched.value : dispatched;
+    if (value !== null && value !== undefined) writeResult(io.stdout, value);
     return wrapped ? dispatched.exitCode : 0;
   } catch (error) {
     io.stderr.write(`Error: ${error.message}\n`);
@@ -305,6 +310,7 @@ module.exports = {
   dispatch,
   main,
   parseOptions,
+  readHookInput,
   readStructuredInput,
   resolveWorkspaceRoot,
 };

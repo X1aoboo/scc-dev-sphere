@@ -63,14 +63,13 @@ function deny(reason) {
 function checkEvidenceWritesFromStdin(input) {
   const filePath = input && input.tool_input && input.tool_input.file_path;
   if (!filePath || !/(?:\/evidence\/knowledge\/EV-|\/evidence\/evidence-registry\.json$)/.test(filePath.replace(/\\/g, '/'))) return null;
-  return deny('Evidence must be registered by the main session through knowledge-query.js.');
+  return deny('Evidence must be registered by the main session through devsphere knowledge register-evidence-record.');
 }
 
 function checkEvidenceBashFromStdin(input) {
   const command = input && input.tool_input && input.tool_input.command;
   if (typeof command !== 'string' || !/(?:evidence\/knowledge\/|evidence\/evidence-registry\.json)/.test(command)) return null;
-  if (command.includes('knowledge-query.js')) return null;
-  return deny('Evidence must be registered through knowledge-query.js.');
+  return deny('Evidence must be registered through devsphere knowledge register-evidence-record.');
 }
 
 function readHookInput() {

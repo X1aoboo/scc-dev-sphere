@@ -165,6 +165,18 @@ test('Evidence commands fail clearly when no active task exists', () => {
   assert.match(result.stderr, /无活跃任务/);
 });
 
+test('reading missing Evidence from a legacy task has no write side effect', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  const registryPath = path.join(taskPath, 'evidence', 'evidence-registry.json');
+  fs.rmSync(registryPath, { force: true });
+
+  const result = run(workspaceRoot, 'read-evidence', 'EV-001');
+
+  assert.notStrictEqual(result.status, 0);
+  assert.match(result.stderr, /Evidence not found/);
+  assert.strictEqual(fs.existsSync(registryPath), false);
+});
+
 test('legacy query-agent evidence write command is unavailable', () => {
   const { workspaceRoot } = makeTask();
   const result = run(workspaceRoot, 'register-evidence', 'x', 'repo', 'q');

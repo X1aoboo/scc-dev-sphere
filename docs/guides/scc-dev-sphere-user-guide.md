@@ -107,7 +107,6 @@ flowchart TB
 | Approval | 人工批准当前内容或产物集合 |
 | Design Baseline | Review 和人工批准后发布的正式设计 |
 | Evidence | 被采用、且实际支持设计判断的外部或知识来源结论 |
-| Decision | 用户确认的重要取舍或风险接受 |
 | Work | 用于当前设计协作和恢复的过程材料 |
 
 ## 3. 开始和管理 Feature
@@ -465,8 +464,7 @@ Workflow 会让 `dev` Agent：
     ├── links/
     ├── implementation/
     ├── verification/
-    ├── evidence/
-    └── decisions/
+    └── evidence/
 ```
 
 ### 6.2 用户最需要关注的文件
@@ -485,7 +483,6 @@ Workflow 会让 `dev` Agent：
 | `implementation/` | 实现计划和实现日志 | 通过 Planning/Implement 维护 |
 | `verification/test-handoff.md` | 验证与转测交付件 | 通过 Verify 更新 |
 | `evidence/` | 被采用的知识证据 | 由插件维护 |
-| `decisions/` | 重要设计取舍 | 由插件维护 |
 
 ### 6.3 哪些是正式事实
 
@@ -509,7 +506,7 @@ Workflow 会让 `dev` Agent：
 一般建议：
 
 - 提交 Requirement、Design Baseline、Approval、Implementation Plan 和 Test Handoff；
-- 谨慎处理包含敏感信息的 Proposal、Evidence 和 Decision；
+- 谨慎处理包含敏感信息的 Proposal 和 Evidence；
 - 多人协作时单独决定是否提交 `current-task.json`；
 - 不要假设插件提供并发编辑锁或自动冲突合并。
 
@@ -1223,7 +1220,7 @@ Requirement 保持不变。
 - 新 Draft 使用新的主版本；
 - 旧 Design Approval 不再有效；
 - 新 Draft 必须重新 Lint、完整 Review 和人工批准；
-- 如果改变了一个重要取舍，插件应新增 Decision 记录，而不是改写旧决定。
+- 如果改变了重要取舍，应在新 Draft 的对应章节完整更新取舍、理由和影响。
 
 新 Baseline 发布后输入：
 
