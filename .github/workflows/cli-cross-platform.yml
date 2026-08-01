@@ -4,14 +4,26 @@ on:
   push:
     paths:
       - 'bin/**'
+      - 'hooks/hooks.json'
       - 'scripts/devsphere-cli.js'
+      - 'scripts/devsphere-guard.js'
+      - 'scripts/knowledge-query.js'
+      - 'scripts/setup-devsphere-bash-path.sh'
+      - 'scripts/test/devsphere-bash-path.test.js'
       - 'scripts/test/devsphere-cli.test.js'
+      - 'scripts/test/skill-contracts.test.js'
       - '.github/workflows/cli-cross-platform.yml'
   pull_request:
     paths:
       - 'bin/**'
+      - 'hooks/hooks.json'
       - 'scripts/devsphere-cli.js'
+      - 'scripts/devsphere-guard.js'
+      - 'scripts/knowledge-query.js'
+      - 'scripts/setup-devsphere-bash-path.sh'
+      - 'scripts/test/devsphere-bash-path.test.js'
       - 'scripts/test/devsphere-cli.test.js'
+      - 'scripts/test/skill-contracts.test.js'
       - '.github/workflows/cli-cross-platform.yml'
 
 permissions:
@@ -30,7 +42,7 @@ jobs:
         with:
           node-version: 20
       - name: Run focused CLI tests
-        run: node --test scripts/test/devsphere-cli.test.js
+        run: node --test scripts/test/devsphere-bash-path.test.js scripts/test/devsphere-cli.test.js scripts/test/skill-contracts.test.js
       - name: Smoke test POSIX launcher
         if: runner.os != 'Windows'
         run: ./bin/devsphere --help

@@ -21,9 +21,27 @@ test('active skills and agents use the unified CLI without host path placeholder
     assert.doesNotMatch(agent, /\$\{CLAUDE_(?:SKILL_DIR|PLUGIN_ROOT|PROJECT_DIR)\}|reviewScriptPath/, name);
     assert.doesNotMatch(agent, /node\s+[^\n]*scripts\/[\w/-]+\.js/, name);
   }
-  const hooks = fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8');
-  assert.match(hooks, /\$\{CLAUDE_PLUGIN_ROOT\}/);
-  for (const relative of ['bin/devsphere', 'bin/devsphere.cmd', 'scripts/devsphere-cli.js']) {
+  const hooksText = fs.readFileSync(path.join(root, 'hooks', 'hooks.json'), 'utf8');
+  assert.match(hooksText, /\$\{CLAUDE_PLUGIN_ROOT\}/);
+  assert.doesNotMatch(hooksText, /scripts\/(?:devsphere-guard|knowledge-query)\.js/);
+  const hooks = JSON.parse(hooksText).hooks;
+  assert.strictEqual(hooks.SessionStart.length, 1);
+  assert.strictEqual(Object.prototype.hasOwnProperty.call(hooks.SessionStart[0], 'matcher'), false);
+  assert.deepStrictEqual(hooks.SessionStart[0].hooks, [{
+    type: 'command',
+    command: '"${CLAUDE_PLUGIN_ROOT}/scripts/setup-devsphere-bash-path.sh" --env-file "$CLAUDE_ENV_FILE"',
+  }]);
+  const hookCommands = hooks.PreToolUse
+    .flatMap(entry => entry.hooks)
+    .map(hook => ({ command: hook.command, args: hook.args }));
+  for (const action of ['evidence-write', 'evidence-shell', 'knowledge-config-write', 'knowledge-config-shell']) {
+    assert.ok(hookCommands.some(hook => hook.command === 'node'
+      && hook.args[0] === '${CLAUDE_PLUGIN_ROOT}/scripts/devsphere-cli.js'
+      && hook.args[1] === 'guard'
+      && hook.args[2] === action), action);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'scripts', 'setup-devsphere-bash-path.sh'), 'utf8'), /--claude-session/);
+  for (const relative of ['bin/devsphere', 'bin/devsphere.cmd', 'scripts/devsphere-cli.js', 'scripts/setup-devsphere-bash-path.sh']) {
     assert.strictEqual(fs.existsSync(path.join(root, relative)), true, relative);
   }
 });
@@ -167,6 +185,8 @@ test('feature-init preserves the original proposal and routes users to clarifica
   const skill = readSkill('feature-init');
   assert.match(skill, /inputs\/proposal\.md/i);
   assert.match(skill, /完成标准:[^\n]*inputs\/proposal\.md/i);
+  assert.match(skill, /create-feature-task[^\n]*evidence\/evidence-registry\.json|CLI[^\n]*evidence\/evidence-registry\.json/i);
+  assert.doesNotMatch(skill, /^- 初始化 `evidence\/evidence-registry\.json`/m);
   assert.doesNotMatch(skill, /写入 `inputs\/requirement\.md`/i);
   assert.match(skill, /feature-clarify/i);
 });
