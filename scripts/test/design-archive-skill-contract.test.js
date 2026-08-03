@@ -16,6 +16,9 @@ const { HELP, main } = require('../devsphere-cli');
 const { listTasks, runArchive } = require('../devsphere-archive');
 const { makeTask, writeArtifact } = require('./helpers');
 
+const root = path.join(__dirname, '..', '..');
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+
 function capture(argv) {
   let stdout = '';
   let stderr = '';
@@ -193,4 +196,29 @@ test('archive run CLI works end to end', () => {
   const result = JSON.parse(out.stdout);
   assert.strictEqual(result.mode, 'created');
   assert.ok(fs.existsSync(path.join(result.destination, 'business-design.md')));
+});
+
+test('design-archive skill is user-invocable only and forbids model invocation', () => {
+  const skill = read('skills/design-archive/SKILL.md');
+  assert.match(skill, /^name: design-archive$/m);
+  assert.match(skill, /归档/);
+  assert.match(skill, /^disable-model-invocation: true$/m);
+  assert.doesNotMatch(skill, /^user-invocable:\s*false$/m);
+  assert.doesNotMatch(skill, /^context:\s*fork$/m);
+});
+
+test('design-archive skill orchestrates archive via devsphere CLI', () => {
+  const skill = read('skills/design-archive/SKILL.md');
+  const process = skill.match(/## 执行步骤([\s\S]*?)## 规则/)[1];
+  assert.strictEqual((process.match(/^\d+\. /gm) || []).length, 5);
+  for (const phrase of [/archive list-tasks/, /config read/, /config set/, /archive run/]) {
+    assert.match(skill, phrase);
+  }
+  assert.match(skill, /## 集成契约/);
+  assert.match(skill, /## 完成/);
+});
+
+test('.gitignore ignores .devsphere data area', () => {
+  const ignore = read('.gitignore');
+  assert.match(ignore, /^\.devsphere\/?$/m);
 });
