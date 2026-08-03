@@ -12,6 +12,7 @@ const design = require('./devsphere-design');
 const approval = require('./devsphere-approval');
 const knowledge = require('./knowledge-query');
 const guard = require('./devsphere-guard');
+const config = require('./devsphere-config');
 
 const HELP = `Usage: devsphere <domain> <action> [options]
 
@@ -23,6 +24,7 @@ Domains:
              review-context | record-review | refresh-format-review | approve-current-design |
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
+  config     read | set
   knowledge  read-config | show-config | update-config | upsert-source |
              remove-source | reset-config | register-evidence-record | read-evidence
   state      read-state | read-current-task | get-task-path
@@ -201,6 +203,23 @@ function dispatchApproval(action, options, io) {
   throw new Error(`Unknown approval action: ${action}`);
 }
 
+function dispatchConfig(action, options, io) {
+  const workspaceRoot = resolveWorkspaceRoot(options, io);
+  if (action === 'read') {
+    requireAllowedOptions(options, []);
+    return config.readConfig(workspaceRoot);
+  }
+  if (action === 'set') {
+    requireAllowedOptions(options, ['key', 'value']);
+    return config.setConfig(
+      workspaceRoot,
+      requireOption(options, 'key'),
+      requireOption(options, 'value'),
+    );
+  }
+  throw new Error(`Unknown config action: ${action}`);
+}
+
 function dispatchKnowledge(action, options, io) {
   const workspaceRoot = resolveWorkspaceRoot(options, io);
   const actionOptions = {
@@ -269,6 +288,7 @@ function dispatch(domain, action, options, io) {
     case 'workflow': return dispatchWorkflow(action, options, io);
     case 'design': return dispatchDesign(action, options, io);
     case 'approval': return dispatchApproval(action, options, io);
+    case 'config': return dispatchConfig(action, options, io);
     case 'knowledge': return dispatchKnowledge(action, options, io);
     case 'state': return dispatchState(action, options, io);
     case 'guard': return dispatchGuard(action, options, io);
