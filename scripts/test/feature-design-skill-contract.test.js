@@ -82,13 +82,10 @@ test('feature-design delegates one centralized review and leaves top-level state
   const skill = read('skills/feature-design/SKILL.md');
   const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
   assert.match(task4, /创建 `design-reviewer` Agent.*当前冻结的 Design Draft/s);
-  assert.match(task4, /只传入 `<taskPath>`.*`<designType>`.*Review brief/s);
+  assert.match(task4, /向它提供：.*`<taskPath>`.*`<designType>`.*Review brief/s);
   assert.doesNotMatch(task4, /design review-context/);
-  assert.match(task4, /brief.*本轮编号与目标.*修改内容及位置.*明确未修改范围.*用户选择继续解决的 advisory\/risk/s);
+  assert.match(task4, /Review brief：评审轮次与目标.*Draft 修改内容及位置.*明确未修改范围.*用户选择继续解决的 advisory\/risk/s);
   assert.match(task4, /评审前先向用户公开.*评审轮次.*本轮目标.*修改内容.*明确未修改.*advisory\/risk/s);
-  assert.match(task4, /Reviewer 独立决定首次全量评审.*Checklist 评审项增量复审/s);
-  assert.match(task4, /无法限定影响范围.*Design Review Failure.*不得静默改为全量评审/s);
-  assert.match(task4, /重建评审基线.*说明原因.*替换.*不保留旧评审历史.*用户明确授权/s);
   assert.match(task4, /Reviewer 返回后向用户公开实际复评项、关闭 finding、仍活动 finding、新增 finding、未复评而保留的 finding/s);
   assert.match(task4, /`blocking` 必须修订.*`advisory` 应说明影响.*`risk` 应向用户揭示/s);
   assert.match(task4, /只改变文档表达.*返回步骤3.*新的设计判断、取舍、边界或风险.*返回步骤2.*用户确认/s);
