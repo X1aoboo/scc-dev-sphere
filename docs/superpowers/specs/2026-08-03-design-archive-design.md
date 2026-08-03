@@ -24,7 +24,7 @@ Feature 交付完成后，任务工作区中的基线设计稿位于 `.devsphere
 | task_name | 任务 ID（`.devsphere/tasks/feature/<task-id>/` 目录名） |
 | 复制范围 | `artifacts/` 顶层全部 `*.md` 基线设计文档 + 顶层 `*-assets/` 配套资产目录 |
 | 更新语义 | 目标层已有文件 → 覆盖源集、原地更新；不删除目标层内其他文件 |
-| 调用方式 | 独立用户可调用 `/scc-dev-sphere:design-archive`；不集成 workflow |
+| 调用方式 | 独立用户可调用 `/scc-dev-sphere:design-archive`；**禁止模型自动调用**（`disable-model-invocation: true`），仅用户在主会话显式调用；不集成 workflow |
 | manifest | 不写归档清单 |
 | git 跟踪 | `.devsphere/` 加入 `.gitignore`，任务/配置/归档数据区不随仓库提交 |
 
@@ -41,6 +41,18 @@ Feature 交付完成后，任务工作区中的基线设计稿位于 `.devsphere
 ```
 
 ### 3.1 `skills/design-archive/SKILL.md`（主会话编排）
+
+frontmatter 约束：
+
+```yaml
+---
+name: design-archive
+description: <中文描述>
+disable-model-invocation: true
+---
+```
+
+`disable-model-invocation: true` 使模型不得自动触发本 Skill，仅用户在主会话显式调用 `/scc-dev-sphere:design-archive` 时执行（区别于 `design-draft` 等可被模型调用的 Skill）。
 
 职责：
 - 调用 `devsphere archive list-tasks` 枚举现有任务，以列表形式呈现供用户单选；
@@ -155,7 +167,7 @@ node:test 合同测试，临时 workspace 起 `.devsphere/` 结构，覆盖第 6
 
 | 测试组 | 断言 |
 |---|---|
-| SKILL.md 合同 | frontmatter `name: design-archive`、中文描述、非 fork/非 disable-model-invocation、含 Process/Rules/集成契约 |
+| SKILL.md 合同 | frontmatter `name: design-archive`、中文描述、非 fork、含 Process/Rules/集成契约；**含 `disable-model-invocation: true`**，禁止模型自动调用 |
 | config read 自愈 | 无文件 → 创建默认 `config.json`；有文件缺 `archive.root` → 补充并持久化；已有 key → 原样返回 |
 | config set | 写入嵌套 key 并持久化，目录不存在自动创建 |
 | list-tasks 枚举 | 返回 `.devsphere/tasks/feature/*` 的 taskId+status；空 workspace → 空列表 |
