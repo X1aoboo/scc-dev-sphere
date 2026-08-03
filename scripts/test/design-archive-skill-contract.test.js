@@ -13,6 +13,8 @@ const {
   DEFAULT_ARCHIVE_ROOT,
 } = require('../devsphere-config');
 const { HELP, main } = require('../devsphere-cli');
+const { listTasks } = require('../devsphere-archive');
+const { makeTask } = require('./helpers');
 
 function capture(argv) {
   let stdout = '';
@@ -86,4 +88,27 @@ test('config CLI read and set work end to end', () => {
 
 test('HELP exposes config domain', () => {
   assert.match(HELP, /config\s+read \| set/);
+});
+
+test('archive list-tasks returns task ids with status', () => {
+  const { workspaceRoot, taskId } = makeTask();
+  const tasks = listTasks(workspaceRoot);
+  assert.ok(tasks.some(task => task.taskId === taskId && task.status === 'initialized'));
+});
+
+test('archive list-tasks returns empty for workspace without tasks', () => {
+  const root = makeWorkspace();
+  assert.deepStrictEqual(listTasks(root), []);
+});
+
+test('archive list-tasks CLI works end to end', () => {
+  const { workspaceRoot, taskId } = makeTask();
+  const out = capture(['archive', 'list-tasks', '--workspace-root', workspaceRoot]);
+  assert.strictEqual(out.exitCode, 0, out.stderr);
+  const tasks = JSON.parse(out.stdout);
+  assert.ok(Array.isArray(tasks) && tasks.some(task => task.taskId === taskId));
+});
+
+test('HELP exposes archive domain', () => {
+  assert.match(HELP, /archive\s+list-tasks/);
 });
