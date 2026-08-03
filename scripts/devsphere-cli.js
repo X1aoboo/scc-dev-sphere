@@ -26,7 +26,7 @@ Domains:
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
   config     read | set
-  archive    list-tasks
+  archive    list-tasks | run
   knowledge  read-config | show-config | update-config | upsert-source |
              remove-source | reset-config | register-evidence-record | read-evidence
   state      read-state | read-current-task | get-task-path
@@ -227,6 +227,15 @@ function dispatchArchive(action, options, io) {
   if (action === 'list-tasks') {
     requireAllowedOptions(options, []);
     return archive.listTasks(workspaceRoot);
+  }
+  if (action === 'run') {
+    requireAllowedOptions(options, ['task-id', 'version', 'archive-root']);
+    return archive.runArchive(
+      workspaceRoot,
+      requireOption(options, 'task-id'),
+      requireOption(options, 'version'),
+      options['archive-root'],
+    );
   }
   throw new Error(`Unknown archive action: ${action}`);
 }

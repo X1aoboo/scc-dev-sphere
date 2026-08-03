@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const { readConfig, DEFAULT_ARCHIVE_ROOT } = require('./devsphere-config');
+
 function readJSON(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -29,4 +31,75 @@ function listTasks(workspaceRoot) {
     .sort((a, b) => a.taskId.localeCompare(b.taskId));
 }
 
-module.exports = { taskPathFor, listTasks };
+function resolveArchiveRoot(workspaceRoot, explicit) {
+  let value;
+  if (typeof explicit === 'string' && explicit.trim()) {
+    value = explicit;
+  } else {
+    const config = readConfig(workspaceRoot);
+    const root = config.archive && config.archive.root;
+    value = typeof root === 'string' && root.trim() ? root : DEFAULT_ARCHIVE_ROOT;
+  }
+  return path.resolve(workspaceRoot, value);
+}
+
+function copyTree(src, dest) {
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Archive source cannot contain symbolic links: ${src}`);
+  }
+  if (stat.isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      copyTree(path.join(src, entry.name), path.join(dest, entry.name));
+    }
+  } else if (stat.isFile()) {
+    fs.copyFileSync(src, dest);
+  }
+}
+
+function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
+  if (typeof version !== 'string' || !version.trim()) {
+    throw new Error('Version is required');
+  }
+  const taskPath = taskPathFor(workspaceRoot, taskId);
+  if (!fs.existsSync(taskPath)) throw new Error(`Task not found: ${taskId}`);
+  const artifactsDir = path.join(taskPath, 'artifacts');
+  if (!fs.existsSync(artifactsDir)) {
+    throw new Error(`No baseline design docs to archive (missing artifacts dir)`);
+  }
+
+  const docs = [];
+  const assets = [];
+  for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Archive source cannot contain symbolic links: ${entry.name}`);
+    }
+    if (entry.isFile() && entry.name.endsWith('.md')) docs.push(entry.name);
+    else if (entry.isDirectory() && entry.name.endsWith('-assets')) assets.push(entry.name);
+  }
+  if (docs.length === 0) {
+    throw new Error('No baseline design docs to archive (no *.md in artifacts)');
+  }
+
+  const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
+  const destination = path.join(archiveRoot, version, taskId);
+  const hasFiles = fs.existsSync(destination) && fs.readdirSync(destination).length > 0;
+  const mode = hasFiles ? 'updated' : 'created';
+  fs.mkdirSync(destination, { recursive: true });
+
+  for (const doc of docs) copyTree(path.join(artifactsDir, doc), path.join(destination, doc));
+  for (const asset of assets) copyTree(path.join(artifactsDir, asset), path.join(destination, asset));
+
+  return {
+    taskId,
+    version,
+    archiveRoot,
+    destination,
+    mode,
+    docs,
+    assets,
+  };
+}
+
+module.exports = { taskPathFor, listTasks, runArchive };

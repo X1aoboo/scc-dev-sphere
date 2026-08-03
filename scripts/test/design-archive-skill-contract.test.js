@@ -13,8 +13,8 @@ const {
   DEFAULT_ARCHIVE_ROOT,
 } = require('../devsphere-config');
 const { HELP, main } = require('../devsphere-cli');
-const { listTasks } = require('../devsphere-archive');
-const { makeTask } = require('./helpers');
+const { listTasks, runArchive } = require('../devsphere-archive');
+const { makeTask, writeArtifact } = require('./helpers');
 
 function capture(argv) {
   let stdout = '';
@@ -111,4 +111,86 @@ test('archive list-tasks CLI works end to end', () => {
 
 test('HELP exposes archive domain', () => {
   assert.match(HELP, /archive\s+list-tasks/);
+});
+
+function makeTaskWithDesigns() {
+  const created = makeTask();
+  writeArtifact(created.taskPath, 'business-design', '1.0.0', '# Business');
+  writeArtifact(created.taskPath, 'solution-design', '1.0.0', '# Solution');
+  const assetsDir = path.join(created.taskPath, 'artifacts', 'business-design-assets', 'ucd');
+  fs.mkdirSync(assetsDir, { recursive: true });
+  fs.writeFileSync(path.join(assetsDir, 'w1.svg'), '<svg/>', 'utf8');
+  return created;
+}
+
+test('archive run creates version layer and copies docs and assets byte-identical', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  const result = runArchive(workspaceRoot, taskId, 'v1.2.0', path.join(workspaceRoot, 'release'));
+  assert.strictEqual(result.mode, 'created');
+  assert.deepStrictEqual(result.docs.sort(), ['business-design.md', 'solution-design.md']);
+  assert.deepStrictEqual(result.assets, ['business-design-assets']);
+  assert.deepStrictEqual(
+    fs.readFileSync(path.join(result.destination, 'business-design.md')),
+    fs.readFileSync(path.join(taskPath, 'artifacts', 'business-design.md')),
+  );
+  assert.strictEqual(
+    fs.readFileSync(path.join(result.destination, 'business-design-assets', 'ucd', 'w1.svg'), 'utf8'),
+    '<svg/>',
+  );
+});
+
+test('archive run updates existing version layer in place and keeps unrelated files', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1.2.0', taskId);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.writeFileSync(path.join(dest, 'business-design.md'), 'OLD', 'utf8');
+  fs.writeFileSync(path.join(dest, 'extra.txt'), 'keep me', 'utf8');
+  const result = runArchive(workspaceRoot, taskId, 'v1.2.0', undefined);
+  assert.strictEqual(result.mode, 'updated');
+  assert.match(fs.readFileSync(path.join(dest, 'business-design.md'), 'utf8'), /# Business/);
+  assert.strictEqual(fs.readFileSync(path.join(dest, 'extra.txt'), 'utf8'), 'keep me');
+});
+
+test('archive run treats existing empty version dir as created', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1.2.0', taskId);
+  fs.mkdirSync(dest, { recursive: true });
+  const result = runArchive(workspaceRoot, taskId, 'v1.2.0', undefined);
+  assert.strictEqual(result.mode, 'created');
+});
+
+test('archive run rejects unknown task id without side effects', () => {
+  const { workspaceRoot } = makeTaskWithDesigns();
+  assert.throws(() => runArchive(workspaceRoot, 'FEAT-NOPE', 'v1.2.0', undefined), /Task not found/);
+});
+
+test('archive run requires version', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  assert.throws(() => runArchive(workspaceRoot, taskId, '', undefined), /Version is required/);
+});
+
+test('archive run refuses when artifacts has no design docs and creates no layer', () => {
+  const { workspaceRoot, taskId } = makeTask();
+  const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1', taskId);
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /No baseline design docs/);
+  assert.strictEqual(fs.existsSync(dest), false);
+});
+
+test('archive run rejects symlinks in source', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  fs.symlinkSync('/etc/hosts', path.join(taskPath, 'artifacts', 'evil.md'));
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /symbolic link/i);
+});
+
+test('archive run CLI works end to end', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const out = capture([
+    'archive', 'run', '--workspace-root', workspaceRoot,
+    '--task-id', taskId, '--version', 'v1.0.0',
+    '--archive-root', path.join(workspaceRoot, 'release'),
+  ]);
+  assert.strictEqual(out.exitCode, 0, out.stderr);
+  const result = JSON.parse(out.stdout);
+  assert.strictEqual(result.mode, 'created');
+  assert.ok(fs.existsSync(path.join(result.destination, 'business-design.md')));
 });
