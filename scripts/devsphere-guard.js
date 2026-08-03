@@ -5,6 +5,12 @@ const fs = require('fs');
 const path = require('path');
 const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state');
 const { validateDesignReady } = require('./devsphere-approval');
+const {
+  DESIGN_TYPE_KEYS,
+  readDraftRef,
+  readArtifactRef,
+  validatePersistedReview,
+} = require('./devsphere-design');
 
 const TRANSITIONS = {
   initialized: ['clarified'],
@@ -72,6 +78,90 @@ function checkEvidenceBashFromStdin(input) {
   return deny('Evidence must be registered through devsphere knowledge register-evidence-record.');
 }
 
+function normalized(value) {
+  return typeof value === 'string' ? value.replace(/\\/g, '/') : '';
+}
+
+function isDesignReviewer(input) {
+  const agentType = input && input.agent_type;
+  return typeof agentType === 'string' && /^(?:scc-dev-sphere:)?design-reviewer$/.test(agentType);
+}
+
+function hookPath(input) {
+  const toolInput = input && input.tool_input;
+  return normalized(toolInput && (toolInput.file_path || toolInput.path));
+}
+
+function checkInternalResourceAccess(input) {
+  if (!input || typeof input !== 'object') throw new Error('Invalid hook input for internal resource guard');
+  const toolName = input.tool_name;
+  const value = toolName === 'Bash'
+    ? normalized(input.tool_input && input.tool_input.command)
+    : hookPath(input);
+  if (!value.includes('design-review-policy.json')) return null;
+  return deny('Design Review Policy is an internal plugin resource and may only be resolved through devsphere by design-reviewer.');
+}
+
+const DESIGN_MANAGED_PATH = /(?:^|\/)(?:work\/(?:business|solution|implementation|test)-design\/(?:lint|review)\.json|approvals\/(?:business|solution|implementation|test)-design\.json|approvals\/design-final-approval\.json|artifacts\/(?:business|solution|implementation|test)-design(?:\.md|-assets\/))/;
+
+function isManagedShellMutation(command) {
+  const value = normalized(command);
+  if (!DESIGN_MANAGED_PATH.test(value)) return false;
+  if (/(?:^|[^<])>{1,2}(?!>)/.test(value)) return true;
+  if (/(?:^|[\s;&|])(?:rm|mv|cp|install|touch|truncate|tee)\s/i.test(value)) return true;
+  if (/(?:^|[\s;&|])sed\s+[^;&|]*-[A-Za-z]*i[A-Za-z]*(?:\s|$)/i.test(value)) return true;
+  if (/(?:^|[\s;&|])(?:node|python3?|ruby|perl)\b/i.test(value)) return true;
+  return /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|unlink|renameSync|rename)\s*\(/.test(value);
+}
+
+function checkDesignManagedWrite(input) {
+  if (!input || typeof input !== 'object') throw new Error('Invalid hook input for Design write guard');
+  const filePath = hookPath(input);
+  if (!filePath || !DESIGN_MANAGED_PATH.test(filePath)) return null;
+  return deny('This Design lifecycle file is CLI-managed and cannot be written directly.');
+}
+
+function designCommandAction(command) {
+  const match = normalized(command).match(/\bdesign\s+(review-context|record-review|refresh-format-review|lint|approve-current-design|publish|reopen)\b/);
+  return match && match[1];
+}
+
+function checkDesignManagedShell(input) {
+  if (!input || typeof input !== 'object') throw new Error('Invalid hook input for Design shell guard');
+  const command = input.tool_input && input.tool_input.command;
+  if (typeof command !== 'string') return null;
+  const action = designCommandAction(command);
+  const reviewer = isDesignReviewer(input);
+  if (['review-context', 'record-review', 'refresh-format-review'].includes(action) && !reviewer) {
+    return deny(`${action} is owned by design-reviewer.`);
+  }
+  if (['lint', 'approve-current-design', 'publish', 'reopen'].includes(action) && reviewer) {
+    return deny(`${action} is owned by the main session.`);
+  }
+  if (/devsphere-design\.js\s+(?:record-review|refresh-format-review|approve-current-design|publish|reopen)\b/.test(command)) {
+    return deny('Design lifecycle mutations must use the unified devsphere CLI.');
+  }
+  if (isManagedShellMutation(command)) {
+    return deny('Design lifecycle files cannot be modified directly from a shell command.');
+  }
+  return null;
+}
+
+function checkDesignReviewerStop(input) {
+  if (!input || typeof input !== 'object') throw new Error('Invalid hook input for Design Reviewer stop guard');
+  if (!isDesignReviewer(input)) return null;
+  if (/^# Design Review Failure\b/m.test(input.last_assistant_message || '')) return null;
+  const workspaceRoot = input.cwd;
+  const taskPath = workspaceRoot && getTaskPath(workspaceRoot);
+  if (!taskPath) return { decision: 'block', reason: 'Design Reviewer cannot stop: no active Feature task was found.' };
+  const candidates = DESIGN_TYPE_KEYS.filter(designType => readDraftRef(taskPath, designType) && !readArtifactRef(taskPath, designType));
+  if (candidates.length !== 1) {
+    return { decision: 'block', reason: `Design Reviewer cannot stop: expected one active Design Draft, found ${candidates.length}.` };
+  }
+  const result = validatePersistedReview(taskPath, candidates[0], { allowBlocked: true });
+  return result.valid ? null : { decision: 'block', reason: `Design Reviewer cannot stop: ${result.reason}.` };
+}
+
 function readHookInput() {
   try { return JSON.parse(fs.readFileSync(0, 'utf8')); } catch (error) { return null; }
 }
@@ -110,4 +200,6 @@ module.exports = {
   TRANSITIONS,
   hasActiveTask, checkImplementEntry, checkApproveEntry, checkStateAdvance,
   checkEvidenceWritesFromStdin, checkEvidenceBashFromStdin,
+  checkInternalResourceAccess, checkDesignManagedWrite, checkDesignManagedShell,
+  checkDesignReviewerStop, isDesignReviewer, isManagedShellMutation,
 };

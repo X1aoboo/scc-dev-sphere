@@ -142,16 +142,6 @@ Solution Design 固定用户可见行为、信息结构、关键页面布局、�
 
 局部低风险方案仍检查全部固定维度；没有实质影响时，以核验范围、结论、依据和无需新增机制的原因简洁表达。
 
-## Checklist 导航
-
-- 始终执行：[architecture-consistency](../review-checklists/architecture-consistency.md)、[architecture-documentation-quality](../review-checklists/architecture-documentation-quality.md)、[design-traceability](../review-checklists/design-traceability.md)。
-- 持久或共享数据的模型、所有权、生命周期或访问方式变化时执行：[data-review](../review-checklists/data-review.md)。
-- 跨进程、网络、队列、存储或可用性边界影响正确性时执行：[reliability-review](../review-checklists/reliability-review.md)。
-- 存在信任边界、身份、权限、秘密、外部输入、敏感数据或滥用路径时执行：[security-review](../review-checklists/security-review.md)。
-- 生产运行、诊断、发布、回滚、容量或值守责任受到影响时执行：[operability-review](../review-checklists/operability-review.md)。
-
-固定章节不自动触发条件 Checklist；按实际设计影响判断适用性。
-
 ## 专业收敛标准
 
 - 需求已经拆成边界清楚的功能点，清单和详细设计双向覆盖。

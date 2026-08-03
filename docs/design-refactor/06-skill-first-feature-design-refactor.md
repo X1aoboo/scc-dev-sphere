@@ -108,7 +108,7 @@ skills/feature-design/references/
 └── review-checklists/
 ```
 
-Design Guide 提供专业边界、原则、分析透镜、高价值矛盾、失败模式、风险缩放、Checklist 导航和专业收敛标准。Spec 是独立 Draft 内容合同。Review Checklist 自身定义适用条件、评审规则和具体检查项。
+Design Guide 提供专业边界、原则、分析透镜、高价值矛盾、失败模式、风险缩放和专业收敛标准。Spec 是独立 Draft 内容合同。插件内部 Review Policy 维护 Design Type 与必选、条件 Checklist 的映射；Review Checklist 自身定义适用条件、评审规则和具体检查项。
 
 ## 3. 固定执行任务
 
@@ -124,7 +124,7 @@ Skill 启动后立即使用 Claude Code Task 能力建立五个线性顶层任�
 
 ## 4. 工作空间恢复与设计类型识别
 
-进入 Skill 时读取当前任务、`state.json`、全部已发布 Artifact，以及现有 Work、Draft、当前临时 Review 和 Approval；Lint 根据当前 Draft 实时计算。按持久化事实识别：
+进入 Skill 时读取当前任务、`state.json`、全部已发布 Artifact，以及现有 Work、Draft、当前 Review、Lint 状态和 Approval。按持久化事实识别：
 
 - 唯一未完成 Work/Draft 对应的设计活动；
 - Draft 与 Baseline 不一致所表示的可能重开；
@@ -133,7 +133,7 @@ Skill 启动后立即使用 Claude Code Task 能力建立五个线性顶层任�
 
 多个设计活动同时存在未完成产物、Draft 与 Baseline 冲突或证据不足时，向用户展示候选和依据，请用户确认。不得通过“固定顺序中第一个缺少的 Artifact”推断当前活动，也不新增内部阶段游标。
 
-识别后初始化或恢复 `work/<design-slug>/`，同步顶层状态为 `designing`，读取当前 Design Guide 和 Spec。只在 Review 时加载实际适用的 Checklist。
+识别后初始化或恢复 `work/<design-slug>/`，同步顶层状态为 `designing`，读取当前 Design Guide 和 Spec。主会话不读取 Review Policy 或 Checklist；隔离 Reviewer 只通过 CLI 获取完整评审上下文。
 
 ## 5. 核心语义分析流程
 
@@ -178,25 +178,25 @@ Skill 启动后立即使用 Claude Code Task 能力建立五个线性顶层任�
 
 设计收敛后，主 Skill 调用通用 `design-draft` 方法，将当前会话中的最终有效设计及必要上下文无损固化，并按当前 Spec 形成完整 Draft。Draft 必须可脱离聊天独立理解，只表达已确认设计，并显式说明条件内容的适用性。Spec 负责组织内容，不得过滤已经确认的设计信息。
 
-Lint 只检查 frontmatter、核心章节、适用性说明、占位符和明显格式错误。Lint 不给出专业设计结论，也不持久化检查结果。Draft 达到完整、可读、可独立评审且 Lint 通过后，才完成第三项任务。
+Lint 只检查 frontmatter、核心章节、适用性说明、占位符和明显格式错误，不给出专业设计结论。CLI 为当前设计包 hash 持久化最小 Lint 状态；失败时由主会话修复并重新运行，只有当前状态为 `pass` 才能进入 Review。
 
 ## 7. 集中隔离 Review
 
-根据 Design Guide 和 Draft 内容判断 Checklist 适用性。适用性不明确时执行；明确不适用时向用户说明理由。
+内部 Review Policy 声明每类 Design 的必选和条件 Checklist。主会话不感知映射；Reviewer 对每项条件 Checklist 判断适用性，不适用时持久化具体理由。
 
-每轮冻结 Draft 创建一个新的隔离 `design-reviewer`。它只读取冻结 Draft、全部适用 Checklist，以及判断这些 Checklist 必需的相关正式 Artifact 或事实材料，在自己的上下文中串行完整执行。只有 Checklist 判断依赖缺失的外部事实时才按需调用 `knowledge-query`；不创建嵌套 Review Agent。
+每轮冻结 Draft 创建一个新的隔离 `design-reviewer`。调用方只传 `taskPath` 和 `designType`；Reviewer 通过 CLI 获得冻结 Draft、正式 Artifact、Policy hash 和完整 Checklist 集合，在自己的上下文中串行执行。只有 Checklist 判断依赖缺失的外部事实时才按需调用 `knowledge-query`；不创建嵌套 Review Agent，也不重复校验 Lint。
 
 `design-reviewer` 在自身推理中逐份跟踪 Checklist 进度（子代理无法使用主会话的 Task 工具），完整应用所有评审规则和检查项，统一调用确定性命令维护 `work/<design-slug>/review.json`，再向主会话返回轻量 Markdown：通过，或包含位置、问题、实际影响和建议的 findings。主会话不维护 Review 文件，只分析重复、关联和冲突，与用户自然讨论并完成修订。
 
-语义修订使当前 Draft 的全部适用 Review 失效；重新 Lint 后创建新的 `design-reviewer` 完整复评。纯排版、错别字和不改变含义的修正重新 Lint 后由它执行确定性格式刷新。所有 blocking finding 关闭、残余风险已向用户揭示且用户确认后，Review 才通过。
+任一 Draft 修改都先由主会话重新 Lint。Reviewer 根据 semantic hash、Policy hash 和既有 Review 自行决定完整复评或确定性格式刷新，主会话不指定模式。所有 blocking finding 关闭、残余风险已向用户揭示且用户确认后，Review 才通过。
 
-批准前只在 `work/<design-slug>/review.json` 临时保存 Checklist、Draft hash、结论和必要 findings 的最小摘要，不保存 Review Matrix 或完整 Reviewer 推理；Baseline 发布后删除该摘要。
+批准前在 `work/<design-slug>/review.json` 保存 Policy hash、全部 Checklist 处置、Draft hash、结论和各类 finding 数量，不保存 finding 正文或 Reviewer 的隐式推理；完整 findings 由 Reviewer 直接返回主会话。该文件只能由 Reviewer 通过 CLI 维护，主会话只读。Baseline 发布后删除该记录。
 
 ## 8. 批准、Baseline 与状态同步
 
 最终批准前展示设计目标、最终方案、关键取舍、Lint、Review 结论、已修订问题和残余风险。用户明确批准后，将最后一轮通过 Review 的 Draft 原样发布为 Baseline Artifact；发布过程不得修改正文。
 
-首次发布必须验证实时 Lint、临时 Review 和人工批准绑定当前 Draft hash；Approval 成为长期批准凭证，Baseline 发布后删除临时 Review。已有不同 Baseline 时要求显式重开，保留历史并递增版本。
+首次发布必须验证持久化 Lint、Policy 约束下的 Review 和人工批准绑定当前设计包 hash；Approval 成为长期批准凭证，Baseline 发布后删除 Review。已有不同 Baseline 时要求显式重开，保留历史并递增版本。
 
 Baseline 发布后立即重新检查设计工作空间并同步状态：
 

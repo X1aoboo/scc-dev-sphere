@@ -10,6 +10,14 @@ const { spawnSync } = require('node:child_process');
 const root = path.join(__dirname, '..', '..');
 const bin = path.join(root, 'bin', process.platform === 'win32' ? 'devsphere.cmd' : 'devsphere');
 const { HELP, main, resolveWorkspaceRoot } = require('../devsphere-cli');
+const {
+  initDesign,
+  draftPath,
+  lintDraft,
+  reviewContext,
+  recordReview,
+} = require('../devsphere-design');
+const { businessDraft, installBusinessAssets } = require('./fixtures/business-design');
 
 function capture(argv, overrides = {}) {
   let stdout = '';
@@ -41,6 +49,7 @@ test('help exposes every public domain and launcher works without Claude variabl
     : spawnSync(bin, ['--help'], { encoding: 'utf8', env: { PATH: process.env.PATH } });
   assert.strictEqual(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: devsphere/);
+  assert.match(result.stdout, /validate-review/);
 });
 
 test('guard domain consumes hook stdin, denies protected writes, and stays silent otherwise', () => {
@@ -80,6 +89,65 @@ test('shell guards allow CLI mutations but deny every explicit protected-file ac
     assert.strictEqual(result.exitCode, 0, `${action}: ${result.stderr}`);
     assert.strictEqual(Boolean(result.stdout), denied, `${action}: ${command}`);
   }
+});
+
+test('Design guards protect internal policy and CLI-owned lifecycle files', () => {
+  let result = capture(['guard', 'internal-resource-access'], {
+    stdin: JSON.stringify({ tool_name: 'Read', tool_input: { file_path: '/plugin/templates/config/design-review-policy.json' } }),
+  });
+  assert.strictEqual(result.exitCode, 0, result.stderr);
+  assert.match(result.stdout, /internal plugin resource/);
+
+  result = capture(['guard', 'internal-resource-access'], {
+    stdin: JSON.stringify({ tool_name: 'Read', tool_input: { file_path: '/plugin/scripts/devsphere-design.js' } }),
+  });
+  assert.deepStrictEqual(result, { exitCode: 0, stdout: '', stderr: '' });
+
+  result = capture(['guard', 'design-managed-write'], {
+    stdin: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: '/project/.devsphere/tasks/feature/FEAT/work/business-design/review.json' } }),
+  });
+  assert.match(result.stdout, /CLI-managed/);
+
+  result = capture(['guard', 'design-managed-shell'], {
+    stdin: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'devsphere design record-review --task-path x --design-type businessDesign --input-file -' } }),
+  });
+  assert.match(result.stdout, /owned by design-reviewer/);
+
+  result = capture(['guard', 'design-managed-shell'], {
+    stdin: JSON.stringify({
+      tool_name: 'Bash',
+      agent_type: 'scc-dev-sphere:design-reviewer',
+      tool_input: { command: 'devsphere design record-review --task-path x --design-type businessDesign --input-file -' },
+    }),
+  });
+  assert.deepStrictEqual(result, { exitCode: 0, stdout: '', stderr: '' });
+
+  result = capture(['guard', 'design-managed-shell'], {
+    stdin: JSON.stringify({
+      tool_name: 'Bash',
+      tool_input: { command: 'cat .devsphere/tasks/feature/FEAT/work/business-design/review.json' },
+    }),
+  });
+  assert.deepStrictEqual(result, { exitCode: 0, stdout: '', stderr: '' });
+
+  result = capture(['guard', 'design-managed-shell'], {
+    stdin: JSON.stringify({
+      tool_name: 'Bash',
+      tool_input: { command: 'printf x > .devsphere/tasks/feature/FEAT/work/business-design/review.json' },
+    }),
+  });
+  assert.match(result.stdout, /cannot be modified directly/);
+
+  result = capture(['guard', 'design-managed-shell'], {
+    stdin: JSON.stringify({
+      tool_name: 'Bash',
+      tool_input: { command: "node -e \"require('fs').writeFileSync('.devsphere/tasks/feature/FEAT/work/business-design/review.json','{}')\"" },
+    }),
+  });
+  assert.match(result.stdout, /cannot be modified directly/);
+
+  result = capture(['guard', 'internal-resource-access'], { stdin: '{invalid' });
+  assert.strictEqual(result.exitCode, 2);
 });
 
 test('workspace root resolves by option, neutral env, then cwd', () => {
@@ -182,6 +250,55 @@ test('review and approval actions consume structured stdin before domain validat
   ], { cwd: workspaceRoot, stdin: '{"approvedBy":"human"}' });
   assert.strictEqual(result.exitCode, 1);
   assert.match(result.stderr, /Task status must be/);
+});
+
+test('validate-review uses exit status as the Design Review completion gate', () => {
+  const workspaceRoot = makeWorkspace('review gate');
+  let result = capture([
+    'workspace', 'create-feature-task',
+    '--workspace-root', workspaceRoot,
+    '--task-id', 'FEAT-review-gate',
+  ]);
+  const taskPath = JSON.parse(result.stdout).taskPath;
+
+  result = capture([
+    'design', 'validate-review',
+    '--task-path', taskPath,
+    '--design-type', 'businessDesign',
+  ], { cwd: workspaceRoot });
+  assert.strictEqual(result.exitCode, 1);
+  assert.strictEqual(JSON.parse(result.stdout).valid, false);
+
+  initDesign(taskPath, 'businessDesign');
+  fs.writeFileSync(draftPath(taskPath, 'businessDesign'), businessDraft('FEAT-review-gate'), 'utf8');
+  installBusinessAssets(taskPath);
+  lintDraft(taskPath, 'businessDesign');
+  const context = reviewContext(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', {
+    reviewKey: context.reviewKey,
+    draftHash: context.draft.draftHash,
+    policyHash: context.policyHash,
+    baseReportHash: context.report.hash,
+    reportAppend: '# Design Review Baseline\n',
+    checklists: context.requiredChecklists.map(({ checklistId }) => ({
+      checklistId,
+      result: 'pass',
+      summary: '通过',
+      findings: [],
+    })),
+    notApplicable: context.conditionalChecklists.map(({ checklistId }) => ({
+      checklistId,
+      reason: '测试场景不适用',
+    })),
+  });
+
+  result = capture([
+    'design', 'validate-review',
+    '--task-path', taskPath,
+    '--design-type', 'businessDesign',
+  ], { cwd: workspaceRoot });
+  assert.strictEqual(result.exitCode, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), { valid: true, designType: 'businessDesign' });
 });
 
 test('structured input accepts a JSON file relative to the caller cwd', () => {

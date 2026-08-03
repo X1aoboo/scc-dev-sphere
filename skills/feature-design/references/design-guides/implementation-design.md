@@ -176,14 +176,6 @@ flowchart LR
 
 局部低风险变化可以简洁，但必须保留核验范围、当前事实、变化、目标结果和无需新增机制的理由。条件内容只在适用时出现，不生成空章节。
 
-## Checklist 导航
-
-- 始终执行：[implementation-feasibility](../review-checklists/implementation-feasibility.md)、[implementation-documentation-quality](../review-checklists/implementation-documentation-quality.md)、[design-traceability](../review-checklists/design-traceability.md)。
-- 存在并发写入、异步执行、共享状态、顺序或重复交付时执行：[concurrency-review](../review-checklists/concurrency-review.md)。
-- 存在数据、接口、事件、配置、依赖或部署兼容迁移时执行：[migration-review](../review-checklists/migration-review.md)。
-- 生产运行、诊断、发布、回滚、资源或容量受到实质影响时执行：[operability-review](../review-checklists/operability-review.md)。
-- 存在外部输入、身份权限、租户、敏感数据、凭据或滥用路径时执行：[security-review](../review-checklists/security-review.md)。
-
 ## 专业收敛标准
 
 - 所有上游责任都映射到实现单元和实现点；

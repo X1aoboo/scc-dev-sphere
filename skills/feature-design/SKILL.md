@@ -1,6 +1,6 @@
 ---
 name: feature-design
-description: 协作完成当前 Feature 设计活动。用于需要业务、方案、实现或测试设计时；从设计工作空间恢复上下文，动态加载专业指南，以 design tree/frontier 推演并确认设计，形成 Draft，经隔离 Review、人工批准后发布 Baseline。
+description: 协作完成当前 Feature 设计活动。用于需要业务、方案、实现或测试设计时；从设计工作空间恢复上下文，动态加载专业指南，以 design tree/frontier 推演并确认设计，撰写 Draft，经隔离 Review、人工批准后发布 Baseline。
 ---
 
 # Feature Design
@@ -13,7 +13,7 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 
 1. **恢复设计工作空间、识别当前设计活动并建立专业上下文**
 2. **完成并确认核心设计**
-3. **形成可评审的 Design Draft**
+3. **撰写可评审的 Design Draft**
 4. **集中 Review 并修订至满足发布条件**
 5. **获得用户最终批准并发布 Design Baseline**
 
@@ -61,7 +61,7 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 
 完成条件：用户确认设计已收敛，并同意生成 Design Draft。
 
-## 步骤3. 形成可评审 Draft
+## 步骤3. 撰写可评审 Draft
 
 直接执行 `/scc-dev-sphere:design-draft`，将当前会话中已经确认的完整设计作为设计来源，将步骤1加载的当前 Spec 作为模板，并将 `work/<slug>/draft.md` 作为目标文件、`work/<slug>/<slug>-assets/` 作为可选配套资产目录。Draft 使用 `<slug>-assets/...` 相对路径引用线框图、原型快照和标注图；不需要配套资产时保持目录为空。
 
@@ -71,33 +71,49 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design lint --task-path "<taskPath>" --design-type <designType>
 ```
 
-Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时只修复确定性问题；专业完整性仍由 Design Guide 收敛标准、适用 Checklist 和用户评审确认。
+Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时由主会话修复确定性问题并重新运行；Lint `pass` 后才能调用 Reviewer。专业完整性仍由 Design Guide 收敛标准、隔离 Reviewer 和用户评审确认。
 
-如果 `design-draft` 或 Lint 修复过程发现设计冲突、缺口、未决事项，或者必须新增设计语义才能完成 Draft，不得自行补全或继续 Lint。将任务 3 恢复为 `pending`，将任务 2 恢复为 `in_progress`，重新调用 `feature-design-analysis` 完成分析和用户确认，再重新进入任务 3。
+如果 `design-draft` 或 Lint 修复过程发现设计冲突、缺口、未决事项，或者必须新增设计语义才能完成 Draft，不得自行补全或继续 Lint。将任务 3 恢复为 `pending`，将任务 2 恢复为 `in_progress`，重新调用 `feature-design-analysis` 完成分析和用户确认，再重新进入步骤 3。
 
-完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft 及其配套资产；Draft 可脱离聊天独立评审；不存在未确认语义；当前设计包 hash 的 Lint 为 `pass`。设计包 hash 覆盖 Draft 和全部配套资产，任一资产变化都必须重新 Review 和人工批准。
+完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft 及其配套资产；Draft 可脱离聊天独立评审；不存在未确认语义；Lint 为 `pass`。
 
 ## 步骤4. 集中 Review 并修订
 
-根据 Design Guide 的 Checklist 导航和当前 Draft 判断适用性。适用性不明确时执行；明确不适用时向用户说明理由。此时才读取每份适用的 `references/review-checklists/<checklist-id>.md`。
+创建 `design-reviewer` Agent 评审当前冻结的 Design Draft，并等待它完成。向它提供：
+- `<taskPath>` 和当前 `<designType>`；
+- 本轮 Review brief：评审轮次与目标、Draft 修改内容及位置、明确未修改范围，以及用户选择继续解决的 advisory/risk；
+- 如果需要重建评审基线，补充用户已经明确授权重建的事实。
 
-调用 `design-reviewer` Agent 评审当前冻结的 Draft，并等待它完成。Reviewer 在单独的上下文中依次执行全部适用 Checklist。向它提供：
+评审前先向用户公开本轮 Review brief信息：
 
-- `<taskPath>`、当前 `designType`，以及由 design type 和 semantic hash 组成的 `reviewKey`；
-- 冻结 Draft 的路径、Draft hash 和 semantic hash；
-- 全部适用 Checklist 的 ID 与路径，以及明确不适用项的理由；
-- Checklist 判断所必需的相关正式 Artifact 或事实材料；
-- `mode=full-review`。
+```text
+评审轮次：...
+本轮目标：...
+修改内容：...
+明确未修改：...
+本轮选择解决的 advisory/risk：...
+```
 
-收到结果后由主会话分析重复、关联和冲突，向用户说明对 Confirmed Design 的影响，再讨论修订。所有 blocking findings 必须关闭；advisory 和残余 risk 必须向用户揭示并形成明确处理结论。主会话可以读取 Review 状态，但不创建、修改或刷新 Review 摘要。
+Reviewer 返回后向用户公开实际复评项、关闭 finding、仍活动 finding、新增 finding、未复评而保留的 finding 和整体 `pass|blocked`；评审范围以 Reviewer 的实际结果为准。
 
-Reviewer finding 本身不直接登记为 Evidence。finding 暴露知识缺口时，由主会话调查或调用 `knowledge-query` Agent，只有随后被采用的知识结论才登记 Evidence。finding 促使用户确认新的实质取舍时，将最终取舍、理由和影响完整写入 Draft 的对应设计章节；纯排版、措辞和不改变语义的修订不产生 Evidence。
+根据 Reviewer 返回的 findings 处理设计影响：
+- `blocking` 必须修订，未关闭前不得进入批准；
+- `advisory` 应说明影响，决定采纳或保留当前设计；
+- `risk` 应向用户揭示；需要修改设计时完成修订，接受的残余风险留待最终批准记录。
 
-Draft 发生语义修改时，重新运行 Lint，并再次调用 `design-reviewer` 完整评审全部适用 Checklist。纯排版、错别字或不改变含义的修正重新 Lint 后，以同样输入调用 `design-reviewer`，但传入 `mode=format-refresh`，由它运行刷新命令，不重新执行 Checklist。
+修订只改变文档表达、不改变已确认设计时，返回步骤3重新形成 Draft。修订涉及新的设计判断、取舍、边界或风险时，返回步骤2重新分析并取得用户确认，再重新形成 Draft。
 
-临时摘要只保存 Draft hash、Checklist 结论、必要 findings 和明确不适用理由，由 `design-reviewer` 独占维护。
+每次 Draft 或配套资产变化后，都必须重新运行 Lint；Lint 通过后再次调用 `design-reviewer`。
 
-完成条件：摘要绑定当前 Draft hash；每份适用 Checklist 都已执行；所有 blocking findings 已关闭；语义修订后已完整复评；Review 状态为 `pass`；Review 采用的外部知识已登记为 Evidence，或未解决的登记失败已明确揭示。
+Review 返回 `pass` 后运行：
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design validate-review --task-path "<taskPath>" --design-type <designType>
+```
+
+命令失败时，根据返回问题继续修订和 Review，不得完成当前步骤。
+
+完成条件：`validate-review` 成功。
 
 ## 步骤5. 批准并发布 Baseline
 

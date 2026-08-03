@@ -132,7 +132,7 @@ Requirement → Business Design → Solution Design → Implementation Design �
 |---|---|---|
 | [`dev`](agents/dev.md) | 实现计划、代码落地、本地验证和开发风险反馈 | Workflow 在实现规划、开发实现和验证阶段委派 |
 | [`cie`](agents/cie.md) | 部署、配置、流水线和环境风险评估 | 按风险需要使用，不在默认 Workflow 派发链路中 |
-| [`design-reviewer`](agents/design-reviewer.md) | 对冻结 Design Draft 串行执行全部适用 Checklist，并维护临时 Review 摘要 | `feature-design` 在 Draft 通过 Lint 后调用 |
+| [`design-reviewer`](agents/design-reviewer.md) | 通过 CLI 获取内部 Review Policy，对冻结 Draft 执行全部适用 Checklist，维护 Review 门禁状态并返回完整 findings | `feature-design` 在 Draft 通过 Lint 后调用 |
 | [`knowledge-query`](agents/knowledge-query.md) | 只读查询相关知识源，返回可追溯的自然语言结果 | 主会话或 `design-reviewer` 在事实不足时调用 |
 
 这些 Agent 的 frontmatter 当前都没有预加载 Skill；Workflow 或调用方把 Skill 名称、任务上下文和交付件路径传给对应 Agent。`dev` 再根据实现影响面使用开发专项 Skill 的方法。
@@ -155,9 +155,9 @@ Requirement → Business Design → Solution Design → Implementation Design �
 
 - 创建 `.devsphere` 工作区并读写顶层状态；
 - 按 Feature 状态计算下一项 Skill 和执行者；
-- 检查 Design Draft 结构、hash、Review、Approval 和 Baseline 一致性；
+- 检查 Design Draft 结构，持久化当前 Lint 状态，并校验 Review Policy、Review、Approval 和 Baseline 的 hash 一致性；
 - 维护 Evidence 和知识源配置；
-- 为关键入口、Evidence 和配置写入提供 Hook 守卫；
+- 为关键入口、Evidence、Design 生命周期文件和内部 Review Policy 提供 Hook 守卫；
 - 通过 [`scripts/test/`](scripts/test/) 中的合同测试验证上述行为。
 
 ## 知识查询与知识源配置

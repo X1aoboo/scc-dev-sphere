@@ -109,11 +109,6 @@ Requirement Baseline 定义为什么做、为谁做、做什么、不做什么�
 
 低影响或沿用现状的内容可以用“核验范围 + 当前结论 + 判断依据 + 沿用理由”简洁表达。所有维度仍需形成可核验结论，但不要求复杂流程图、状态机、规则矩阵或领域模型。
 
-## Checklist 导航
-
-- 始终执行：[business-semantic-consistency](../review-checklists/business-semantic-consistency.md)、[business-documentation-quality](../review-checklists/business-documentation-quality.md)、[design-traceability](../review-checklists/design-traceability.md)。
-- 存量增强实质改变既有业务概念、规则、状态、历史结果或业务承诺时执行：[business-change-impact-review](../review-checklists/business-change-impact-review.md)。
-
 ## 专业收敛标准
 
 - Requirement Baseline 未被静默修改，最迟决策点均已处理。

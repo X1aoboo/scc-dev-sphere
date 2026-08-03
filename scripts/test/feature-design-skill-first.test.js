@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { makeTask } = require('./helpers');
 const {
   assetsPath: businessAssetsFixturePath,
@@ -20,13 +21,16 @@ const {
   solutionDraft,
 } = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
+const { checkDesignReviewerStop } = require('../devsphere-guard');
 const {
   DESIGN_TYPES,
   initDesign,
   inspectWorkspace,
   inspectDesign,
   lintDraft,
+  reviewContext,
   recordReview,
+  validateReview,
   refreshFormattingReview,
   approveCurrentDesign,
   publish,
@@ -38,6 +42,9 @@ const {
   artifactPath,
   artifactAssetsPath,
   reviewSummaryPath,
+  reviewReportPath,
+  lintStatusPath,
+  loadReviewPolicy,
   readArtifactRef,
   readDraftRef,
   sha256File,
@@ -62,37 +69,27 @@ function writeDraft(taskPath, designType, content = VALID_DRAFT) {
 }
 
 function passingSummary(taskPath, designType) {
+  const context = reviewContext(taskPath, designType);
   return {
-    draftHash: readDraftRef(taskPath, designType).hash,
-    checklists: [
-      'business-semantic-consistency',
-      'business-documentation-quality',
-      'design-traceability',
-    ].map(checklistId => ({
+    reviewKey: context.reviewKey,
+    draftHash: context.draft.draftHash,
+    policyHash: context.policyHash,
+    baseReportHash: context.report.hash,
+    reportAppend: context.reviewMode === 'initial-full'
+      ? `# Design Review Baseline\n\n- Design type: ${designType}\n`
+      : `\n\n## Incremental Review\n\n- Design type: ${designType}\n`,
+    checklists: context.requiredChecklists.map(({ checklistId }) => ({
       checklistId,
       result: 'pass',
       summary: '通过',
       findings: [],
     })),
-    notApplicable: [],
+    notApplicable: context.conditionalChecklists.map(({ checklistId }) => ({ checklistId, reason: '测试场景不适用' })),
   };
 }
 
 function passingSolutionSummary(taskPath) {
-  return {
-    draftHash: readDraftRef(taskPath, 'solutionDesign').hash,
-    checklists: [
-      'architecture-consistency',
-      'architecture-documentation-quality',
-      'design-traceability',
-    ].map(checklistId => ({
-      checklistId,
-      result: 'pass',
-      summary: '通过',
-      findings: [],
-    })),
-    notApplicable: [],
-  };
+  return passingSummary(taskPath, 'solutionDesign');
 }
 
 function completeBusiness(taskPath) {
@@ -333,6 +330,7 @@ test('solution design assets are hash-bound to review and approval', () => {
     '\n<!-- visual revision -->\n',
   );
   assert.strictEqual(inspectDesign(taskPath, 'solutionDesign').review.valid, false);
+  assert.strictEqual(lintDraft(taskPath, 'solutionDesign').status, 'pass');
   assert.throws(
     () => refreshFormattingReview(taskPath, 'solutionDesign'),
     /semantic; all applicable reviews must run again/i,
@@ -423,7 +421,7 @@ test('implementation lint rejects missing or duplicate units, broken mappings, i
   }
 });
 
-test('review summary is hash-bound, minimal, and blocks only blocking findings', () => {
+test('review record keeps hash-bound gate state while review.md remains opaque', () => {
   const { taskPath } = makeTask();
   writeDraft(taskPath, 'businessDesign');
   lintDraft(taskPath, 'businessDesign');
@@ -438,17 +436,356 @@ test('review summary is hash-bound, minimal, and blocks only blocking findings',
       issue: '拒绝提示可以更明确',
       impact: '用户可能需要再次确认结果',
       recommendation: '补充用户可见结果',
+    }, {
+      type: 'risk',
+      location: '关键业务决策、约束与风险',
+      issue: '边缘场景仍需上线观察',
+      impact: '低频用户可能遇到额外重试',
+      recommendation: '保留监控并记录残余风险',
     }],
   };
-  assert.strictEqual(recordReview(taskPath, 'businessDesign', summary).status, 'pass');
+  let persisted = recordReview(taskPath, 'businessDesign', summary);
+  assert.strictEqual(persisted.schemaVersion, 3);
+  assert.strictEqual(persisted.status, 'pass');
+  assert.deepStrictEqual(persisted.findingSummary, { blocking: 0, advisory: 1, risk: 1, total: 2 });
+  assert.strictEqual(persisted.findings, undefined);
+  assert.strictEqual(persisted.checklists[0].findings, undefined);
   assert.strictEqual(
     reviewSummaryPath(taskPath, 'businessDesign'),
     path.join(taskPath, 'work', 'business-design', 'review.json'),
   );
   assert.strictEqual(fs.existsSync(reviewSummaryPath(taskPath, 'businessDesign')), true);
+  assert.strictEqual(fs.existsSync(reviewReportPath(taskPath, 'businessDesign')), true);
+  assert.strictEqual(persisted.reportHash, sha256File(reviewReportPath(taskPath, 'businessDesign')));
   assert.strictEqual(fs.existsSync(path.join(taskPath, 'reviews')), false);
-  summary.checklists[0].findings[0].type = 'blocking';
-  assert.strictEqual(recordReview(taskPath, 'businessDesign', summary).status, 'blocked');
+  const blockingSummary = passingSummary(taskPath, 'businessDesign');
+  blockingSummary.checklists[0] = {
+    ...summary.checklists[0],
+    findings: [{ ...summary.checklists[0].findings[0], type: 'blocking' }],
+  };
+  persisted = recordReview(taskPath, 'businessDesign', blockingSummary);
+  assert.strictEqual(persisted.status, 'blocked');
+  assert.deepStrictEqual(persisted.findingSummary, { blocking: 1, advisory: 0, risk: 0, total: 1 });
+  assert.strictEqual(JSON.parse(fs.readFileSync(reviewSummaryPath(taskPath, 'businessDesign'), 'utf8')).findings, undefined);
+});
+
+test('incremental Review appends without replacing the baseline and preserves untouched findings', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  const first = passingSummary(taskPath, 'businessDesign');
+  first.reportAppend = '# Design Review Baseline\n\n- [x] 原始评审项：pass\n';
+  first.checklists[0] = {
+    checklistId: first.checklists[0].checklistId,
+    result: 'findings',
+    summary: '保留一项 advisory',
+    findings: [{
+      type: 'advisory',
+      location: '异常、边界与业务结果',
+      issue: '未选择处理的提示文案问题',
+      impact: '提示仍不够直接',
+      recommendation: '后续优化提示文案',
+    }],
+  };
+  recordReview(taskPath, 'businessDesign', first);
+  const baseline = fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8');
+
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n补充另一处已确认业务语义。\n');
+  lintDraft(taskPath, 'businessDesign');
+  const context = reviewContext(taskPath, 'businessDesign');
+  assert.strictEqual(context.reviewMode, 'incremental');
+  assert.strictEqual(context.previousReview.findingSummary.advisory, 1);
+  const incremental = passingSummary(taskPath, 'businessDesign');
+  incremental.reportAppend = '\n## Round 2 — Incremental Review\n\n- 复评另一项，旧 advisory 保留。\n';
+  incremental.checklists[0] = { ...first.checklists[0] };
+  const persisted = recordReview(taskPath, 'businessDesign', incremental);
+  const ledger = fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8');
+  assert.strictEqual(ledger, `${baseline}${incremental.reportAppend}`);
+  assert.deepStrictEqual(persisted.findingSummary, { blocking: 0, advisory: 1, risk: 0, total: 1 });
+});
+
+test('record-review rejects a stale baseReportHash without changing review.md', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n局部语义修订。\n');
+  lintDraft(taskPath, 'businessDesign');
+  const stale = passingSummary(taskPath, 'businessDesign');
+  const current = passingSummary(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', current);
+  const before = fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8');
+  assert.throws(() => recordReview(taskPath, 'businessDesign', stale), /baseReportHash is stale/);
+  assert.strictEqual(fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8'), before);
+});
+
+test('a JSON write failure after report append leaves a detectable fail-closed partial Review', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n局部语义修订。\n');
+  lintDraft(taskPath, 'businessDesign');
+
+  const summaryPath = reviewSummaryPath(taskPath, 'businessDesign');
+  const reportPath = reviewReportPath(taskPath, 'businessDesign');
+  const oldSummaryRaw = fs.readFileSync(summaryPath, 'utf8');
+  const oldSummary = JSON.parse(oldSummaryRaw);
+  const partial = passingSummary(taskPath, 'businessDesign');
+  partial.reportAppend = '\n## Partial Round\n\n- This fragment is appended exactly once.\n';
+
+  const originalWriteFileSync = fs.writeFileSync;
+  fs.writeFileSync = function injectedWriteFailure(filePath, ...args) {
+    if (path.resolve(filePath) === path.resolve(summaryPath)) {
+      const error = new Error('injected review.json write failure');
+      error.code = 'EIO';
+      throw error;
+    }
+    return originalWriteFileSync.call(this, filePath, ...args);
+  };
+  try {
+    assert.throws(
+      () => recordReview(taskPath, 'businessDesign', partial),
+      /injected review\.json write failure/,
+    );
+  } finally {
+    fs.writeFileSync = originalWriteFileSync;
+  }
+
+  assert.strictEqual(fs.readFileSync(summaryPath, 'utf8'), oldSummaryRaw);
+  const report = fs.readFileSync(reportPath, 'utf8');
+  assert.strictEqual((report.match(/## Partial Round/g) || []).length, 1);
+  assert.notStrictEqual(sha256File(reportPath), oldSummary.reportHash);
+  const validation = validateReview(taskPath, 'businessDesign');
+  assert.strictEqual(validation.valid, false);
+  assert.match(validation.issues[0], /Review report hash mismatch/);
+  const context = reviewContext(taskPath, 'businessDesign');
+  assert.strictEqual(context.reviewMode, 'rebuild-full-required');
+  assert.match(context.historyIssue, /Review report hash mismatch/);
+});
+
+test('missing or tampered review.md fails closed until an explicitly flagged baseline rebuild', () => {
+  for (const damage of ['missing', 'tampered']) {
+    const { taskPath } = makeTask();
+    writeDraft(taskPath, 'businessDesign');
+    lintDraft(taskPath, 'businessDesign');
+    recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+    const reportPath = reviewReportPath(taskPath, 'businessDesign');
+    if (damage === 'missing') fs.unlinkSync(reportPath);
+    else fs.appendFileSync(reportPath, '\nuntrusted change\n');
+
+    const context = reviewContext(taskPath, 'businessDesign');
+    assert.strictEqual(context.reviewMode, 'rebuild-full-required');
+    assert.match(context.historyIssue, damage === 'missing' ? /missing/ : /hash mismatch/);
+    assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, false);
+
+    const rebuild = passingSummary(taskPath, 'businessDesign');
+    rebuild.rebuildBaseline = true;
+    rebuild.baseReportHash = null;
+    rebuild.reportAppend = '# Rebuilt Design Review Baseline\n\n- Full review authorized by user.\n';
+    assert.throws(
+      () => recordReview(taskPath, 'businessDesign', { ...rebuild, rebuildBaseline: false }),
+      damage === 'missing' ? /report is missing/ : /hash mismatch/,
+    );
+    const persisted = recordReview(taskPath, 'businessDesign', rebuild);
+    assert.strictEqual(persisted.schemaVersion, 3);
+    assert.strictEqual(fs.readFileSync(reportPath, 'utf8'), rebuild.reportAppend);
+    assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, true);
+  }
+});
+
+test('approval and publish reject a Review ledger whose hash has drifted', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  approveCurrentDesign(taskPath, 'businessDesign', { approvedBy: 'human', acceptedRisks: [] });
+  fs.appendFileSync(reviewReportPath(taskPath, 'businessDesign'), '\nuntrusted change\n');
+  assert.throws(
+    () => approveCurrentDesign(taskPath, 'businessDesign', { approvedBy: 'human', acceptedRisks: [] }),
+    /passing lint and review/,
+  );
+  assert.throws(() => publish(taskPath, 'businessDesign'), /Review report hash mismatch/);
+});
+
+test('lint persists only current hash-bound status and review context requires it', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  assert.throws(() => reviewContext(taskPath, 'businessDesign'), /matching passing lint state/);
+  const lint = lintDraft(taskPath, 'businessDesign');
+  const persisted = JSON.parse(fs.readFileSync(lintStatusPath(taskPath, 'businessDesign'), 'utf8'));
+  assert.strictEqual(persisted.status, 'pass');
+  assert.strictEqual(persisted.draftHash, lint.draftHash);
+  assert.strictEqual(persisted.checks, undefined);
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n格式变化。\n');
+  assert.throws(() => reviewContext(taskPath, 'businessDesign'), /matching passing lint state/);
+});
+
+test('Review Policy is complete, path-safe, and record-review enforces every disposition', () => {
+  const loaded = loadReviewPolicy('businessDesign');
+  assert.strictEqual(loaded.policy.schemaVersion, 1);
+  assert.strictEqual(loaded.policy.designTypes.businessDesign.required.length, 3);
+  assert.strictEqual(loaded.policy.designTypes.businessDesign.conditional.length, 1);
+  assert.strictEqual(JSON.stringify(loaded.policy).includes('privacy-review'), false);
+  assert.notStrictEqual(loaded.hash, loaded.legacyHash);
+  assert.strictEqual(loadReviewPolicy('businessDesign').hash, loaded.hash);
+
+  const changedChecklist = spawnSync(process.execPath, ['-e', `
+    const fs = require('node:fs');
+    const original = fs.readFileSync;
+    fs.readFileSync = function (filePath, ...args) {
+      const value = original.call(this, filePath, ...args);
+      if (!String(filePath).endsWith('business-semantic-consistency.md')) return value;
+      return Buffer.isBuffer(value)
+        ? Buffer.concat([value, Buffer.from('\\nraw checklist change')])
+        : value + '\\nraw checklist change';
+    };
+    process.stdout.write(require('./scripts/devsphere-design').loadReviewPolicy('businessDesign').hash);
+  `], { cwd: path.resolve(__dirname, '..', '..'), encoding: 'utf8' });
+  assert.strictEqual(changedChecklist.status, 0, changedChecklist.stderr);
+  assert.notStrictEqual(changedChecklist.stdout, loaded.hash);
+
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  const summary = passingSummary(taskPath, 'businessDesign');
+  summary.checklists.pop();
+  assert.throws(() => recordReview(taskPath, 'businessDesign', summary), /Required review checklist was not executed/);
+
+  const missingDisposition = passingSummary(taskPath, 'businessDesign');
+  missingDisposition.notApplicable = [];
+  assert.throws(() => recordReview(taskPath, 'businessDesign', missingDisposition), /no disposition/);
+});
+
+test('Policy drift requires explicit full baseline rebuild instead of automatic fallback', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const summaryPath = reviewSummaryPath(taskPath, 'businessDesign');
+  const drifted = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  drifted.policyHash = 'sha256:outdated-policy-and-checklists';
+  fs.writeFileSync(summaryPath, JSON.stringify(drifted, null, 2), 'utf8');
+
+  const context = reviewContext(taskPath, 'businessDesign');
+  assert.strictEqual(context.policyChanged, true);
+  assert.strictEqual(context.reviewMode, 'rebuild-full-required');
+  assert.match(validateReview(taskPath, 'businessDesign').issues[0], /current Review Policy/);
+  const rebuild = passingSummary(taskPath, 'businessDesign');
+  assert.throws(() => recordReview(taskPath, 'businessDesign', rebuild), /Policy or Checklist content changed/);
+  rebuild.rebuildBaseline = true;
+  rebuild.baseReportHash = null;
+  rebuild.reportAppend = '# Authorized Rebuilt Baseline\n';
+  assert.strictEqual(recordReview(taskPath, 'businessDesign', rebuild).status, 'pass');
+});
+
+test('legacy schema 2 keeps Draft compatibility without claiming Checklist Markdown binding', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const summaryPath = reviewSummaryPath(taskPath, 'businessDesign');
+  const legacy = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  legacy.schemaVersion = 2;
+  legacy.policyHash = loadReviewPolicy('businessDesign').legacyHash;
+  delete legacy.reportHash;
+  fs.writeFileSync(summaryPath, JSON.stringify(legacy, null, 2), 'utf8');
+  fs.unlinkSync(reviewReportPath(taskPath, 'businessDesign'));
+  assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, true);
+
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n经确认的局部语义变化。\n');
+  lintDraft(taskPath, 'businessDesign');
+  const context = reviewContext(taskPath, 'businessDesign');
+  assert.strictEqual(context.reviewMode, 'rebuild-full-required');
+  assert.strictEqual(context.historyIssue, null);
+  const rebuild = passingSummary(taskPath, 'businessDesign');
+  assert.throws(() => recordReview(taskPath, 'businessDesign', rebuild), /Legacy Review has no review.md/);
+  rebuild.rebuildBaseline = true;
+  rebuild.baseReportHash = null;
+  rebuild.reportAppend = '# Authorized Legacy Migration Baseline\n';
+  assert.strictEqual(recordReview(taskPath, 'businessDesign', rebuild).schemaVersion, 3);
+});
+
+test('legacy schema 2 can publish an unchanged Draft bound to the legacy Policy JSON hash', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const summaryPath = reviewSummaryPath(taskPath, 'businessDesign');
+  const legacy = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+  legacy.schemaVersion = 2;
+  legacy.policyHash = loadReviewPolicy('businessDesign').legacyHash;
+  delete legacy.reportHash;
+  fs.writeFileSync(summaryPath, JSON.stringify(legacy, null, 2), 'utf8');
+  fs.unlinkSync(reviewReportPath(taskPath, 'businessDesign'));
+
+  approveCurrentDesign(taskPath, 'businessDesign', { approvedBy: 'human', acceptedRisks: [] });
+  assert.strictEqual(publish(taskPath, 'businessDesign').designType, 'businessDesign');
+});
+
+test('validate-review is the deterministic main-session completion gate', () => {
+  const { taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  let result = validateReview(taskPath, 'businessDesign');
+  assert.strictEqual(result.valid, false);
+  assert.deepStrictEqual(result.issues, ['Review state is missing']);
+
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  assert.deepStrictEqual(validateReview(taskPath, 'businessDesign'), {
+    valid: true,
+    designType: 'businessDesign',
+  });
+
+  const blocked = passingSummary(taskPath, 'businessDesign');
+  blocked.checklists[0] = {
+    checklistId: blocked.checklists[0].checklistId,
+    result: 'findings',
+    summary: '存在阻断问题',
+    findings: [{
+      type: 'blocking',
+      location: '业务规则',
+      issue: '规则冲突',
+      impact: '结果不确定',
+      recommendation: '统一规则',
+    }],
+  };
+  recordReview(taskPath, 'businessDesign', blocked);
+  result = validateReview(taskPath, 'businessDesign');
+  assert.strictEqual(result.valid, false);
+  assert.match(result.issues[0], /status is not acceptable: blocked/);
+
+  const reviewPath = reviewSummaryPath(taskPath, 'businessDesign');
+  const tampered = JSON.parse(fs.readFileSync(reviewPath, 'utf8'));
+  tampered.status = 'pass';
+  fs.writeFileSync(reviewPath, JSON.stringify(tampered, null, 2), 'utf8');
+  result = validateReview(taskPath, 'businessDesign');
+  assert.strictEqual(result.valid, false);
+  assert.match(result.issues[0], /does not match the blocking finding count/);
+
+  tampered.status = 'blocked';
+  fs.writeFileSync(reviewPath, JSON.stringify(tampered, null, 2), 'utf8');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n语义变化。\n');
+  result = validateReview(taskPath, 'businessDesign');
+  assert.strictEqual(result.valid, false);
+  assert.match(result.issues[0], /passing lint state/);
+});
+
+test('design-reviewer SubagentStop requires a complete current persisted Review', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- Result: pass',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input).decision, 'block');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+  fs.unlinkSync(lintStatusPath(taskPath, 'businessDesign'));
+  assert.match(checkDesignReviewerStop(input).reason, /passing lint state/);
 });
 
 test('semantic revision invalidates review while formatting-only change can refresh it', () => {
@@ -456,6 +793,7 @@ test('semantic revision invalidates review while formatting-only change can refr
   writeDraft(taskPath, 'businessDesign');
   lintDraft(taskPath, 'businessDesign');
   recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const reportBefore = fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8');
 
   fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n业务语义改变。\n');
   assert.strictEqual(inspectDesign(taskPath, 'businessDesign').review.valid, false);
@@ -464,6 +802,8 @@ test('semantic revision invalidates review while formatting-only change can refr
   lintDraft(taskPath, 'businessDesign');
   const refreshed = refreshFormattingReview(taskPath, 'businessDesign');
   assert.strictEqual(refreshed.draftHash, readDraftRef(taskPath, 'businessDesign').hash);
+  assert.strictEqual(refreshed.reportHash, sha256File(reviewReportPath(taskPath, 'businessDesign')));
+  assert.strictEqual(fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8'), reportBefore);
 });
 
 test('publish copies the approved Draft byte-for-byte without changing top-level state', () => {
@@ -476,6 +816,7 @@ test('publish copies the approved Draft byte-for-byte without changing top-level
     fs.readFileSync(path.join(businessAssetsFixturePath, 'ucd', 'escalation-detail-business-concept.svg')),
   );
   assert.strictEqual(fs.existsSync(reviewSummaryPath(taskPath, 'businessDesign')), false);
+  assert.strictEqual(fs.existsSync(reviewReportPath(taskPath, 'businessDesign')), false);
   assert.strictEqual(publish(taskPath, 'businessDesign').idempotent, true);
   assert.strictEqual(result.state, undefined);
   assert.strictEqual(JSON.parse(fs.readFileSync(path.join(taskPath, 'state.json'), 'utf8')).status, 'designing');

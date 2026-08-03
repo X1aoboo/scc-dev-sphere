@@ -19,15 +19,16 @@ Domains:
   workspace  create-feature-task
   workflow   resolve-next-action | set-task-status | sync-design-status |
              validate-design-entry | complete-external-test-design
-  design     inspect-workspace | init-design | inspect-design | lint |
-             record-review | refresh-format-review | approve-current-design |
+  design     inspect-workspace | init-design | inspect-design | lint | validate-review |
+             review-context | record-review | refresh-format-review | approve-current-design |
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
   knowledge  read-config | show-config | update-config | upsert-source |
              remove-source | reset-config | register-evidence-record | read-evidence
   state      read-state | read-current-task | get-task-path
   guard      evidence-write | evidence-shell | knowledge-config-write |
-             knowledge-config-shell
+             knowledge-config-shell | internal-resource-access |
+             design-managed-write | design-managed-shell | design-reviewer-stop
 
 Common options:
   --workspace-root <path>  Project root (fallback: DEVSPHERE_PROJECT_ROOT, cwd)
@@ -174,6 +175,11 @@ function dispatchDesign(action, options, io) {
     case 'init-design': return design.initDesign(taskPath, designType);
     case 'inspect-design': return design.inspectDesign(taskPath, designType);
     case 'lint': return design.lintDraft(taskPath, designType);
+    case 'validate-review': {
+      const result = design.validateReview(taskPath, designType);
+      return { value: result, exitCode: result.valid ? 0 : 1 };
+    }
+    case 'review-context': return design.reviewContext(taskPath, designType);
     case 'record-review': return design.recordReview(taskPath, designType, readStructuredInput(options, io));
     case 'refresh-format-review': return design.refreshFormattingReview(taskPath, designType);
     case 'approve-current-design': return design.approveCurrentDesign(taskPath, designType, readStructuredInput(options, io));
@@ -249,6 +255,10 @@ function dispatchGuard(action, options, io) {
     case 'evidence-shell': return guard.checkEvidenceBashFromStdin(input);
     case 'knowledge-config-write': return knowledge.guardWrite(input);
     case 'knowledge-config-shell': return knowledge.guardBash(input);
+    case 'internal-resource-access': return guard.checkInternalResourceAccess(input);
+    case 'design-managed-write': return guard.checkDesignManagedWrite(input);
+    case 'design-managed-shell': return guard.checkDesignManagedShell(input);
+    case 'design-reviewer-stop': return guard.checkDesignReviewerStop(input);
     default: throw new Error(`Unknown guard action: ${action}`);
   }
 }
@@ -299,7 +309,7 @@ function main(argv = process.argv.slice(2), overrides = {}) {
     return wrapped ? dispatched.exitCode : 0;
   } catch (error) {
     io.stderr.write(`Error: ${error.message}\n`);
-    return 1;
+    return argv[0] === 'guard' ? 2 : 1;
   }
 }
 

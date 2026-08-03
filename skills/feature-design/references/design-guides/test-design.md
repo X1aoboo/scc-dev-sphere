@@ -30,13 +30,6 @@
 
 失败影响、状态组合、外部集成、并发、迁移、兼容、安全或性能风险越高，越需要覆盖负向、边界、恢复、混合版本和非功能场景。低风险纯展示变更可以使用少量稳定场景。
 
-## Checklist 导航
-
-- 始终执行：[risk-coverage](../review-checklists/risk-coverage.md)、[design-traceability](../review-checklists/design-traceability.md)。
-- 存在身份、权限、输入、秘密或滥用风险时执行：[security-test-review](../review-checklists/security-test-review.md)。
-- 存在延迟、吞吐、容量或资源目标时执行：[performance-test-review](../review-checklists/performance-test-review.md)。
-- 存在客户端、Schema、协议、版本、平台或滚动部署风险时执行：[compatibility-test-review](../review-checklists/compatibility-test-review.md)。
-
 ## 专业收敛标准
 
 - 每个关键风险都有适当层级、可观察且可执行的验证；

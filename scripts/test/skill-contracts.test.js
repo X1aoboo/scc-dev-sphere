@@ -40,10 +40,18 @@ test('active skills, agents, and hooks use the plugin CLI launcher through CLAUD
   for (const hook of preToolHooks) {
     assert.strictEqual(Object.prototype.hasOwnProperty.call(hook, 'args'), false);
   }
-  for (const action of ['evidence-write', 'evidence-shell', 'knowledge-config-write', 'knowledge-config-shell']) {
+  for (const action of [
+    'evidence-write', 'evidence-shell', 'knowledge-config-write', 'knowledge-config-shell',
+    'design-managed-write', 'internal-resource-access', 'design-managed-shell',
+  ]) {
     assert.ok(preToolHooks.some(hook => hook.command
       === `"${'${CLAUDE_PLUGIN_ROOT}'}/bin/devsphere" guard ${action}`), action);
   }
+  assert.deepStrictEqual(hooks.SubagentStop.map(entry => entry.matcher), ['^(scc-dev-sphere:)?design-reviewer$']);
+  assert.strictEqual(
+    hooks.SubagentStop[0].hooks[0].command,
+    `"${'${CLAUDE_PLUGIN_ROOT}'}/bin/devsphere" guard design-reviewer-stop`,
+  );
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'scripts', 'setup-devsphere-bash-path.sh'), 'utf8'), /--claude-session/);
   for (const relative of ['bin/devsphere', 'bin/devsphere.cmd', 'scripts/devsphere-cli.js', 'scripts/setup-devsphere-bash-path.sh']) {
     assert.strictEqual(fs.existsSync(path.join(root, relative)), true, relative);

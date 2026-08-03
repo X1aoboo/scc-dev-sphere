@@ -19,7 +19,7 @@ initialized → clarified → designing → design_ready
 
 ## Feature Design
 
-`feature-design` 在主会话运行，每次从工作空间事实恢复并完成当前一个设计活动。业务、方案、实现和测试设计使用同一固定方法，但按类型加载不同 Design Guide、Spec 和 Review Checklists。
+`feature-design` 在主会话运行，每次从工作空间事实恢复并完成当前一个设计活动。业务、方案、实现和测试设计使用同一固定方法；主会话按类型加载 Design Guide 和 Spec，隔离 Reviewer 通过 CLI 获取内部 Review Policy 及完整 Checklist 集合。
 
 ```text
 恢复工作空间并加载专业上下文
@@ -34,7 +34,11 @@ initialized → clarified → designing → design_ready
 
 ## Review and approval
 
-每个适用 Checklist 使用一个新的隔离 Reviewer。Reviewer 完整应用 Checklist 内的评审规则和检查项，直接把 Markdown 结论返回主会话。语义修改使全部适用 Review 失效；纯格式修正只重新 Lint。
+每轮冻结 Draft 使用一个隔离 `design-reviewer`。主会话只传 `taskPath` 和 `designType`，不读取 Policy、不选择 Checklist，也不维护 Review 状态。Reviewer 通过 CLI 获得 Policy、正式输入和 Checklist，判断条件项适用性，串行完成评审，持久化 Checklist 处置、结论及 finding 数量，再把包含完整 findings 的 Markdown 结论返回主会话。
+
+Lint 由主会话运行并修复至通过，Reviewer 不重复执行 Lint；CLI 只允许通过当前设计包 hash 的 Lint 状态进入 Review。Draft 修改后必须重新 Lint。Reviewer 根据 semantic hash、Policy hash 和既有 Review 自行选择完整复评或仅刷新格式绑定。
+
+主会话在完成 Review 步骤前运行 `devsphere design validate-review`。该命令只返回当前 Review 是否满足步骤完成条件及问题列表，并以退出码提供确定性完成闸口。
 
 每个设计活动的 Baseline 必须绑定当前 Draft、Lint、Review 和人工批准。每份 Baseline 发布后返回 Workflow，由 Workflow 根据 `requiredDesignTypes` 判断保持 `designing` 或进入 `design_ready`。总体人工批准后才进入实现规划。
 

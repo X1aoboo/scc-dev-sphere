@@ -14,7 +14,7 @@ test('feature-design exposes five outcome tasks and delegates semantic analysis 
   for (const phrase of [
     /恢复设计工作空间.*建立专业上下文/s,
     /完成并确认核心设计/,
-    /形成可评审.*Draft/,
+    /撰写可评审.*Draft/,
     /集中 Review.*修订/s,
     /发布 Design Baseline/,
   ]) assert.match(skill, phrase);
@@ -34,7 +34,7 @@ test('feature-design exposes five outcome tasks and delegates semantic analysis 
 
 test('feature-design delegates lossless Draft writing and retains workflow-owned Lint', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  const task3 = skill.match(/## 步骤3\. 形成可评审 Draft([\s\S]*?)## 步骤4\./)[1];
+  const task3 = skill.match(/## 步骤3\. 撰写可评审 Draft([\s\S]*?)## 步骤4\./)[1];
 
   assert.match(task3, /\/scc-dev-sphere:design-draft/);
   assert.match(task3, /当前会话中已经确认的完整设计.*设计来源/s);
@@ -43,7 +43,7 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /design-draft.*完成对照检查/s);
   assert.match(task3, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" design lint --task-path "<taskPath>" --design-type <designType>/);
   assert.match(task3, /不判断方案是否具体、专业或语义成立/);
-  assert.match(task3, /Design Guide 收敛标准、适用 Checklist 和用户评审/);
+  assert.match(task3, /Design Guide 收敛标准、隔离 Reviewer 和用户评审/);
   assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);
   assert.match(task3, /重新调用 `feature-design-analysis`/);
   assert.match(task3, /最终有效设计及必要上下文.*完整、忠实/s);
@@ -66,17 +66,6 @@ test('feature-design delegates analysis without embedding persistence commands',
   assert.doesNotMatch(skill, /register-evidence-record/);
 });
 
-test('feature-design registers adopted Review knowledge and keeps confirmed trade-offs in the Draft', () => {
-  const skill = read('skills/feature-design/SKILL.md');
-  const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
-
-  assert.match(task4, /Reviewer finding.*不.*Evidence/s);
-  assert.match(task4, /知识缺口.*调用 `knowledge-query` Agent.*采用.*Evidence/s);
-  assert.match(task4, /用户.*确认.*新.*实质取舍.*写入 Draft/s);
-  assert.match(task4, /排版|措辞/);
-  assert.doesNotMatch(task4, /register-evidence-record|devsphere decisions|devsphere-decisions|supersedes/);
-});
-
 test('feature-design progressively loads one Design Guide and Spec without stage orchestration', () => {
   const skill = read('skills/feature-design/SKILL.md');
   assert.match(skill, /inspect-workspace/);
@@ -91,12 +80,25 @@ test('feature-design progressively loads one Design Guide and Spec without stage
 
 test('feature-design delegates one centralized review and leaves top-level state to workflow', () => {
   const skill = read('skills/feature-design/SKILL.md');
-  assert.match(skill, /调用 `design-reviewer` Agent.*等待它完成/s);
-  assert.match(skill, /单独的上下文中依次执行全部适用 Checklist/);
-  assert.match(skill, /主会话.*不创建、修改或刷新 Review 摘要/s);
-  assert.match(skill, /语义修改.*完整评审全部适用 Checklist/s);
-  assert.match(skill, /mode=format-refresh/);
+  const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
+  assert.match(task4, /fresh `design-reviewer` Agent.*不恢复或持久化旧 Reviewer/s);
+  assert.match(task4, /只传入 `<taskPath>`.*`<designType>`.*Review brief/s);
+  assert.doesNotMatch(task4, /design review-context/);
+  assert.match(task4, /brief.*本轮编号与目标.*修改内容及位置.*明确未修改范围.*用户选择继续解决的 advisory\/risk/s);
+  assert.match(task4, /评审前先向用户公开.*评审轮次.*本轮目标.*修改内容.*明确未修改.*advisory\/risk/s);
+  assert.match(task4, /Reviewer 独立决定首次全量评审.*Checklist 评审项增量复审/s);
+  assert.match(task4, /无法限定影响范围.*Design Review Failure.*不得静默改为全量评审/s);
+  assert.match(task4, /重建评审基线.*说明原因.*替换.*不保留旧评审历史.*用户明确授权/s);
+  assert.match(task4, /Reviewer 返回后向用户公开实际复评项、关闭 finding、仍活动 finding、新增 finding、未复评而保留的 finding/s);
+  assert.match(task4, /`blocking` 必须修订.*`advisory` 应说明影响.*`risk` 应向用户揭示/s);
+  assert.match(task4, /只改变文档表达.*返回步骤3.*新的设计判断、取舍、边界或风险.*返回步骤2.*用户确认/s);
+  assert.match(task4, /每次 Draft 或配套资产变化后.*重新运行 Lint.*再次调用 `design-reviewer`/s);
+  assert.match(task4, /Review 返回 `pass` 后运行/);
+  assert.match(skill, /devsphere" design validate-review --task-path "<taskPath>" --design-type <designType>/);
+  assert.match(skill, /完成条件：`validate-review` 成功/);
+  assert.match(task4, /命令失败时.*不得完成当前步骤/s);
   assert.doesNotMatch(skill, /为每份适用 Checklist 创建.*Reviewer/);
+  assert.doesNotMatch(task4, /Agent runtime|Draft 快照|稳定.*(?:item|finding).*ID|依赖图|baseReportHash|reportAppend|rebuildBaseline|schema\s*2|Policy JSON|Checklist Markdown|不适用变为适用|候选受影响评审项|候选复评项/i);
   assert.doesNotMatch(skill, /node .*record-review/);
   assert.doesNotMatch(skill, /reviewScriptPath/);
   assert.match(skill, /approve-current-design/);
@@ -135,9 +137,10 @@ test('Design Guides contain professional differences and Specs remain independen
   for (const slug of ['business-design', 'solution-design', 'implementation-design', 'test-design']) {
     const guide = read(`skills/feature-design/references/design-guides/${slug}.md`);
     const spec = read(`skills/feature-design/references/specs/${slug}.md`);
-    for (const heading of ['专业边界', '专业原则', '分析透镜', '高价值矛盾', '风险缩放', 'Checklist 导航', '专业收敛标准']) {
+    for (const heading of ['专业边界', '专业原则', '分析透镜', '高价值矛盾', '风险缩放', '专业收敛标准']) {
       assert.match(guide, new RegExp(heading));
     }
+    assert.doesNotMatch(guide, /Checklist 导航|review-checklists/);
     if (slug === 'business-design') {
       assert.match(spec, /十四个主章节固定存在/);
       assert.match(spec, /低影响或沿用现状/);
@@ -181,7 +184,7 @@ test('all Design Draft contracts require Mermaid for suitable semantic diagrams'
   assert.match(traceability, /界面设计.*Markdown 表格.*目录树.*代码片段/s);
 });
 
-test('business design Guide is a semantic reference with the approved coverage and checklist navigation', () => {
+test('business design Guide is a semantic reference with the approved coverage and no checklist navigation', () => {
   const guide = read('skills/feature-design/references/design-guides/business-design.md');
   const headings = [...guide.matchAll(/^## (.+)$/gm)].map(match => match[1]);
   assert.deepStrictEqual(headings, [
@@ -192,7 +195,6 @@ test('business design Guide is a semantic reference with the approved coverage a
     '必须关闭的业务级决策',
     '高价值矛盾',
     '风险缩放',
-    'Checklist 导航',
     '专业收敛标准',
   ]);
   for (const phrase of [
@@ -201,7 +203,6 @@ test('business design Guide is a semantic reference with the approved coverage a
     /业务概念与度量语义.*适用范围、参与者与业务责任.*业务规则与判定逻辑.*时间、状态与生命周期语义.*业务场景、异常与结果语义.*存量影响与业务验收契约.*用户任务与业务交互语义/s,
     /返回需求澄清.*留在业务设计.*留给方案设计/s,
     /业务功能点.*当前业务设计.*新增\/修改\/删除.*完整业务行为/s,
-    /business-semantic-consistency.*business-documentation-quality.*design-traceability.*business-change-impact-review/s,
   ]) assert.match(guide, phrase);
   for (const phrase of [/用户研究/, /用户任务/, /服务蓝图/, /业务概念原型/, /walkthrough/, /可用性/]) {
     assert.match(guide, phrase);
@@ -247,14 +248,23 @@ test('business design Spec defines exactly fourteen content chapters without a q
   assert.doesNotMatch(spec, /businessType|impactLevel|designMode|status:|checklists:|固定问卷|Outbox|Kafka|MySQL|Redis/);
 });
 
-test('business review navigation has three required checklists and one conditional change-impact checklist', () => {
+test('Review Policy, not Design Guides, owns checklist navigation', () => {
   const guide = read('skills/feature-design/references/design-guides/business-design.md');
+  const policy = JSON.parse(read('templates/config/design-review-policy.json'));
   const semantic = read('skills/feature-design/references/review-checklists/business-semantic-consistency.md');
   const documentationQuality = read('skills/feature-design/references/review-checklists/business-documentation-quality.md');
   const traceability = read('skills/feature-design/references/review-checklists/design-traceability.md');
   const impact = read('skills/feature-design/references/review-checklists/business-change-impact-review.md');
 
-  assert.strictEqual((guide.match(/\.\.\/review-checklists\//g) || []).length, 4);
+  assert.doesNotMatch(guide, /review-checklists|Checklist 导航/);
+  assert.deepStrictEqual(
+    policy.designTypes.businessDesign.required.map(item => item.checklistId),
+    ['business-semantic-consistency', 'business-documentation-quality', 'design-traceability'],
+  );
+  assert.deepStrictEqual(
+    policy.designTypes.businessDesign.conditional.map(item => item.checklistId),
+    ['business-change-impact-review'],
+  );
   assert.match(semantic, /概念.*规则引用.*适用.*优先级.*时间.*状态.*场景.*异常.*验收.*目标态.*技术.*Solution Design/s);
   assert.match(documentationQuality, /当前设计.*本次变化.*完整目标态/s);
   assert.match(documentationQuality, /当前业务设计与依据.*本次新增\/修改\/删除.*完整业务行为/s);
@@ -356,7 +366,6 @@ test('solution design reference defines target-state architecture without a seco
     /必须关闭的系统级设计/,
     /责任与流程.*接口与集成.*数据与状态.*正确性机制.*可靠性与运维.*安全与隐私.*质量属性.*部署与演进/s,
     /接口与集成.*稳定契约.*输入输出.*校验.*结果语义.*安全与正确性规则.*兼容和恢复责任/s,
-    /architecture-consistency.*architecture-documentation-quality.*design-traceability/s,
   ]) assert.match(guide, phrase);
   assert.doesNotMatch(guide, /^## 接口与 API 设计透镜$/m);
   const mustClose = guide.match(/## 必须关闭的系统级设计([\s\S]*?)## 高价值矛盾/)[1];
@@ -502,7 +511,6 @@ test('implementation design reference is code-ready, unit-neutral, and backed by
     /只有涉及跨边界 API、事件或其他集成契约时才展开契约设计/,
     /不涉及接口时不生成空 API 清单/,
     /前端实现（按影响触发）/,
-    /implementation-feasibility.*implementation-documentation-quality.*design-traceability/s,
   ]) assert.match(guide, phrase);
 
   for (const heading of [
@@ -590,19 +598,34 @@ test('design-reviewer is the single review contract with denied mutation and dir
   }
   assert.doesNotMatch(agent, /^  - (Agent|TaskCreate|TaskGet|TaskList|TaskUpdate|ToolSearch)$/m);
   assert.match(agent, /^background: false$/m);
+  assert.match(agent, /design review-context --task-path "<taskPath>" --design-type <designType>/);
   assert.match(agent, /^## 工作流$/m);
-  assert.match(agent, /^### 步骤1：读取并规划 Checklist 执行$/m);
+  assert.match(agent, /^### 步骤1：读取上下文并确定评审范围$/m);
   assert.match(agent, /^### 步骤2：串行执行 Checklist$/m);
-  assert.match(agent, /^### 步骤3：维护并验证 Review 摘要$/m);
+  assert.match(agent, /^### 步骤3：维护并验证 Review 状态$/m);
   assert.match(agent, /^### 步骤4：返回 Review 结果$/m);
   assert.match(agent, /前一步完成条件未满足时，不进入下一步/);
   assert.strictEqual((agent.match(/^完成条件：/gm) || []).length, 4);
-  assert.match(agent, /步骤2：串行执行 Checklist[\s\S]*同一时刻只评审一份 Checklist/);
-  assert.match(agent, /全部适用 Checklist 均须执行，不得跳过或遗漏/);
+  assert.match(agent, /首次评审完整执行全部适用 Checklist 评审项.*后续只复评本轮修改影响的评审项/s);
+  assert.match(agent, /fresh Review.*不恢复或持久化 Agent 会话/s);
+  assert.match(agent, /brief 缺失或含糊时返回失败.*不自动改为全量评审/s);
+  assert.match(agent, /`incremental`.*仍活动的 blocking 所属项.*用户选择解决的 advisory\/risk 所属项.*修改直接影响项.*明显连带影响项/s);
+  assert.match(agent, /增量复审每轮都根据本轮修改重新判断条件 Checklist 的适用性.*没有.*历史评审项基线.*完整执行这一份 Checklist 的全部评审项.*记录新的具体理由.*移除该 Checklist 的旧 finding.*适用性无法确定时返回失败，不扩大到其他 Checklist/s);
+  assert.match(agent, /使用 Checklist 中的原始评审项文本，不生成稳定 ID/);
+  assert.match(agent, /修改影响无法限定.*返回失败.*不扩展为整份 Checklist 或全部 Checklist/s);
   assert.match(agent, /knowledge-query.*视为正在评审当前 Checklist/s);
   assert.match(agent, /Reviewer 不把 Checklist 评审交给其他 Agent/);
   assert.match(agent, /record-review/);
   assert.match(agent, /refresh-format-review/);
+  assert.match(agent, /Markdown 由 CLI 视为 opaque 内容，不要求 CLI 解析/);
+  assert.match(agent, /普通增量复审只构造本轮追加片段.*不得重写旧历史/s);
+  assert.match(agent, /`rebuildBaseline: true` 会用新的完整基线替换现有 `review\.md`，不是 append，旧评审历史不保留/);
+  assert.match(agent, /`review\.md` 不依赖直接写保护.*hash 仅检测外部漂移，不证明 Markdown 语义正确/s);
+  assert.match(agent, /baseReportHash.*reportAppend.*全部活动 findings/s);
+  assert.match(agent, /只有获用户明确授权的重建才设置 `rebuildBaseline: true`/);
+  assert.match(agent, /不支持并发写入/);
+  assert.match(agent, /返回实际评审范围、关闭\/残留\/新增 finding、全部活动 finding 和整体状态/);
+  assert.doesNotMatch(agent, /Agent runtime|Draft 快照|依赖图/i);
   assert.match(agent, /不与用户交互/);
   assert.match(agent, /不修改 Draft、Artifact、Approval 或 Feature 状态/);
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-review/SKILL.md')), false);

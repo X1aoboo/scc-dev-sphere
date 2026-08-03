@@ -18,7 +18,10 @@ const {
   artifactAssetsPath,
   artifactPath,
   lintDraft,
+  reviewContext,
   recordReview,
+  validateReview,
+  reviewReportPath,
   approveCurrentDesign,
   publish,
   syncDesignState,
@@ -61,25 +64,6 @@ version: "1.0.0"
 `,
 };
 
-const CHECKLISTS = {
-  businessDesign: [
-    'business-semantic-consistency',
-    'business-documentation-quality',
-    'design-traceability',
-  ],
-  solutionDesign: [
-    'architecture-consistency',
-    'architecture-documentation-quality',
-    'design-traceability',
-  ],
-  implementationDesign: [
-    'implementation-feasibility',
-    'implementation-documentation-quality',
-    'design-traceability',
-  ],
-  testDesign: ['risk-coverage'],
-};
-
 test('tradeoff-rich feature follows the fixed design sequence and synchronizes readiness', () => {
   const { taskPath } = makeTask({ taskId: 'FEAT-DRY-001' });
   const statePath = path.join(taskPath, 'state.json');
@@ -99,10 +83,14 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
     if (designType === 'implementationDesign') installImplementationAssets(taskPath);
     if (designType === 'solutionDesign') installSolutionAssets(taskPath);
     assert.strictEqual(lintDraft(taskPath, designType).status, 'pass');
-    const draftHash = readDraftRef(taskPath, designType).hash;
+    const context = reviewContext(taskPath, designType);
     assert.strictEqual(recordReview(taskPath, designType, {
-      draftHash,
-      checklists: CHECKLISTS[designType].map(checklistId => ({
+      reviewKey: context.reviewKey,
+      draftHash: context.draft.draftHash,
+      policyHash: context.policyHash,
+      baseReportHash: context.report.hash,
+      reportAppend: `# Design Review Baseline\n\n- Design type: ${designType}\n`,
+      checklists: [...context.requiredChecklists, ...context.conditionalChecklists].map(({ checklistId }) => ({
         checklistId,
         result: 'pass',
         summary: '通过',
@@ -134,4 +122,75 @@ test('tradeoff-rich feature follows the fixed design sequence and synchronizes r
   const approval = approveDesign(taskPath, { approvedBy: 'human', risks: [], limitations: [] });
   assert.strictEqual(approval.artifacts.length, 4);
   assert.strictEqual(JSON.parse(fs.readFileSync(statePath, 'utf8')).status, 'approved_for_implementation');
+});
+
+test('incremental Review context exposes the persisted ledger after a local Draft change', () => {
+  const { taskPath } = makeTask({ taskId: 'FEAT-DRY-INCREMENTAL' });
+  initDesign(taskPath, 'businessDesign');
+  fs.writeFileSync(draftPath(taskPath, 'businessDesign'), businessDraft('FEAT-DRY-INCREMENTAL'), 'utf8');
+  installBusinessAssets(taskPath);
+  assert.strictEqual(lintDraft(taskPath, 'businessDesign').status, 'pass');
+
+  const initial = reviewContext(taskPath, 'businessDesign');
+  const advisory = {
+    type: 'advisory',
+    location: '异常、边界与业务结果',
+    issue: '未选择在本轮处理的提示文案问题',
+    impact: '提示仍可更直接',
+    recommendation: '后续优化提示文案',
+  };
+  recordReview(taskPath, 'businessDesign', {
+    reviewKey: initial.reviewKey,
+    draftHash: initial.draft.draftHash,
+    policyHash: initial.policyHash,
+    baseReportHash: null,
+    reportAppend: '# Design Review Baseline\n\n- [x] 全部原始评审项已执行。\n',
+    checklists: initial.requiredChecklists.map(({ checklistId }, index) => ({
+      checklistId,
+      result: index === 0 ? 'findings' : 'pass',
+      summary: index === 0 ? '保留一项 advisory' : '通过',
+      findings: index === 0 ? [advisory] : [],
+    })),
+    notApplicable: initial.conditionalChecklists.map(({ checklistId }) => ({
+      checklistId,
+      reason: '本次业务设计不涉及存量变更',
+    })),
+  });
+  const baseline = fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8');
+
+  fs.appendFileSync(draftPath(taskPath, 'businessDesign'), '\n补充用户已确认的局部业务结果。\n');
+  assert.strictEqual(lintDraft(taskPath, 'businessDesign').status, 'pass');
+  const incremental = reviewContext(taskPath, 'businessDesign');
+  assert.strictEqual(incremental.reviewMode, 'incremental');
+  assert.deepStrictEqual(incremental.previousReview.findingSummary, {
+    blocking: 0,
+    advisory: 1,
+    risk: 0,
+    total: 1,
+  });
+  assert.strictEqual(incremental.report.hash, incremental.previousReview.reportHash);
+
+  const reportAppend = '\n## Round 2 — Incremental Review\n\n- [x] 仅复评受局部修改影响的评审项；旧 advisory 保留。\n';
+  recordReview(taskPath, 'businessDesign', {
+    reviewKey: incremental.reviewKey,
+    draftHash: incremental.draft.draftHash,
+    policyHash: incremental.policyHash,
+    baseReportHash: incremental.report.hash,
+    reportAppend,
+    checklists: incremental.requiredChecklists.map(({ checklistId }, index) => ({
+      checklistId,
+      result: index === 0 ? 'findings' : 'pass',
+      summary: index === 0 ? '保留一项 advisory' : '通过',
+      findings: index === 0 ? [advisory] : [],
+    })),
+    notApplicable: incremental.conditionalChecklists.map(({ checklistId }) => ({
+      checklistId,
+      reason: '本次业务设计不涉及存量变更',
+    })),
+  });
+  assert.strictEqual(
+    fs.readFileSync(reviewReportPath(taskPath, 'businessDesign'), 'utf8'),
+    `${baseline}${reportAppend}`,
+  );
+  assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, true);
 });

@@ -149,8 +149,69 @@ function reviewSummaryPath(taskPath, designType) {
   return path.join(designDir(taskPath, designType), 'review.json');
 }
 
+function reviewReportPath(taskPath, designType) {
+  return path.join(designDir(taskPath, designType), 'review.md');
+}
+
+function lintStatusPath(taskPath, designType) {
+  return path.join(designDir(taskPath, designType), 'lint.json');
+}
+
 function approvalPath(taskPath, designType) {
   return path.join(taskPath, 'approvals', `${definitionFor(designType).slug}.json`);
+}
+
+const REVIEW_POLICY_PATH = path.join(__dirname, '..', 'templates', 'config', 'design-review-policy.json');
+const REVIEW_CHECKLIST_ROOT = path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists');
+
+function loadReviewPolicy(designType) {
+  definitionFor(designType);
+  const raw = fs.readFileSync(REVIEW_POLICY_PATH);
+  const policy = JSON.parse(raw.toString('utf8'));
+  if (!policy || policy.schemaVersion !== 1 || !policy.designTypes || typeof policy.designTypes !== 'object') {
+    throw new Error('Unsupported or invalid Design Review Policy');
+  }
+  for (const designType of DESIGN_TYPE_KEYS) {
+    const entry = policy.designTypes[designType];
+    if (!entry || !Array.isArray(entry.required) || !Array.isArray(entry.conditional)) {
+      throw new Error(`Design Review Policy is incomplete for ${designType}`);
+    }
+    const all = [...entry.required, ...entry.conditional];
+    const ids = all.map(item => item && item.checklistId);
+    if (ids.some(id => typeof id !== 'string' || !id) || new Set(ids).size !== ids.length) {
+      throw new Error(`Design Review Policy contains invalid or duplicate checklist IDs for ${designType}`);
+    }
+    for (const item of all) {
+      if (typeof item.path !== 'string' || path.isAbsolute(item.path) || item.path.split(/[\\/]/).includes('..')) {
+        throw new Error(`Design Review Policy contains an unsafe checklist path: ${item.checklistId}`);
+      }
+      const fullPath = path.resolve(__dirname, '..', item.path);
+      if (path.dirname(fullPath) !== REVIEW_CHECKLIST_ROOT || !fs.existsSync(fullPath)) {
+        throw new Error(`Design Review Policy checklist not found: ${item.checklistId}`);
+      }
+    }
+    for (const item of entry.conditional) {
+      if (typeof item.condition !== 'string' || !item.condition.trim()) {
+        throw new Error(`Conditional checklist requires a condition: ${item.checklistId}`);
+      }
+    }
+  }
+  const unknown = Object.keys(policy.designTypes).filter(designType => !DESIGN_TYPES[designType]);
+  if (unknown.length) throw new Error(`Design Review Policy contains unknown design type: ${unknown[0]}`);
+
+  const hash = crypto.createHash('sha256');
+  hash.update('devsphere-review-policy-v2\0');
+  updateBundleHash(hash, 'policy', raw);
+  for (const item of [...policy.designTypes[designType].required, ...policy.designTypes[designType].conditional]) {
+    const checklistRaw = fs.readFileSync(path.resolve(__dirname, '..', item.path));
+    updateBundleHash(hash, `checklist:${item.checklistId}:${item.path}`, checklistRaw);
+  }
+  return {
+    policy,
+    hash: `sha256:${hash.digest('hex')}`,
+    legacyHash: sha256Buffer(raw),
+    path: REVIEW_POLICY_PATH,
+  };
 }
 
 function sha256Buffer(buffer) {
@@ -291,12 +352,13 @@ function inspectDesign(taskPath, designType) {
   definitionFor(designType);
   const draft = readDraftRef(taskPath, designType);
   const artifact = readArtifactRef(taskPath, designType);
-  const lint = draft ? lintDraft(taskPath, designType) : null;
+  const lint = readJSON(lintStatusPath(taskPath, designType));
   const review = readJSON(reviewSummaryPath(taskPath, designType));
   const approval = readJSON(approvalPath(taskPath, designType));
   const hasWork = fileExists(notesPath(taskPath, designType)) || fileExists(draftPath(taskPath, designType));
   const lintValid = Boolean(draft && lint && lint.status === 'pass' && lint.draftHash === draft.hash);
-  const reviewValid = Boolean(draft && review && review.status === 'pass' && review.draftHash === draft.hash);
+  let reviewValid = false;
+  try { reviewValid = validatePersistedReview(taskPath, designType).valid; } catch (error) { reviewValid = false; }
   const approvalValid = Boolean(draft && approval && approval.approvedBy === 'human' && approval.draftHash === draft.hash);
 
   if (draft && artifact && draft.hash !== artifact.hash) {
@@ -818,6 +880,247 @@ function checklistPath(checklistId) {
   return path.join(__dirname, '..', 'skills', 'feature-design', 'references', 'review-checklists', `${checklistId}.md`);
 }
 
+function listFilesRecursively(rootPath) {
+  if (!fs.existsSync(rootPath)) return [];
+  const files = [];
+  function visit(currentPath) {
+    for (const entry of fs.readdirSync(currentPath, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const fullPath = path.join(currentPath, entry.name);
+      if (entry.isDirectory()) visit(fullPath);
+      else if (entry.isFile()) files.push(fullPath);
+    }
+  }
+  visit(rootPath);
+  return files;
+}
+
+function reviewRequiredArtifacts(taskPath, designType) {
+  const inputs = listFilesRecursively(path.join(taskPath, 'inputs'));
+  const upstream = {
+    businessDesign: [],
+    solutionDesign: ['businessDesign'],
+    implementationDesign: ['businessDesign', 'solutionDesign'],
+    testDesign: ['businessDesign', 'solutionDesign', 'implementationDesign'],
+  }[designType].map(type => artifactPath(taskPath, type)).filter(fs.existsSync);
+  return [...inputs, ...upstream];
+}
+
+function currentLintStatus(taskPath, designType, draft) {
+  const lint = readJSON(lintStatusPath(taskPath, designType));
+  return lint && draft && lint.status === 'pass' && lint.draftHash === draft.hash ? lint : null;
+}
+
+function reviewSummaryIssue(review) {
+  if (!review || ![2, 3].includes(review.schemaVersion)) {
+    return 'Review state schema is outdated; obtain explicit user approval to rebuild the Review baseline';
+  }
+  if (!['pass', 'blocked'].includes(review.status)) return `Review status is invalid: ${review.status}`;
+  const findingSummary = review.findingSummary;
+  const findingTypes = ['blocking', 'advisory', 'risk'];
+  if (!findingSummary || findingTypes.some(type => !Number.isInteger(findingSummary[type]) || findingSummary[type] < 0)) {
+    return 'Review state contains an invalid finding summary';
+  }
+  if (!Number.isInteger(findingSummary.total)
+      || findingSummary.total !== findingTypes.reduce((total, type) => total + findingSummary[type], 0)) {
+    return 'Review state contains inconsistent finding counts';
+  }
+  if ((review.status === 'blocked') !== (findingSummary.blocking > 0)) {
+    return 'Review status does not match the blocking finding count';
+  }
+  if (!Array.isArray(review.checklists) || review.checklists.length === 0 || !Array.isArray(review.notApplicable)) {
+    return 'Review state contains invalid checklist dispositions';
+  }
+  const executed = review.checklists.map(item => item && item.checklistId);
+  const notApplicable = review.notApplicable.map(item => item && item.checklistId);
+  if ([...executed, ...notApplicable].some(id => typeof id !== 'string' || !id)) {
+    return 'Review state contains an invalid checklist ID';
+  }
+  if (new Set([...executed, ...notApplicable]).size !== executed.length + notApplicable.length) {
+    return 'Review state contains duplicate checklist dispositions';
+  }
+  if (review.checklists.some(item => !['pass', 'findings'].includes(item.result))) {
+    return 'Review state contains an invalid checklist result';
+  }
+  if (review.notApplicable.some(item => typeof item.reason !== 'string' || !item.reason.trim())) {
+    return 'Review state contains an invalid not-applicable reason';
+  }
+  return null;
+}
+
+function reviewDispositionIssue(review, policy) {
+  const executed = review.checklists.map(item => item.checklistId);
+  const notApplicable = review.notApplicable.map(item => item.checklistId);
+  const required = policy.required.map(item => item.checklistId);
+  const conditional = policy.conditional.map(item => item.checklistId);
+  const known = new Set([...required, ...conditional]);
+  if (executed.some(id => !known.has(id)) || notApplicable.some(id => !conditional.includes(id))) {
+    return 'Review state contains a checklist outside the current Review Policy';
+  }
+  if (required.some(id => !executed.includes(id))) return 'Review state omits required checklists';
+  if (conditional.some(id => !executed.includes(id) && !notApplicable.includes(id))) {
+    return 'Review state omits conditional checklist dispositions';
+  }
+  return null;
+}
+
+function readReviewHistory(taskPath, designType) {
+  const summaryFile = reviewSummaryPath(taskPath, designType);
+  const reportFile = reviewReportPath(taskPath, designType);
+  const summaryExists = fs.existsSync(summaryFile);
+  const reportExists = fs.existsSync(reportFile);
+  if (!summaryExists && !reportExists) return null;
+  if (!summaryExists) {
+    throw new Error('Review state is missing while review.md exists; obtain explicit user approval to rebuild the Review baseline');
+  }
+  const review = readJSON(summaryFile);
+  const issue = reviewSummaryIssue(review);
+  if (issue) throw new Error(issue);
+  if (review.schemaVersion === 2) {
+    if (reportExists) {
+      throw new Error('Legacy Review state conflicts with review.md; obtain explicit user approval to rebuild the Review baseline');
+    }
+    return { kind: 'legacy', review, reportPath: reportFile, reportHash: null };
+  }
+  if (!reportExists) {
+    throw new Error('Review report is missing; obtain explicit user approval to rebuild the Review baseline');
+  }
+  const reportHash = sha256File(reportFile);
+  if (typeof review.reportHash !== 'string' || review.reportHash !== reportHash) {
+    throw new Error('Review report hash mismatch; obtain explicit user approval to rebuild the Review baseline');
+  }
+  return { kind: 'ledger', review, reportPath: reportFile, reportHash };
+}
+
+function validatePersistedReview(taskPath, designType, options = {}) {
+  const draft = readDraftRef(taskPath, designType);
+  let history;
+  try {
+    history = readReviewHistory(taskPath, designType);
+  } catch (error) {
+    return { valid: false, reason: error.message };
+  }
+  if (!draft || !history) return { valid: false, reason: 'Review state is missing' };
+  if (!currentLintStatus(taskPath, designType, draft)) {
+    return { valid: false, reason: 'Review state has no matching passing lint state' };
+  }
+  const review = history.review;
+  const loaded = loadReviewPolicy(designType);
+  const policy = loaded.policy.designTypes[designType];
+  if (review.draftHash !== draft.hash || review.semanticHash !== draft.semanticHash) {
+    return { valid: false, reason: 'Review state does not bind the current Draft' };
+  }
+  const expectedPolicyHash = history.kind === 'legacy' ? loaded.legacyHash : loaded.hash;
+  if (review.reviewKey !== `${designType}:${draft.semanticHash}` || review.policyHash !== expectedPolicyHash) {
+    return { valid: false, reason: 'Review state does not bind the current Review Policy' };
+  }
+  if (!['pass', 'blocked'].includes(review.status) || (!options.allowBlocked && review.status !== 'pass')) {
+    return { valid: false, reason: `Review status is not acceptable: ${review.status}` };
+  }
+  const dispositionIssue = reviewDispositionIssue(review, policy);
+  if (dispositionIssue) return { valid: false, reason: dispositionIssue };
+  return { valid: true, review, draft };
+}
+
+function validateReview(taskPath, designType) {
+  definitionFor(designType);
+  try {
+    const result = validatePersistedReview(taskPath, designType);
+    return result.valid
+      ? { valid: true, designType }
+      : { valid: false, designType, issues: [result.reason] };
+  } catch (error) {
+    return { valid: false, designType, issues: [error.message] };
+  }
+}
+
+function reviewContext(taskPath, designType) {
+  definitionFor(designType);
+  const draft = readDraftRef(taskPath, designType);
+  if (!draft) throw new Error(`No valid Draft for ${designType}`);
+  const lint = currentLintStatus(taskPath, designType, draft);
+  if (!lint) throw new Error('lint_not_ready: current Draft must have a matching passing lint state before review');
+  const loaded = loadReviewPolicy(designType);
+  const policy = loaded.policy.designTypes[designType];
+  const expand = item => ({
+    ...item,
+    path: path.resolve(__dirname, '..', item.path),
+  });
+  let history = null;
+  let historyIssue = null;
+  try {
+    history = readReviewHistory(taskPath, designType);
+  } catch (error) {
+    historyIssue = error.message;
+  }
+  let previousReview = history && history.review;
+  if (!previousReview && fs.existsSync(reviewSummaryPath(taskPath, designType))) {
+    try {
+      const candidate = readJSON(reviewSummaryPath(taskPath, designType));
+      if (!reviewSummaryIssue(candidate)) previousReview = candidate;
+    } catch (error) {
+      // A malformed summary is exposed as a rebuild-required integrity failure below.
+    }
+  }
+  const previousIsLegacy = Boolean(previousReview && previousReview.schemaVersion === 2);
+  const expectedPreviousPolicyHash = previousIsLegacy ? loaded.legacyHash : loaded.hash;
+  const policyChanged = Boolean(previousReview && previousReview.policyHash !== expectedPreviousPolicyHash);
+  const formatRefreshEligible = Boolean(
+    previousReview
+    && previousReview.status === 'pass'
+    && previousReview.semanticHash === draft.semanticHash
+    && !policyChanged
+    && !historyIssue,
+  );
+  const rebuildBaselineRequired = Boolean(
+    historyIssue
+    || (previousReview && (policyChanged || (previousIsLegacy && !formatRefreshEligible))),
+  );
+  const reportFile = reviewReportPath(taskPath, designType);
+  const actualReportHash = fs.existsSync(reportFile) ? sha256File(reportFile) : null;
+  return {
+    reviewKey: `${designType}:${draft.semanticHash}`,
+    designType,
+    draft: {
+      path: draftPath(taskPath, designType),
+      assetsPath: draftAssetsPath(taskPath, designType),
+      draftHash: draft.hash,
+      semanticHash: draft.semanticHash,
+    },
+    requiredArtifacts: reviewRequiredArtifacts(taskPath, designType),
+    policyHash: loaded.hash,
+    requiredChecklists: policy.required.map(expand),
+    conditionalChecklists: policy.conditional.map(expand),
+    reviewMode: rebuildBaselineRequired
+      ? 'rebuild-full-required'
+      : !previousReview
+        ? 'initial-full'
+        : formatRefreshEligible
+          ? 'format-refresh'
+          : 'incremental',
+    formatRefreshEligible,
+    rebuildBaselineRequired,
+    policyChanged,
+    historyIssue,
+    report: {
+      path: reportFile,
+      exists: fs.existsSync(reportFile),
+      hash: actualReportHash,
+      expectedHash: previousReview ? previousReview.reportHash || null : null,
+    },
+    previousReview: previousReview ? {
+      schemaVersion: previousReview.schemaVersion,
+      status: previousReview.status,
+      draftHash: previousReview.draftHash,
+      semanticHash: previousReview.semanticHash,
+      policyHash: previousReview.policyHash,
+      reportHash: previousReview.reportHash || null,
+      checklists: previousReview.checklists,
+      notApplicable: previousReview.notApplicable,
+      findingSummary: previousReview.findingSummary,
+    } : null,
+  };
+}
+
 function lintDraft(taskPath, designType) {
   const definition = definitionFor(designType);
   const file = draftPath(taskPath, designType);
@@ -899,6 +1202,14 @@ function lintDraft(taskPath, designType) {
     status: checks.some(check => check.result === 'fail') ? 'fail' : 'pass',
     checks,
   };
+  writeJSON(lintStatusPath(taskPath, designType), {
+    schemaVersion: 1,
+    designType,
+    draftHash: result.draftHash,
+    semanticHash: result.semanticHash,
+    status: result.status,
+    lintedAt: new Date().toISOString(),
+  });
   return result;
 }
 
@@ -914,17 +1225,48 @@ function validateFinding(finding) {
 function recordReview(taskPath, designType, input) {
   definitionFor(designType);
   const draft = readDraftRef(taskPath, designType);
-  const lint = draft ? lintDraft(taskPath, designType) : null;
   if (!draft) throw new Error(`No valid Draft for ${designType}`);
-  if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
-    throw new Error('Current Draft must pass deterministic lint before review');
-  }
+  if (!currentLintStatus(taskPath, designType, draft)) throw new Error('lint_not_ready: current Draft must have a matching passing lint state before review');
+  const loaded = loadReviewPolicy(designType);
+  const policy = loaded.policy.designTypes[designType];
   if (!input || input.draftHash !== draft.hash) throw new Error('Review summary does not bind the current Draft');
+  if (input.rebuildBaseline !== undefined && typeof input.rebuildBaseline !== 'boolean') {
+    throw new Error('rebuildBaseline must be a boolean when provided');
+  }
+  const rebuildBaseline = input.rebuildBaseline === true;
+  if (typeof input.reportAppend !== 'string' || !input.reportAppend.trim()) {
+    throw new Error('Review reportAppend must be non-empty Markdown');
+  }
+  const reviewKey = `${designType}:${draft.semanticHash}`;
+  if (input.reviewKey !== reviewKey) throw new Error('Review summary does not bind the current semantic Draft');
+  if (input.policyHash !== loaded.hash) throw new Error('Review summary does not bind the current Review Policy');
   if (!Array.isArray(input.checklists) || input.checklists.length === 0) {
     throw new Error('Review summary requires at least one executed checklist');
   }
   const checklistIds = input.checklists.map(item => item.checklistId);
   if (new Set(checklistIds).size !== checklistIds.length) throw new Error('Review summary contains duplicate checklists');
+  const notApplicable = input.notApplicable || [];
+  if (!Array.isArray(notApplicable)) throw new Error('Review summary notApplicable must be an array');
+  const notApplicableIds = notApplicable.map(item => item.checklistId);
+  if (new Set(notApplicableIds).size !== notApplicableIds.length) throw new Error('Review summary contains duplicate not-applicable checklists');
+  const requiredIds = policy.required.map(item => item.checklistId);
+  const conditionalIds = policy.conditional.map(item => item.checklistId);
+  const knownIds = new Set([...requiredIds, ...conditionalIds]);
+  for (const checklistId of checklistIds) {
+    if (!knownIds.has(checklistId)) throw new Error(`Review summary contains unknown checklist: ${checklistId}`);
+  }
+  for (const checklistId of notApplicableIds) {
+    if (!conditionalIds.includes(checklistId)) throw new Error(`Checklist cannot be marked not applicable: ${checklistId}`);
+    if (checklistIds.includes(checklistId)) throw new Error(`Checklist cannot be both executed and not applicable: ${checklistId}`);
+  }
+  for (const checklistId of requiredIds) {
+    if (!checklistIds.includes(checklistId)) throw new Error(`Required review checklist was not executed: ${checklistId}`);
+  }
+  for (const checklistId of conditionalIds) {
+    if (!checklistIds.includes(checklistId) && !notApplicableIds.includes(checklistId)) {
+      throw new Error(`Conditional review checklist has no disposition: ${checklistId}`);
+    }
+  }
   const findings = [];
   for (const checklist of input.checklists) {
     if (!checklist.checklistId || !['pass', 'findings'].includes(checklist.result)) {
@@ -938,42 +1280,95 @@ function recordReview(taskPath, designType, input) {
     if (checklist.result === 'pass' && checklistFindings.length) {
       throw new Error(`Passing checklist cannot contain findings: ${checklist.checklistId}`);
     }
+    if (checklist.result === 'findings' && checklistFindings.length === 0) {
+      throw new Error(`Checklist marked findings must contain findings: ${checklist.checklistId}`);
+    }
     findings.push(...checklistFindings.map(finding => ({ checklistId: checklist.checklistId, ...finding })));
   }
-  const notApplicable = input.notApplicable || [];
   for (const item of notApplicable) {
     if (!item.checklistId || !item.reason) throw new Error('Not-applicable checklist requires checklistId and reason');
-    if (!fs.existsSync(checklistPath(item.checklistId))) throw new Error(`Review checklist not found: ${item.checklistId}`);
   }
+  const findingSummary = {
+    blocking: findings.filter(finding => finding.type === 'blocking').length,
+    advisory: findings.filter(finding => finding.type === 'advisory').length,
+    risk: findings.filter(finding => finding.type === 'risk').length,
+    total: findings.length,
+  };
   const summary = {
+    schemaVersion: 3,
     designType,
+    reviewKey,
     draftHash: draft.hash,
     semanticHash: draft.semanticHash,
-    status: findings.some(finding => finding.type === 'blocking') ? 'blocked' : 'pass',
+    policyHash: loaded.hash,
+    status: findingSummary.blocking > 0 ? 'blocked' : 'pass',
     checklists: input.checklists.map(item => ({
       checklistId: item.checklistId,
       result: item.result,
       summary: item.summary || '',
     })),
     notApplicable,
-    findings,
+    findingSummary,
+    reviewedAt: new Date().toISOString(),
   };
-  writeJSON(reviewSummaryPath(taskPath, designType), summary);
+
+  const summaryFile = reviewSummaryPath(taskPath, designType);
+  const reportFile = reviewReportPath(taskPath, designType);
+  const hasSummary = fs.existsSync(summaryFile);
+  const hasReport = fs.existsSync(reportFile);
+  let history = null;
+  if (rebuildBaseline) {
+    if (!hasSummary && !hasReport) {
+      throw new Error('rebuildBaseline is not needed for an initial Review');
+    }
+    if (input.baseReportHash !== null) {
+      throw new Error('A rebuilt Review baseline requires baseReportHash null');
+    }
+  } else {
+    history = readReviewHistory(taskPath, designType);
+    if (!history) {
+      if (input.baseReportHash !== null) throw new Error('An initial Review requires baseReportHash null');
+    } else {
+      if (history.kind === 'legacy') {
+        throw new Error('Legacy Review has no review.md; obtain explicit user approval and set rebuildBaseline true');
+      }
+      if (history.review.policyHash !== loaded.hash) {
+        throw new Error('Review Policy or Checklist content changed; obtain explicit user approval and set rebuildBaseline true');
+      }
+      if (input.baseReportHash !== history.reportHash) {
+        throw new Error('baseReportHash is stale or does not match the current Review report');
+      }
+    }
+  }
+
+  fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+  if (rebuildBaseline) {
+    fs.writeFileSync(reportFile, input.reportAppend, 'utf8');
+  } else if (!history) {
+    fs.writeFileSync(reportFile, input.reportAppend, { encoding: 'utf8', flag: 'wx' });
+  } else {
+    fs.appendFileSync(reportFile, input.reportAppend, 'utf8');
+  }
+  summary.reportHash = sha256File(reportFile);
+  // The report is written first. If the JSON write fails, subsequent commands detect
+  // the hash mismatch and fail closed; concurrent Review writers are not supported.
+  writeJSON(summaryFile, summary);
   return summary;
 }
 
 function refreshFormattingReview(taskPath, designType) {
   const draft = readDraftRef(taskPath, designType);
-  const lint = draft ? lintDraft(taskPath, designType) : null;
-  const summary = readJSON(reviewSummaryPath(taskPath, designType));
-  if (!draft || !lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) {
-    throw new Error('Current Draft must pass lint');
-  }
-  if (!summary || summary.semanticHash !== draft.semanticHash || summary.status !== 'pass') {
+  if (!draft || !currentLintStatus(taskPath, designType, draft)) throw new Error('Current Draft must have a matching passing lint state');
+  const history = readReviewHistory(taskPath, designType);
+  const summary = history && history.review;
+  const loaded = loadReviewPolicy(designType);
+  const expectedPolicyHash = history && history.kind === 'legacy' ? loaded.legacyHash : loaded.hash;
+  if (!summary || summary.semanticHash !== draft.semanticHash || summary.policyHash !== expectedPolicyHash || summary.status !== 'pass') {
     throw new Error('Change is semantic; all applicable reviews must run again');
   }
   summary.draftHash = draft.hash;
   summary.formattingRefresh = true;
+  summary.refreshedAt = new Date().toISOString();
   writeJSON(reviewSummaryPath(taskPath, designType), summary);
   return summary;
 }
@@ -1042,10 +1437,9 @@ function syncDesignState(taskPath) {
 function publish(taskPath, designType) {
   const draft = readDraftRef(taskPath, designType);
   if (!draft) throw new Error(`No valid Draft for ${designType}`);
-  const lint = lintDraft(taskPath, designType);
-  const review = readJSON(reviewSummaryPath(taskPath, designType));
+  const lint = currentLintStatus(taskPath, designType, draft);
   const approval = readJSON(approvalPath(taskPath, designType));
-  if (!lint || lint.status !== 'pass' || lint.draftHash !== draft.hash) throw new Error('Current lint is not passing');
+  if (!lint) throw new Error('Current lint is not passing');
   if (!approval || approval.draftHash !== draft.hash || approval.approvedBy !== 'human') throw new Error('Current human approval is missing');
 
   const source = draftPath(taskPath, designType);
@@ -1059,6 +1453,7 @@ function publish(taskPath, designType) {
       throw new Error('Existing Baseline differs from approved Draft; explicitly reopen this design before publishing');
     }
     unlinkIfExists(reviewSummaryPath(taskPath, designType));
+    unlinkIfExists(reviewReportPath(taskPath, designType));
     return {
       designType,
       artifactPath: target,
@@ -1068,7 +1463,8 @@ function publish(taskPath, designType) {
       idempotent: true,
     };
   }
-  if (!review || review.status !== 'pass' || review.draftHash !== draft.hash) throw new Error('Current review is not passing');
+  const review = validatePersistedReview(taskPath, designType);
+  if (!review.valid) throw new Error(`Current review is not passing: ${review.reason}`);
   if (fs.existsSync(targetAssets)) throw new Error('Design Baseline assets already exist without a Baseline document');
   try {
     fs.copyFileSync(source, target);
@@ -1081,6 +1477,7 @@ function publish(taskPath, designType) {
     throw error;
   }
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
+  unlinkIfExists(reviewReportPath(taskPath, designType));
   const artifact = readArtifactRef(taskPath, designType);
   return {
     designType,
@@ -1143,6 +1540,8 @@ function reopenDesign(taskPath, designType) {
   unlinkIfExists(artifact);
   removeDirectoryIfExists(artifactAssets);
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
+  unlinkIfExists(reviewReportPath(taskPath, designType));
+  unlinkIfExists(lintStatusPath(taskPath, designType));
   unlinkIfExists(approvalPath(taskPath, designType));
   return {
     designType,
@@ -1170,6 +1569,8 @@ function main() {
       case 'init-design': result = initDesign(args[0], args[1]); break;
       case 'inspect-design': result = inspectDesign(args[0], args[1]); break;
       case 'lint': result = lintDraft(args[0], args[1]); break;
+      case 'validate-review': result = validateReview(args[0], args[1]); break;
+      case 'review-context': result = reviewContext(args[0], args[1]); break;
       case 'record-review': result = recordReview(args[0], args[1], parseJSONArg(args[2], 'review summary')); break;
       case 'refresh-format-review': result = refreshFormattingReview(args[0], args[1]); break;
       case 'approve-current-design': result = approveCurrentDesign(args[0], args[1], parseJSONArg(args[2], 'approval')); break;
@@ -1200,6 +1601,8 @@ module.exports = {
   artifactPath,
   artifactAssetsPath,
   reviewSummaryPath,
+  reviewReportPath,
+  lintStatusPath,
   approvalPath,
   sha256File,
   semanticHash,
@@ -1211,6 +1614,10 @@ module.exports = {
   initDesign,
   inspectDesign,
   lintDraft,
+  loadReviewPolicy,
+  reviewContext,
+  validatePersistedReview,
+  validateReview,
   recordReview,
   refreshFormattingReview,
   approveCurrentDesign,
