@@ -21,11 +21,17 @@ Solution Design 决定系统责任、跨单元流程、数据所有权、外部�
 
 建立连续映射：
 
-```mermaid
-flowchart LR
-    Current["当前代码与运行事实"] --> Impact["受影响实现点"]
-    Impact --> Target["完整目标实现"]
-    Target --> Change["新增、修改、复用、废弃、删除"]
+```plantuml
+@startuml
+left to right direction
+rectangle "当前代码与运行事实" as Current
+rectangle "受影响实现点" as Impact
+rectangle "完整目标实现" as Target
+rectangle "新增、修改、复用、废弃、删除" as Change
+Current --> Impact
+Impact --> Target
+Target --> Change
+@enduml
 ```
 
 调查实际入口、调用链、数据、状态、依赖、测试、构建和运行能力。正文必须让读者看清现状、变化及变化后的完整行为；文件和符号用于定位，不能替代设计。
@@ -107,7 +113,7 @@ flowchart LR
 - **前端实现**：路由、组件、状态所有权、数据获取、焦点、可访问性、安全和构建。
 - **TDD行为切片**：可观察行为、不变量、依赖隔离和跨测试层边界。
 
-图示用于降低理解成本时采用 Mermaid。复杂组件/包关系、关键类协作、跨边界时序、状态机和运行资源拓扑通常适合绘图；不要求每份设计都包含图示，也不规定图示数量。图必须由正文解释其责任、交互和约束。禁止使用 ASCII 字符模拟语义图；界面设计、线框图或视觉稿等不适合 Mermaid 的内容不强制使用 Mermaid。
+图示用于降低理解成本时采用 PlantUML。复杂组件/包关系、关键类协作、跨边界时序、状态机和运行资源拓扑通常适合绘图；不要求每份设计都包含图示，也不规定图示数量。图必须由正文解释其责任、交互和约束。禁止使用 ASCII 字符模拟语义图；界面设计、线框图或视觉稿等不适合 PlantUML 的内容不强制使用 PlantUML。
 
 ## 必须关闭的代码级决策
 

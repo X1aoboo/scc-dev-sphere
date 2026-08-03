@@ -136,36 +136,36 @@ approval-ops-web
 
 ### 3.1 正常路径
 
-```mermaid
-sequenceDiagram
-    participant Scan as SlaCandidateScanJob
-    participant Cmd as EvaluateEscalationHandler
-    participant DB as Approval DB
-    participant Relay as OutboxRelay
-    participant Kafka as Kafka
-    participant Orch as EscalationOrchestrator
-    participant Org as Organization API
-    participant Notify as Notification API
-    participant Result as DeliveryResultConsumer
-
-    Scan->>Cmd: EvaluateEscalationCandidate
-    Cmd->>DB: 锁定任务并校验最新状态
-    Cmd->>DB: 升级记录 + 任务版本 + 审计 + Outbox
-    DB-->>Cmd: commit(escalationId, version=1)
-    Cmd-->>Scan: CREATED
-    Relay->>DB: 租约领取 Outbox
-    Relay->>Kafka: approval.escalation.committed.v1
-    Kafka-->>Orch: 至少一次投递
-    Orch->>DB: Inbox + 领取处理租约
-    Orch->>Org: managerAt(assigneeId, breachedAt)
-    Org-->>Orch: FOUND(managerId, relationVersion)
-    Orch->>DB: 保存对象与 Attempt
-    Orch->>Notify: accept(idempotencyKey, payload)
-    Notify-->>Orch: ACCEPTED(notificationId)
-    Orch->>DB: DELIVERY_REQUESTED
-    Notify->>Kafka: notification.delivery-result.v1
-    Kafka-->>Result: DELIVERED(version=1)
-    Result->>DB: Inbox + COMPLETED + 审计
+```plantuml
+@startuml
+participant "SlaCandidateScanJob" as Scan
+participant "EvaluateEscalationHandler" as Cmd
+database "Approval DB" as DB
+participant "OutboxRelay" as Relay
+queue "Kafka" as Kafka
+participant "EscalationOrchestrator" as Orch
+participant "Organization API" as Org
+participant "Notification API" as Notify
+participant "DeliveryResultConsumer" as Result
+Scan -> Cmd : EvaluateEscalationCandidate
+Cmd -> DB : 锁定任务并校验最新状态
+Cmd -> DB : 升级记录 + 任务版本 + 审计 + Outbox
+DB --> Cmd : commit(escalationId, version=1)
+Cmd --> Scan : CREATED
+Relay -> DB : 租约领取 Outbox
+Relay -> Kafka : approval.escalation.committed.v1
+Kafka --> Orch : 至少一次投递
+Orch -> DB : Inbox + 领取处理租约
+Orch -> Org : managerAt(assigneeId, breachedAt)
+Org --> Orch : FOUND(managerId, relationVersion)
+Orch -> DB : 保存对象与 Attempt
+Orch -> Notify : accept(idempotencyKey, payload)
+Notify --> Orch : ACCEPTED(notificationId)
+Orch -> DB : DELIVERY_REQUESTED
+Notify -> Kafka : notification.delivery-result.v1
+Kafka --> Result : DELIVERED(version=1)
+Result -> DB : Inbox + COMPLETED + 审计
+@enduml
 ```
 
 ### 3.2 事务和幂等边界
@@ -186,52 +186,53 @@ sequenceDiagram
 
 领域包不能依赖 Kafka、HTTP Client、Spring Scheduler 或 JPA Entity。应用层编排领域对象和端口，基础设施层实现数据库、消息、HTTP 和调度。所有状态变化都必须调用 `EscalationStateMachine`，消费者、对账和人工恢复不得各自实现状态规则。
 
-下图采用 UML 组件/包依赖语义，以 Mermaid 可渲染形式表示“使用”和“实现”关系：
+下图采用 UML 组件/包依赖语义，以 PlantUML 可渲染形式表示“使用”和“实现”关系：
 
-```mermaid
-flowchart LR
-    subgraph Entry["«package» infrastructure.entry"]
-        Scan["«component» scan-job"]
-        Kafka["«component» kafka-consumers"]
-        Ops["«component» ops-controller"]
-        Reconcile["«component» reconciler-job"]
-    end
-    subgraph Application["«package» application.escalation"]
-        Handler["«component» command-handler"]
-        Orchestrator["«component» orchestrator"]
-        Recovery["«component» recovery-service"]
-        Query["«component» query-service"]
-        Ports["«interfaces» ports"]
-    end
-    subgraph Domain["«package» domain.escalation"]
-        Aggregate["«aggregate» ApprovalEscalation"]
-        StateMachine["«domain service» StateMachine"]
-        BusinessKey["«value object» BusinessKey"]
-    end
-    subgraph Adapter["«package» infrastructure.adapter"]
-        Persist["«adapter» persistence"]
-        Outbox["«adapter» outbox-relay"]
-        Org["«adapter» organization-client"]
-        Notify["«adapter» notification-client"]
-    end
-
-    Scan --> Handler
-    Kafka --> Orchestrator
-    Ops --> Recovery
-    Ops --> Query
-    Reconcile --> Orchestrator
-    Handler --> Aggregate
-    Orchestrator --> Aggregate
-    Recovery --> StateMachine
-    Aggregate --> StateMachine
-    Aggregate --> BusinessKey
-    Handler --> Ports
-    Orchestrator --> Ports
-    Query --> Ports
-    Persist -. "implements" .-> Ports
-    Outbox -. "implements" .-> Ports
-    Org -. "implements" .-> Ports
-    Notify -. "implements" .-> Ports
+```plantuml
+@startuml
+left to right direction
+package "infrastructure.entry" as Entry {
+    component "scan-job" as Scan
+    component "kafka-consumers" as Kafka
+    component "ops-controller" as Ops
+    component "reconciler-job" as Reconcile
+}
+package "application.escalation" as Application {
+    component "command-handler" as Handler
+    component "orchestrator" as Orchestrator
+    component "recovery-service" as Recovery
+    component "query-service" as Query
+    component "ports" as Ports <<interfaces>>
+}
+package "domain.escalation" as Domain {
+    component "ApprovalEscalation" as Aggregate <<aggregate>>
+    component "StateMachine" as StateMachine <<domain service>>
+    component "BusinessKey" as BusinessKey <<value object>>
+}
+package "infrastructure.adapter" as Adapter {
+    component "persistence" as Persist <<adapter>>
+    component "outbox-relay" as Outbox <<adapter>>
+    component "organization-client" as Org <<adapter>>
+    component "notification-client" as Notify <<adapter>>
+}
+Scan --> Handler
+Kafka --> Orchestrator
+Ops --> Recovery
+Ops --> Query
+Reconcile --> Orchestrator
+Handler --> Aggregate
+Orchestrator --> Aggregate
+Recovery --> StateMachine
+Aggregate --> StateMachine
+Aggregate --> BusinessKey
+Handler --> Ports
+Orchestrator --> Ports
+Query --> Ports
+Persist ..> Ports : implements
+Outbox ..> Ports : implements
+Org ..> Ports : implements
+Notify ..> Ports : implements
+@enduml
 ```
 
 禁止依赖：`domain` 不引用 Spring/JPA/Kafka/HTTP 类型；`application` 不引用具体 Adapter；入口组件不直接操作 Repository 或数据库 Entity。
@@ -263,56 +264,56 @@ public sealed interface EvaluationResult {
 
 核心协作类图：
 
-```mermaid
-classDiagram
-    class EvaluateEscalationHandler {
-        +handle(EvaluateEscalationCandidate) EvaluationResult
-    }
-    class ApprovalTask {
-        +evaluateCandidate(key) CandidateDecision
-        +advanceEscalation(level)
-    }
-    class ApprovalEscalation {
-        +EscalationBusinessKey businessKey
-        +ProcessingState state
-        +long processingVersion
-        +apply(Transition)
-    }
-    class EscalationStateMachine {
-        +transition(state, signal) Transition
-    }
-    class EscalationOrchestrator {
-        +onCommitted(event)
-        +resume(escalationId, step)
-    }
-    class EscalationRepository {
-        <<interface>>
-        +findByBusinessKey(key)
-        +save(escalation)
-    }
-    class ApprovalTaskRepository {
-        <<interface>>
-        +getForUpdate(tenantId, taskId)
-    }
-    class OrganizationPort {
-        <<interface>>
-        +managerAt(tenantId, employeeId, effectiveAt)
-    }
-    class NotificationPort {
-        <<interface>>
-        +accept(command)
-        +query(notificationId)
-    }
-
-    EvaluateEscalationHandler --> ApprovalTaskRepository
-    EvaluateEscalationHandler --> ApprovalTask
-    EvaluateEscalationHandler --> ApprovalEscalation : creates
-    EvaluateEscalationHandler --> EscalationRepository
-    ApprovalEscalation --> EscalationStateMachine
-    EscalationOrchestrator --> EscalationRepository
-    EscalationOrchestrator --> EscalationStateMachine
-    EscalationOrchestrator --> OrganizationPort
-    EscalationOrchestrator --> NotificationPort
+```plantuml
+@startuml
+class EvaluateEscalationHandler {
+    +handle(EvaluateEscalationCandidate) EvaluationResult
+}
+class ApprovalTask {
+    +evaluateCandidate(key) CandidateDecision
+    +advanceEscalation(level)
+}
+class ApprovalEscalation {
+    +EscalationBusinessKey businessKey
+    +ProcessingState state
+    +long processingVersion
+    +apply(Transition)
+}
+class EscalationStateMachine {
+    +transition(state, signal) Transition
+}
+class EscalationOrchestrator {
+    +onCommitted(event)
+    +resume(escalationId, step)
+}
+class EscalationRepository {
+    <<interface>>
+    +findByBusinessKey(key)
+    +save(escalation)
+}
+class ApprovalTaskRepository {
+    <<interface>>
+    +getForUpdate(tenantId, taskId)
+}
+class OrganizationPort {
+    <<interface>>
+    +managerAt(tenantId, employeeId, effectiveAt)
+}
+class NotificationPort {
+    <<interface>>
+    +accept(command)
+    +query(notificationId)
+}
+EvaluateEscalationHandler --> ApprovalTaskRepository
+EvaluateEscalationHandler --> ApprovalTask
+EvaluateEscalationHandler --> ApprovalEscalation : creates
+EvaluateEscalationHandler --> EscalationRepository
+ApprovalEscalation --> EscalationStateMachine
+EscalationOrchestrator --> EscalationRepository
+EscalationOrchestrator --> EscalationStateMachine
+EscalationOrchestrator --> OrganizationPort
+EscalationOrchestrator --> NotificationPort
+@enduml
 ```
 
 类图只展示影响事务和状态正确性的关键协作，不罗列 DTO、配置类和简单 Mapper。Repository、外部端口是应用层接口，JPA 与 HTTP 实现在基础设施层。
@@ -529,23 +530,31 @@ NEW --领取--> LEASED --Broker ACK--> PUBLISHED
 
 #### 4.7.1 状态转换
 
-```mermaid
-stateDiagram-v2
-    [*] --> COMMITTED
-    COMMITTED --> TARGET_RESOLVED: 找到直属上级
-    COMMITTED --> NO_TARGET: 明确无直属上级
-    COMMITTED --> RETRY_WAIT: 组织服务暂时失败
-    TARGET_RESOLVED --> DELIVERY_REQUESTED: 通知请求已接受
-    TARGET_RESOLVED --> RETRY_WAIT: 接受前暂时失败
-    DELIVERY_REQUESTED --> COMPLETED: DELIVERED
-    DELIVERY_REQUESTED --> MANUAL_INTERVENTION: 永久失败或结果长期未知
-    RETRY_WAIT --> COMMITTED: resumeStep=RESOLVE_TARGET
-    RETRY_WAIT --> TARGET_RESOLVED: resumeStep=REQUEST_NOTIFICATION
-    RETRY_WAIT --> MANUAL_INTERVENTION: 超过重试边界
-    MANUAL_INTERVENTION --> COMMITTED: 授权重试对象解析
-    MANUAL_INTERVENTION --> TARGET_RESOLVED: 授权重试通知请求
-    NO_TARGET --> [*]
-    COMPLETED --> [*]
+```plantuml
+@startuml
+state COMMITTED
+state TARGET_RESOLVED
+state NO_TARGET
+state RETRY_WAIT
+state DELIVERY_REQUESTED
+state COMPLETED
+state MANUAL_INTERVENTION
+[*] --> COMMITTED
+COMMITTED --> TARGET_RESOLVED : 找到直属上级
+COMMITTED --> NO_TARGET : 明确无直属上级
+COMMITTED --> RETRY_WAIT : 组织服务暂时失败
+TARGET_RESOLVED --> DELIVERY_REQUESTED : 通知请求已接受
+TARGET_RESOLVED --> RETRY_WAIT : 接受前暂时失败
+DELIVERY_REQUESTED --> COMPLETED : DELIVERED
+DELIVERY_REQUESTED --> MANUAL_INTERVENTION : 永久失败或结果长期未知
+RETRY_WAIT --> COMMITTED : resumeStep=RESOLVE_TARGET
+RETRY_WAIT --> TARGET_RESOLVED : resumeStep=REQUEST_NOTIFICATION
+RETRY_WAIT --> MANUAL_INTERVENTION : 超过重试边界
+MANUAL_INTERVENTION --> COMMITTED : 授权重试对象解析
+MANUAL_INTERVENTION --> TARGET_RESOLVED : 授权重试通知请求
+NO_TARGET --> [*]
+COMPLETED --> [*]
+@enduml
 ```
 
 `EscalationStateMachine.transition(current, signal)` 是唯一状态转换入口。非法转换抛出 `IllegalTransition` 并保留原状态；消费者把它记录为代码缺陷告警，而不是重试外部调用。
@@ -669,30 +678,38 @@ record RecoveryCommand(
 
 运行资源拓扑把方案设计的物理视图细化到同一审批实例内的执行器、连接预算和消息消费关系：
 
-```mermaid
-flowchart TB
-    subgraph PodA["«execution environment» approval-service pod"]
-        HTTP["Ops HTTP worker pool\n恢复/查询"]
-        ScanPool["scan-executor\n4 workers"]
-        RelayPool["outbox-executor\n2 workers"]
-        OrchPool["orchestrator-executor\n64 bulkhead"]
-        ResultPool["delivery-result-consumer\n16 workers"]
-        DbPool["Hikari pool\nshared hard limit"]
-    end
-    Scheduler["«runtime» scheduler"] --> ScanPool
-    Scheduler --> RelayPool
-    Kafka["«runtime» Kafka"] --> OrchPool
-    Kafka --> ResultPool
-    Gateway["«runtime» operations gateway"] --> HTTP
-    ScanPool --> DbPool
-    RelayPool --> DbPool
-    OrchPool --> DbPool
-    ResultPool --> DbPool
-    HTTP --> DbPool
-    DbPool --> PG[("«node» PostgreSQL HA")]
-    RelayPool --> Kafka
-    OrchPool --> Org["«node» organization-service"]
-    OrchPool --> Notify["«node» notification-service"]
+```plantuml
+@startuml
+top to bottom direction
+package "approval-service pod" as PodA {
+    node "Ops HTTP worker pool\n恢复/查询" as HTTP
+    node "scan-executor\n4 workers" as ScanPool
+    node "outbox-executor\n2 workers" as RelayPool
+    node "orchestrator-executor\n64 bulkhead" as OrchPool
+    node "delivery-result-consumer\n16 workers" as ResultPool
+    node "Hikari pool\nshared hard limit" as DbPool
+}
+node "scheduler" as Scheduler
+queue "Kafka" as Kafka
+node "operations gateway" as Gateway
+database "PostgreSQL HA" as PG
+node "organization-service" as Org
+node "notification-service" as Notify
+Scheduler --> ScanPool
+Scheduler --> RelayPool
+Kafka --> OrchPool
+Kafka --> ResultPool
+Gateway --> HTTP
+ScanPool --> DbPool
+RelayPool --> DbPool
+OrchPool --> DbPool
+ResultPool --> DbPool
+HTTP --> DbPool
+DbPool --> PG
+RelayPool --> Kafka
+OrchPool --> Org
+OrchPool --> Notify
+@enduml
 ```
 
 Pod可以水平扩展，正确性依赖数据库唯一约束、租约和Inbox，不依赖实例内单例。图中的Worker数是默认并发上限，不是固定Pod数量；连接池总预算必须覆盖最坏并发但不能把外部调用持有在数据库连接内。
@@ -898,38 +915,39 @@ src/features/escalations
 
 前端组件与数据流：
 
-```mermaid
-flowchart LR
-    Router["«component» React Router"]
-    ListRoute["«component» ListRoute"]
-    DetailRoute["«component» DetailRoute"]
-    URL["«state» URL Search Params"]
-    Queries["«component» escalationQueries"]
-    Cache["«state» Query Cache"]
-    Client["«adapter» escalationClient"]
-    API["«external» Ops API"]
-    ListUI["«component» Filters + Table"]
-    DetailUI["«component» Summary + Timeline"]
-    RecoveryUI["«component» RecoveryPanel + Dialog"]
-    Machine["«state machine» recoveryMachine"]
-    Telemetry["«adapter» telemetry whitelist"]
-
-    Router --> ListRoute
-    Router --> DetailRoute
-    ListRoute <--> URL
-    ListRoute --> Queries
-    DetailRoute --> Queries
-    Queries <--> Cache
-    Queries --> Client
-    Client --> API
-    ListRoute --> ListUI
-    DetailRoute --> DetailUI
-    DetailRoute --> RecoveryUI
-    RecoveryUI --> Machine
-    Machine --> Client
-    Machine --> Queries
-    ListRoute --> Telemetry
-    DetailRoute --> Telemetry
+```plantuml
+@startuml
+left to right direction
+component "React Router" as Router
+component "ListRoute" as ListRoute
+component "DetailRoute" as DetailRoute
+artifact "URL Search Params" as URL <<state>>
+component "escalationQueries" as Queries
+artifact "Query Cache" as Cache <<state>>
+component "escalationClient" as Client <<adapter>>
+component "Ops API" as API <<external>>
+component "Filters + Table" as ListUI
+component "Summary + Timeline" as DetailUI
+component "RecoveryPanel + Dialog" as RecoveryUI
+component "recoveryMachine" as Machine <<state machine>>
+component "telemetry whitelist" as Telemetry <<adapter>>
+Router --> ListRoute
+Router --> DetailRoute
+ListRoute <--> URL
+ListRoute --> Queries
+DetailRoute --> Queries
+Queries <--> Cache
+Queries --> Client
+Client --> API
+ListRoute --> ListUI
+DetailRoute --> DetailUI
+DetailRoute --> RecoveryUI
+RecoveryUI --> Machine
+Machine --> Client
+Machine --> Queries
+ListRoute --> Telemetry
+DetailRoute --> Telemetry
+@enduml
 ```
 
 权威业务状态只沿 `Ops API → Client → Query Cache → Route/Component` 单向进入页面。恢复动作沿 `RecoveryUI → recoveryMachine → Client` 提交，确定结果产生后由状态机使详情Query失效；展示组件不能绕过状态机直接调用API。
@@ -990,23 +1008,32 @@ OpenAPI 生成静态类型；网络边界再使用生成的运行时 Schema 校�
 
 ### 7.5 恢复操作状态机
 
-```mermaid
-stateDiagram-v2
-    [*] --> idle
-    idle --> confirming: 选择允许动作
-    confirming --> submitting: 确认并提交
-    confirming --> idle: 取消
-    submitting --> succeeded: 确定成功
-    submitting --> conflict: 409
-    submitting --> rejected: 403/404/422
-    submitting --> unknown: 超时或5xx且结果不确定
-    conflict --> confirming: 刷新详情并重新确认
-    rejected --> idle: 理解结果
-    unknown --> checking: 查询原actionId
-    checking --> succeeded: 首次操作成功
-    checking --> rejected: 首次操作被拒绝
-    checking --> unknown: 仍无法确定
-    succeeded --> idle: 刷新权威详情
+```plantuml
+@startuml
+state idle
+state confirming
+state submitting
+state succeeded
+state conflict
+state rejected
+state unknown
+state checking
+[*] --> idle
+idle --> confirming : 选择允许动作
+confirming --> submitting : 确认并提交
+confirming --> idle : 取消
+submitting --> succeeded : 确定成功
+submitting --> conflict : 409
+submitting --> rejected : 403/404/422
+submitting --> unknown : 超时或5xx且结果不确定
+conflict --> confirming : 刷新详情并重新确认
+rejected --> idle : 理解结果
+unknown --> checking : 查询原actionId
+checking --> succeeded : 首次操作成功
+checking --> rejected : 首次操作被拒绝
+checking --> unknown : 仍无法确定
+succeeded --> idle : 刷新权威详情
+@enduml
 ```
 
 `actionId` 在进入 `confirming` 时生成，在 `submitting → unknown → checking` 全程保持不变。版本冲突后，旧动作结束；用户基于新详情再次确认时生成新的 `actionId`。

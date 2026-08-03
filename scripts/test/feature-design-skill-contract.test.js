@@ -156,21 +156,21 @@ test('Design Guides contain professional differences and Specs remain independen
   assert.strictEqual(fs.existsSync(path.join(root, 'skills/feature-design/references/stages')), false);
 });
 
-test('all Design Draft contracts require Mermaid for suitable semantic diagrams', () => {
+test('all Design Draft contracts require PlantUML for suitable semantic diagrams', () => {
   for (const slug of ['business-design', 'solution-design', 'implementation-design', 'test-design']) {
     const guide = read(`skills/feature-design/references/design-guides/${slug}.md`);
     const spec = read(`skills/feature-design/references/specs/${slug}.md`);
 
-    assert.match(guide, /降低理解成本.*Mermaid/s, `${slug} Guide should select Mermaid when a diagram helps`);
+    assert.match(guide, /降低理解成本.*PlantUML/s, `${slug} Guide should select PlantUML when a diagram helps`);
     assert.match(guide, /不要求.*图示.*数量/s, `${slug} Guide should not require diagrams or a diagram count`);
-    assert.match(guide, /界面设计.*不适合 Mermaid.*不强制/s, `${slug} Guide should exempt unsuitable UI design`);
+    assert.match(guide, /界面设计.*不适合 PlantUML.*不强制/s, `${slug} Guide should exempt unsuitable UI design`);
     assert.match(guide, /禁止.*ASCII.*语义图/s, `${slug} Guide should prohibit ASCII semantic diagrams`);
     assert.doesNotMatch(guide, /```text[\s\S]*?[→←][\s\S]*?```/, `${slug} Guide should not model relationships with fenced ASCII arrows`);
 
-    assert.match(spec, /语义图.*Mermaid/s, `${slug} Spec should require Mermaid semantic diagrams`);
+    assert.match(spec, /语义图.*PlantUML/s, `${slug} Spec should require PlantUML semantic diagrams`);
     assert.match(spec, /禁止.*ASCII.*语义图/s, `${slug} Spec should prohibit ASCII semantic diagrams`);
     assert.match(spec, /不要求.*图示.*数量/s, `${slug} Spec should not require diagrams or a diagram count`);
-    assert.match(spec, /界面设计.*不适合 Mermaid.*不强制/s, `${slug} Spec should exempt unsuitable UI design`);
+    assert.match(spec, /界面设计.*不适合 PlantUML.*不强制/s, `${slug} Spec should exempt unsuitable UI design`);
     assert.match(spec, /Markdown 表格.*目录树.*代码片段.*不属于.*ASCII.*语义图/s, `${slug} Spec should preserve non-diagram technical text`);
   }
 
@@ -355,7 +355,7 @@ test('solution design reference defines target-state architecture without a seco
     /只写.*采用 Outbox.*不是实现链/s,
     /用户交互与前端设计透镜/,
     /初始、加载、空、成功、校验失败、业务失败、技术失败、部分成功、无权限、数据过期和刷新后的界面状态/,
-    /Mermaid 不用于替代线框图或视觉稿/,
+    /PlantUML 不用于替代线框图或视觉稿/,
     /用户研究、现状观察、支持工单、可用性数据或明确待验证假设/,
     /关键设计至少经过一次.*walkthrough、原型评审或用户可用性验证/s,
     /关键页面同时保留评审快照/,
@@ -463,7 +463,7 @@ test('solution design reference defines target-state architecture without a seco
     /结果未知/,
     /WCAG 2\.2 AA/,
     /UML 组件图语义/,
-    /classDiagram/,
+    /class\s+\w+/,
     /API \| 变更类型 \| 调用方 → 提供方 \| 核心语义 \| 契约配置 \| 下游契约标识/,
     /Implementation Design 必须将.*细化为机器可读 OpenAPI/s,
     /字段 \| 类型\/必填 \| 基本校验 \| 语义/,
@@ -545,9 +545,9 @@ test('implementation design reference is code-ready, unit-neutral, and backed by
   for (const phrase of [
     /功能点到实现点映射/,
     /实现级架构视图索引/,
-    /classDiagram/,
-    /sequenceDiagram/,
-    /stateDiagram-v2/,
+    /class\s+\w+/,
+    /participant\s+/,
+    /state\s+\w+/,
     /运行资源拓扑/,
     /前端组件与数据流/,
     /开发人员无需重新设计/,

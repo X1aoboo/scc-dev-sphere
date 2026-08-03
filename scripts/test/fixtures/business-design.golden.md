@@ -154,26 +154,43 @@ version: "1.0.0"
 
 ### 3.2 端到端目标业务运行
 
-```mermaid
-flowchart TD
-    A["任务创建并固化 SLA 策略版本与截止时间"] --> B["任务等待审批"]
-    B --> C{"截止时间是否到达？"}
-    C -- "否" --> B
-    C -- "是" --> D{"任务仍允许审批？"}
-    D -- "否" --> E["保持既有冻结结果，不形成升级"]
-    D -- "是" --> F{"同一级次是否已有有效升级？"}
-    F -- "是" --> G["返回既有升级结果"]
-    F -- "否" --> H{"违约时点责任关系是否可判定？"}
-    H -- "资料缺失或冲突" --> I["暂不可判定，等待有权人员修正"]
-    H -- "合法地无直属上级" --> J["形成无需继续升级的业务结论"]
-    H -- "存在直属上级" --> K["形成唯一升级结果"]
-    I -->|"资料修正后重新判断"| D
-    K --> L["升级责任生效并产生通知义务"]
-    L --> M{"通知业务结果"}
-    M -- "已送达" --> N["处置完成"]
-    M -- "无需通知" --> N
-    M -- "持续失败或未知" --> O["进入人工处置"]
-    O --> N
+```plantuml
+@startuml
+top to bottom direction
+rectangle "任务创建并固化 SLA 策略版本与截止时间" as A
+rectangle "任务等待审批" as B
+rectangle "截止时间是否到达？" as C
+rectangle "任务仍允许审批？" as D
+rectangle "保持既有冻结结果，不形成升级" as E
+rectangle "同一级次是否已有有效升级？" as F
+rectangle "返回既有升级结果" as G
+rectangle "违约时点责任关系是否可判定？" as H
+rectangle "暂不可判定，等待有权人员修正" as I
+rectangle "形成无需继续升级的业务结论" as J
+rectangle "形成唯一升级结果" as K
+rectangle "升级责任生效并产生通知义务" as L
+rectangle "通知业务结果" as M
+rectangle "处置完成" as N
+rectangle "进入人工处置" as O
+A --> B
+B --> C
+C --> B : 否
+C --> D : 是
+D --> E : 否
+D --> F : 是
+F --> G : 是
+F --> H : 否
+H --> I : 资料缺失或冲突
+H --> J : 合法地无直属上级
+H --> K : 存在直属上级
+I --> D : 资料修正后重新判断
+K --> L
+L --> M
+M --> N : 已送达
+M --> N : 无需通知
+M --> O : 持续失败或未知
+O --> N
+@enduml
 ```
 
 这条业务主线由四个功能点共同完成：
@@ -187,36 +204,54 @@ flowchart TD
 
 下图把用户可见行为、业务判断和支撑责任放在同一条业务链上。它用于确认每一步由谁提供什么业务结果，不规定系统或服务拆分。
 
-```mermaid
-flowchart TB
-    subgraph U["用户行为"]
-        U1["从告警或工作台发现待处置升级"] --> U2["筛选并定位目标"]
-        U2 --> U3["理解发生了什么、谁负责、下一步是什么"]
-        U3 --> U4{"是否需要人工动作？"}
-        U4 -- "否" --> U5["持续观察或结束处置"]
-        U4 -- "是" --> U6["确认允许动作、对象与影响"]
-        U6 --> U7["提交并理解确定、变化或未知结果"]
-    end
-    subgraph V["用户必须获得的业务反馈"]
-        V1["影响租户、业务状态、停滞时长"] --> V2["业务事实与责任时间线"]
-        V2 --> V3["当前责任、下一自动动作、允许动作"]
-        V3 --> V4["成功 / 情况已变化 / 尚未确认结果"]
-    end
-    subgraph B["业务判断与责任"]
-        B1["识别违约候选"] --> B2["建立唯一升级结果"]
-        B2 --> B3["确定违约时点责任人"]
-        B3 --> B4["履行通知义务"]
-        B4 --> B5["自动恢复或授权人工处置"]
-    end
-    U1 -. "需要" .-> V1
-    U3 -. "需要" .-> V2
-    U4 -. "依据" .-> V3
-    U7 -. "接收" .-> V4
-    V1 -. "来自" .-> B1
-    V2 -. "来自" .-> B2
-    V2 -. "来自" .-> B3
-    V3 -. "来自" .-> B4
-    V4 -. "来自" .-> B5
+```plantuml
+@startuml
+top to bottom direction
+package "用户行为" as UserBehavior {
+    rectangle "从告警或工作台发现待处置升级" as U1
+    rectangle "筛选并定位目标" as U2
+    rectangle "理解发生了什么、谁负责、下一步是什么" as U3
+    rectangle "是否需要人工动作？" as U4
+    rectangle "持续观察或结束处置" as U5
+    rectangle "确认允许动作、对象与影响" as U6
+    rectangle "提交并理解确定、变化或未知结果" as U7
+    U1 --> U2
+    U2 --> U3
+    U3 --> U4
+    U4 --> U5 : 否
+    U4 --> U6 : 是
+    U6 --> U7
+}
+package "用户必须获得的业务反馈" as Feedback {
+    rectangle "影响租户、业务状态、停滞时长" as V1
+    rectangle "业务事实与责任时间线" as V2
+    rectangle "当前责任、下一自动动作、允许动作" as V3
+    rectangle "成功 / 情况已变化 / 尚未确认结果" as V4
+    V1 --> V2
+    V2 --> V3
+    V3 --> V4
+}
+package "业务判断与责任" as BusinessResponsibility {
+    rectangle "识别违约候选" as B1
+    rectangle "建立唯一升级结果" as B2
+    rectangle "确定违约时点责任人" as B3
+    rectangle "履行通知义务" as B4
+    rectangle "自动恢复或授权人工处置" as B5
+    B1 --> B2
+    B2 --> B3
+    B3 --> B4
+    B4 --> B5
+}
+U1 ..> V1 : 需要
+U3 ..> V2 : 需要
+U4 ..> V3 : 依据
+U7 ..> V4 : 接收
+V1 ..> B1 : 来自
+V2 ..> B2 : 来自
+V2 ..> B3 : 来自
+V3 ..> B4 : 来自
+V4 ..> B5 : 来自
+@enduml
 ```
 
 蓝图揭示两个必须在本层解决的问题：其一，运营人员不能靠拼接多个技术来源理解业务事实；其二，任何恢复动作都必须在展示当前责任、下一自动行为和可能影响之后发生。具体由哪些页面、接口或组件承载属于下游设计空间。
@@ -252,19 +287,32 @@ flowchart TB
 
 ### 4.2 概念关系
 
-```mermaid
-flowchart LR
-    Tenant["租户"] -->|"拥有"| Task["审批任务"]
-    Task -->|"创建时绑定"| Snapshot["SLA 策略快照"]
-    Snapshot -->|"定义各级"| Deadline["SLA 截止时间"]
-    Deadline -->|"到达且满足条件形成"| Breach["SLA 违约"]
-    Breach -->|"按业务身份判断"| Result["升级结果"]
-    Task -->|"违约时承担处理责任"| Original["原审批责任人"]
-    Original -->|"违约时有效直属上级"| Target["升级责任人"]
-    Result -->|"责任转移给"| Target
-    Result -->|"产生"| Obligation["通知义务"]
-    Obligation -->|"最终形成"| Delivery["通知业务结果"]
-    Operator["授权运营人员"] -->|"仅可处理允许异常"| Result
+```plantuml
+@startuml
+left to right direction
+rectangle "租户" as Tenant
+rectangle "审批任务" as Task
+rectangle "SLA 策略快照" as Snapshot
+rectangle "SLA 截止时间" as Deadline
+rectangle "SLA 违约" as Breach
+rectangle "升级结果" as Result
+rectangle "原审批责任人" as Original
+rectangle "升级责任人" as Target
+rectangle "通知义务" as Obligation
+rectangle "通知业务结果" as Delivery
+rectangle "授权运营人员" as Operator
+Tenant --> Task : 拥有
+Task --> Snapshot : 创建时绑定
+Snapshot --> Deadline : 定义各级
+Deadline --> Breach : 到达且满足条件形成
+Breach --> Result : 按业务身份判断
+Task --> Original : 违约时承担处理责任
+Original --> Target : 违约时有效直属上级
+Result --> Target : 责任转移给
+Result --> Obligation : 产生
+Obligation --> Delivery : 最终形成
+Operator --> Result : 仅可处理允许异常
+@enduml
 ```
 
 关系约束：
@@ -660,19 +708,33 @@ flowchart LR
 
 业务交互主线必须遵守“先定位、再理解、后行动、明确反馈”的顺序：
 
-```mermaid
-flowchart LR
-    A["定位受影响升级"] --> B["理解业务事实与时间线"]
-    B --> C["判断当前责任与下一自动动作"]
-    C --> D{"是否仍需人工处置？"}
-    D -- "否" --> E["持续观察或退出"]
-    D -- "是" --> F["核对对象、动作影响与原因"]
-    F --> G["提交被允许的业务动作"]
-    G --> H{"权威业务结果"}
-    H -- "已生效" --> I["显示新状态与处置凭据"]
-    H -- "情况已变化" --> J["刷新事实并重新判断"]
-    H -- "尚未确认" --> K["保持未确认并核对同一动作"]
-    H -- "不允许" --> L["说明业务原因且不改变结果"]
+```plantuml
+@startuml
+left to right direction
+rectangle "定位受影响升级" as A
+rectangle "理解业务事实与时间线" as B
+rectangle "判断当前责任与下一自动动作" as C
+rectangle "是否仍需人工处置？" as D
+rectangle "持续观察或退出" as E
+rectangle "核对对象、动作影响与原因" as F
+rectangle "提交被允许的业务动作" as G
+rectangle "权威业务结果" as H
+rectangle "显示新状态与处置凭据" as I
+rectangle "刷新事实并重新判断" as J
+rectangle "保持未确认并核对同一动作" as K
+rectangle "说明业务原因且不改变结果" as L
+A --> B
+B --> C
+C --> D
+D --> E : 否
+D --> F : 是
+F --> G
+G --> H
+H --> I : 已生效
+H --> J : 情况已变化
+H --> K : 尚未确认
+H --> L : 不允许
+@enduml
 ```
 
 以下概念线框图是业务设计的评审载体。它们确定用户完成任务所需的信息、判断顺序、动作边界和反馈语义，不确定最终页面数量、导航、控件、像素布局或技术状态模型。
@@ -826,20 +888,27 @@ flowchart LR
 
 ### 8.2 升级结果生命周期
 
-```mermaid
-stateDiagram-v2
-    [*] --> 尚无结果
-    尚无结果 --> 尚未违约: 截止时间未到
-    尚未违约 --> 尚无结果: 时间继续推进
-    尚无结果 --> 终态排除: 冻结终态已生效
-    尚无结果 --> 暂不可判定: 资料缺失或冲突
-    暂不可判定 --> 尚无结果: 资料修正后重新判断
-    暂不可判定 --> 终态排除: 修正前任务已冻结
-    尚无结果 --> 无下一责任人: 合法无直属上级
-    尚无结果 --> 升级成立: 资格和责任判断通过
-    升级成立 --> 升级成立: 后续任务完成或关系变化
-    终态排除 --> [*]
-    无下一责任人 --> [*]
+```plantuml
+@startuml
+state "尚无结果" as NoResult
+state "尚未违约" as NotBreached
+state "终态排除" as Excluded
+state "暂不可判定" as Undetermined
+state "无下一责任人" as NoTarget
+state "升级成立" as Escalated
+[*] --> NoResult
+NoResult --> NotBreached : 截止时间未到
+NotBreached --> NoResult : 时间继续推进
+NoResult --> Excluded : 冻结终态已生效
+NoResult --> Undetermined : 资料缺失或冲突
+Undetermined --> NoResult : 资料修正后重新判断
+Undetermined --> Excluded : 修正前任务已冻结
+NoResult --> NoTarget : 合法无直属上级
+NoResult --> Escalated : 资格和责任判断通过
+Escalated --> Escalated : 后续任务完成或关系变化
+Excluded --> [*]
+NoTarget --> [*]
+@enduml
 ```
 
 状态说明：
@@ -851,19 +920,26 @@ stateDiagram-v2
 
 ### 8.3 通知义务生命周期
 
-```mermaid
-stateDiagram-v2
-    [*] --> 无通知义务
-    无通知义务 --> 处理中: 升级成立且规则要求通知
-    无通知义务 --> 无需通知: 规则明确无需通知
-    处理中 --> 已送达: 取得正式送达结论
-    处理中 --> 人工处置: 超过自动处理边界
-    人工处置 --> 已送达: 恢复后取得送达结论
-    人工处置 --> 核对完成: 根据正式证据完成核对
-    人工处置 --> 无需通知: 经正式规则确认无需通知
-    已送达 --> [*]
-    核对完成 --> [*]
-    无需通知 --> [*]
+```plantuml
+@startuml
+state "无通知义务" as NoObligation
+state "处理中" as Processing
+state "无需通知" as NoNotification
+state "已送达" as Delivered
+state "人工处置" as Manual
+state "核对完成" as Verified
+[*] --> NoObligation
+NoObligation --> Processing : 升级成立且规则要求通知
+NoObligation --> NoNotification : 规则明确无需通知
+Processing --> Delivered : 取得正式送达结论
+Processing --> Manual : 超过自动处理边界
+Manual --> Delivered : 恢复后取得送达结论
+Manual --> Verified : 根据正式证据完成核对
+Manual --> NoNotification : 经正式规则确认无需通知
+Delivered --> [*]
+Verified --> [*]
+NoNotification --> [*]
+@enduml
 ```
 
 通知义务的任何状态变化都不改变升级结果生命周期。

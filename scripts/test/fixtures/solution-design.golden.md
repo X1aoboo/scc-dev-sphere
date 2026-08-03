@@ -76,14 +76,20 @@ version: "1.0.0"
 
 FP-01 可以重复产生同一任务的候选请求。FP-02 是升级是否成立的唯一判定点，只有它成功提交后才能进入 FP-03。FP-03 负责外部副作用，不得反向修改升级是否成立。FP-04 观察前三个功能点产生的状态和事件，只能恢复既有升级处理，不能绕过 FP-02 创建新的升级事实。
 
-```mermaid
-flowchart LR
-    FP1["FP-01 识别候选"] -->|"候选请求，可重复"| FP2["FP-02 创建唯一升级事实"]
-    FP2 -->|"EscalationCommitted"| FP3["FP-03 解析对象并请求通知"]
-    FP1 -.->|"扫描停滞"| FP4["FP-04 监控与恢复"]
-    FP2 -.->|"Outbox 停滞"| FP4
-    FP3 -.->|"解析、通知或回执停滞"| FP4
-    FP4 -->|"恢复既有处理"| FP3
+```plantuml
+@startuml
+left to right direction
+rectangle "FP-01 识别候选" as FP1
+rectangle "FP-02 创建唯一升级事实" as FP2
+rectangle "FP-03 解析对象并请求通知" as FP3
+rectangle "FP-04 监控与恢复" as FP4
+FP1 --> FP2 : 候选请求，可重复
+FP2 --> FP3 : EscalationCommitted
+FP1 ..> FP4 : 扫描停滞
+FP2 ..> FP4 : Outbox 停滞
+FP3 ..> FP4 : 解析、通知或回执停滞
+FP4 --> FP3 : 恢复既有处理
+@enduml
 ```
 
 ### 2.4 设计约束与前提
@@ -129,12 +135,20 @@ flowchart LR
 
 当前态关系如下：
 
-```mermaid
-flowchart LR
-    Scanner["现有 SLA 扫描器"] -->|"查询并写 timedOut"| ApprovalDB[("审批数据库")]
-    Operator["人工操作"] -->|"按需触发"| Approval["审批服务"]
-    Approval -->|"同步查询当前上级"| Org["组织服务"]
-    Approval -->|"普通通知请求"| Notify["通知服务"]
+```plantuml
+@startuml
+left to right direction
+component "现有 SLA 扫描器" as Scanner
+database "审批数据库" as ApprovalDB
+actor "人工操作" as Operator
+component "审批服务" as Approval
+component "组织服务" as Org
+component "通知服务" as Notify
+Scanner --> ApprovalDB : 查询并写 timedOut
+Operator --> Approval : 按需触发
+Approval --> Org : 同步查询当前上级
+Approval --> Notify : 普通通知请求
+@enduml
 ```
 
 ### 3.3 影响范围
@@ -163,32 +177,38 @@ flowchart LR
 
 #### 4.1.1 目标态架构
 
-```mermaid
-flowchart LR
-    subgraph ApprovalBoundary["审批服务边界"]
-        Scanner["SLA Candidate Scanner"]
-        Command["Escalation Command Handler"]
-        Orchestrator["Escalation Orchestrator"]
-        Relay["Outbox Relay"]
-        Reconciler["Escalation Reconciler"]
-        OpsAPI["Escalation Query / Recovery API"]
-        ApprovalDB[("Approval DB")]
-        Scanner --> Command
-        Command --> ApprovalDB
-        Relay --> ApprovalDB
-        Orchestrator --> ApprovalDB
-        Reconciler --> ApprovalDB
-        OpsAPI --> ApprovalDB
-    end
-
-    Relay -->|"approval.escalation.committed.v1"| Bus[["事件总线"]]
-    Bus --> Orchestrator
-    Orchestrator -->|"按 breachedAt 查询直属上级"| Org["组织服务"]
-    Orchestrator -->|"幂等通知请求"| Notify["通知服务"]
-    Notify -->|"notification.delivery.result.v1"| Bus
-    Bus --> Orchestrator
-    SRE["SRE / 授权运维人员"] --> OpsWeb["升级处置工作台"]
-    OpsWeb -->|"查询与恢复命令"| OpsAPI
+```plantuml
+@startuml
+left to right direction
+package "审批服务边界" as ApprovalBoundary {
+    component "SLA Candidate Scanner" as Scanner
+    component "Escalation Command Handler" as Command
+    component "Escalation Orchestrator" as Orchestrator
+    component "Outbox Relay" as Relay
+    component "Escalation Reconciler" as Reconciler
+    component "Escalation Query / Recovery API" as OpsAPI
+    database "Approval DB" as ApprovalDB
+    Scanner --> Command
+    Command --> ApprovalDB
+    Relay --> ApprovalDB
+    Orchestrator --> ApprovalDB
+    Reconciler --> ApprovalDB
+    OpsAPI --> ApprovalDB
+}
+queue "事件总线" as Bus
+component "组织服务" as Org
+component "通知服务" as Notify
+actor "SRE / 授权运维人员" as SRE
+component "升级处置工作台" as OpsWeb
+Relay --> Bus : approval.escalation.committed.v1
+Bus --> Orchestrator
+Orchestrator --> Org : 按 breachedAt 查询直属上级
+Orchestrator --> Notify : 幂等通知请求
+Notify --> Bus : notification.delivery.result.v1
+Bus --> Orchestrator
+SRE --> OpsWeb
+OpsWeb --> OpsAPI : 查询与恢复命令
+@enduml
 ```
 
 #### 4.1.2 组件职责
@@ -240,94 +260,94 @@ flowchart LR
 
 **软件组件视图**
 
-下图采用 UML 组件图语义，以 Mermaid 可渲染形式表达组件、端口和依赖方向。它回答“哪些软件组件共同实现特性”，不展开类和物理部署。
+下图采用 UML 组件图语义，以 PlantUML 可渲染形式表达组件、端口和依赖方向。它回答“哪些软件组件共同实现特性”，不展开类和物理部署。
 
-```mermaid
-flowchart TB
-    subgraph Approval["«component» approval-service"]
-        Scanner["«component» SLA Candidate Scanner"]
-        Command["«component» Escalation Command"]
-        Domain["«component» Escalation Domain"]
-        Relay["«component» Outbox Relay"]
-        Orchestrator["«component» Escalation Orchestrator"]
-        Reconciler["«component» Reconciler"]
-        OpsAPI["«component» Query / Recovery API"]
-    end
-
-    Web["«component» approval-ops-web"]
-    Contracts["«component» service-contracts"]
-    Org["«component» organization-service"]
-    Notify["«component» notification-service"]
-    Bus["«component» event-platform"]
-    DB[("«database» approval-db")]
-
-    Scanner -->|"candidate command"| Command
-    Command --> Domain
-    Command --> DB
-    Domain -->|"domain event"| Relay
-    Relay --> Bus
-    Bus --> Orchestrator
-    Orchestrator --> Domain
-    Orchestrator --> Org
-    Orchestrator --> Notify
-    Reconciler --> Domain
-    OpsAPI --> Domain
-    Web --> OpsAPI
-    Approval -. "implements schemas" .-> Contracts
-    Web -. "uses Ops API schema" .-> Contracts
-    Notify -. "implements schemas" .-> Contracts
+```plantuml
+@startuml
+top to bottom direction
+package "approval-service" as Approval {
+    component "SLA Candidate Scanner" as Scanner
+    component "Escalation Command" as Command
+    component "Escalation Domain" as Domain
+    component "Outbox Relay" as Relay
+    component "Escalation Orchestrator" as Orchestrator
+    component "Reconciler" as Reconciler
+    component "Query / Recovery API" as OpsAPI
+}
+component "approval-ops-web" as Web
+component "service-contracts" as Contracts
+component "organization-service" as Org
+component "notification-service" as Notify
+component "event-platform" as Bus
+database "approval-db" as DB
+Scanner --> Command : candidate command
+Command --> Domain
+Command --> DB
+Domain --> Relay : domain event
+Relay --> Bus
+Bus --> Orchestrator
+Orchestrator --> Domain
+Orchestrator --> Org
+Orchestrator --> Notify
+Reconciler --> Domain
+OpsAPI --> Domain
+Web --> OpsAPI
+Approval ..> Contracts : implements schemas
+Web ..> Contracts : uses Ops API schema
+Notify ..> Contracts : implements schemas
+@enduml
 ```
 
 组件依赖必须从入口和基础设施指向应用/领域能力；`Escalation Domain` 不依赖组织、通知、消息或页面实现。`service-contracts` 只稳定跨边界契约，不成为共享业务逻辑库。
 
 **核心领域类图**
 
-```mermaid
-classDiagram
-    class ApprovalTask {
-        +TaskId taskId
-        +TaskState state
-        +long version
-        +SlaSnapshot slaSnapshot
-        +evaluateCandidate()
-    }
-    class ApprovalEscalation {
-        +EscalationId escalationId
-        +EscalationBusinessKey businessKey
-        +ProcessingState state
-        +long processingVersion
-        +transition(signal)
-    }
-    class EscalationBusinessKey {
-        +TenantId tenantId
-        +TaskId taskId
-        +SlaPolicyVersion policyVersion
-        +Instant deadlineAt
-        +EscalationLevel level
-    }
-    class EscalationAttempt {
-        +AttemptId attemptId
-        +ProcessingStep step
-        +ResultCategory result
-        +Instant occurredAt
-    }
-    class DomainEvent {
-        +EventId eventId
-        +EventType type
-        +Instant occurredAt
-    }
-    class AuditRecord {
-        +AuditId auditId
-        +Actor actor
-        +State before
-        +State after
-    }
-
-    ApprovalTask "1" --> "0..*" ApprovalEscalation : produces
-    ApprovalEscalation *-- EscalationBusinessKey
-    ApprovalEscalation "1" *-- "0..*" EscalationAttempt
-    ApprovalEscalation "1" --> "0..*" DomainEvent : emits
-    ApprovalEscalation "1" --> "1..*" AuditRecord : appends
+```plantuml
+@startuml
+class ApprovalTask {
+    +TaskId taskId
+    +TaskState state
+    +long version
+    +SlaSnapshot slaSnapshot
+    +evaluateCandidate()
+}
+class ApprovalEscalation {
+    +EscalationId escalationId
+    +EscalationBusinessKey businessKey
+    +ProcessingState state
+    +long processingVersion
+    +transition(signal)
+}
+class EscalationBusinessKey {
+    +TenantId tenantId
+    +TaskId taskId
+    +SlaPolicyVersion policyVersion
+    +Instant deadlineAt
+    +EscalationLevel level
+}
+class EscalationAttempt {
+    +AttemptId attemptId
+    +ProcessingStep step
+    +ResultCategory result
+    +Instant occurredAt
+}
+class DomainEvent {
+    +EventId eventId
+    +EventType type
+    +Instant occurredAt
+}
+class AuditRecord {
+    +AuditId auditId
+    +Actor actor
+    +State before
+    +State after
+}
+ApprovalTask "1" --> "0..*" ApprovalEscalation : produces
+ApprovalEscalation *-- EscalationBusinessKey
+ApprovalEscalation "1" *-- "0..*" EscalationAttempt
+ApprovalEscalation "1" --> "0..*" DomainEvent : emits
+ApprovalEscalation "1" --> "1..*" AuditRecord : appends
+@enduml
 ```
 
 `ApprovalTask` 保存任务状态、当前处理人、SLA 快照和当前升级级别。`ApprovalEscalation` 表示一次已经成立的业务升级，并独立记录后续通知处理状态。升级状态不能反向决定任务是否完成；任务完成也不能删除升级历史。
@@ -354,23 +374,24 @@ classDiagram
 | `notification-service` | SLA 通知模板适配、幂等请求处理、交付结果事件发布 | 渠道适配层依赖通知领域，不反向依赖审批模型 |
 | `service-contracts` | 升级事件、通知结果事件和组织查询契约 | 只包含稳定跨服务契约，不包含服务内部实体 |
 
-```mermaid
-flowchart LR
-    Web["«build unit» approval-ops-web"]
-    Approval["«build unit» approval-service"]
-    Notify["«build unit» notification-service"]
-    Contracts["«library» service-contracts"]
-    DesignSystem["«library» operations-design-system"]
-    Platform["«platform API» event / organization"]
-
-    Web --> Contracts
-    Web --> DesignSystem
-    Approval --> Contracts
-    Notify --> Contracts
-    Approval --> Platform
-    Notify --> Platform
-    Approval -. "forbidden" .-> Web
-    Contracts -. "must not depend on" .-> Approval
+```plantuml
+@startuml
+left to right direction
+component "approval-ops-web" as Web <<build unit>>
+component "approval-service" as Approval <<build unit>>
+component "notification-service" as Notify <<build unit>>
+component "service-contracts" as Contracts <<library>>
+component "operations-design-system" as DesignSystem <<library>>
+component "event / organization" as Platform <<platform API>>
+Web --> Contracts
+Web --> DesignSystem
+Approval --> Contracts
+Notify --> Contracts
+Approval --> Platform
+Notify --> Platform
+Approval ..> Web : forbidden
+Contracts ..> Approval : must not depend on
+@enduml
 ```
 
 虚线 `forbidden` 表示禁止依赖，不表示运行调用。Implementation Design 必须把这些构建单元继续映射为包、模块、核心类和生成物，并证明没有形成反向依赖。
@@ -379,34 +400,44 @@ Implementation Design 可以调整服务内部模块命名，但不得合并升�
 
 #### 4.2.5 物理视图
 
-```mermaid
-flowchart TB
-    subgraph ZoneA["可用区 A"]
-        APPA["审批服务实例组"]
-        NFA["通知服务实例组"]
-    end
-    subgraph ZoneB["可用区 B"]
-        APPB["审批服务实例组"]
-        NFB["通知服务实例组"]
-    end
-    Browser["授权人员桌面浏览器"] -->|"请求静态资源"| CDN["内部静态资源/CDN"]
-    CDN -->|"版本化 JS/CSS"| Browser
-    Browser -->|"HTTPS 查询/恢复"| Gateway["内部运维网关"]
-    Gateway --> LB["内部服务入口"]
-    LB --> APPA
-    LB --> APPB
-    APPA --> DB[("审批数据库主备集群")]
-    APPB --> DB
-    APPA --> MQ[["跨可用区消息集群"]]
-    APPB --> MQ
-    MQ --> APPA
-    MQ --> APPB
-    APPA --> ORG["组织服务"]
-    APPB --> ORG
-    APPA --> NLB["通知服务入口"]
-    APPB --> NLB
-    NLB --> NFA
-    NLB --> NFB
+```plantuml
+@startuml
+top to bottom direction
+package "可用区 A" as ZoneA {
+    node "审批服务实例组" as APPA
+    node "通知服务实例组" as NFA
+}
+package "可用区 B" as ZoneB {
+    node "审批服务实例组" as APPB
+    node "通知服务实例组" as NFB
+}
+actor "授权人员桌面浏览器" as Browser
+cloud "内部静态资源/CDN" as CDN
+node "内部运维网关" as Gateway
+node "内部服务入口" as LB
+database "审批数据库主备集群" as DB
+queue "跨可用区消息集群" as MQ
+component "组织服务" as ORG
+node "通知服务入口" as NLB
+Browser --> CDN : 请求静态资源
+CDN --> Browser : 版本化 JS/CSS
+Browser --> Gateway : HTTPS 查询/恢复
+Gateway --> LB
+LB --> APPA
+LB --> APPB
+APPA --> DB
+APPB --> DB
+APPA --> MQ
+APPB --> MQ
+MQ --> APPA
+MQ --> APPB
+APPA --> ORG
+APPB --> ORG
+APPA --> NLB
+APPB --> NLB
+NLB --> NFA
+NLB --> NFB
+@enduml
 ```
 
 扫描、Relay 和编排器与审批服务共同部署，但使用独立线程池、连接池预算和并发配额。处置工作台作为既有内部运维门户的独立前端构建单元发布到内部静态资源平台，通过运维网关访问 Ops API，不获得数据库或服务网络直连。任一可用区失效时，另一可用区可以继续扫描、消费和提供运维查询；业务正确性不依赖实例或浏览器本地状态。数据库和消息集群沿用既有跨可用区高可用能力。
@@ -520,20 +551,21 @@ Command Handler 在一个本地数据库事务内执行：
 | 相邻两个升级级别同时提交 | 任务版本和“只能提交下一应升级级别”规则 | 低级先提交；高级请求最初返回 `LEVEL_NOT_READY`，低级提交后由后续扫描重新判断高级是否到期 |
 | 数据库提交结果对调用方未知 | 业务唯一键重新查询 | 重试返回已提交结果，不创建第二条记录 |
 
-```mermaid
-sequenceDiagram
-    participant S as Scanner
-    participant C as Command Handler
-    participant D as Approval DB
-    participant R as Outbox Relay
-    S->>C: EvaluateEscalationCandidate
-    C->>D: BEGIN；读取任务最新状态
-    C->>D: 插入唯一升级记录
-    C->>D: 条件更新任务版本与升级级别
-    C->>D: 写审计与 Outbox
-    C->>D: COMMIT
-    C-->>S: COMMITTED / ALREADY_COMMITTED
-    R->>D: 领取并发布 Outbox
+```plantuml
+@startuml
+participant "Scanner" as S
+participant "Command Handler" as C
+database "Approval DB" as D
+participant "Outbox Relay" as R
+S -> C : EvaluateEscalationCandidate
+C -> D : BEGIN；读取任务最新状态
+C -> D : 插入唯一升级记录
+C -> D : 条件更新任务版本与升级级别
+C -> D : 写审计与 Outbox
+C -> D : COMMIT
+C --> S : COMMITTED / ALREADY_COMMITTED
+R -> D : 领取并发布 Outbox
+@enduml
 ```
 
 ##### 设计影响、约束与风险
@@ -617,47 +649,55 @@ sla-escalation/{tenantId}/{escalationId}/{managerId}/primary
 
 完整正常时序如下：
 
-```mermaid
-sequenceDiagram
-    participant B as 事件总线
-    participant O as Escalation Orchestrator
-    participant D as Approval DB
-    participant G as 组织服务
-    participant N as 通知服务
-
-    B->>O: EscalationCommitted(eventId)
-    O->>D: Inbox 去重并领取租约
-    O->>G: ResolveManager(employeeId, breachedAt)
-    G-->>O: managerId + relationshipVersion
-    O->>D: 保存对象并进入 TARGET_RESOLVED
-    O->>N: SendNotification(idempotencyKey)
-    N-->>O: ACCEPTED(notificationId)
-    O->>D: 进入 DELIVERY_REQUESTED
-    N->>B: NotificationDeliveryResult
-    B->>O: DELIVERED(deliveryVersion)
-    O->>D: 进入 COMPLETED 并追加审计
+```plantuml
+@startuml
+participant "事件总线" as B
+participant "Escalation Orchestrator" as O
+database "Approval DB" as D
+participant "组织服务" as G
+participant "通知服务" as N
+B -> O : EscalationCommitted(eventId)
+O -> D : Inbox 去重并领取租约
+O -> G : ResolveManager(employeeId, breachedAt)
+G --> O : managerId + relationshipVersion
+O -> D : 保存对象并进入 TARGET_RESOLVED
+O -> N : SendNotification(idempotencyKey)
+N --> O : ACCEPTED(notificationId)
+O -> D : 进入 DELIVERY_REQUESTED
+N -> B : NotificationDeliveryResult
+B -> O : DELIVERED(deliveryVersion)
+O -> D : 进入 COMPLETED 并追加审计
+@enduml
 ```
 
 升级处理状态机如下：
 
-```mermaid
-stateDiagram-v2
-    [*] --> COMMITTED
-    COMMITTED --> TARGET_RESOLVED: 找到合法直属上级
-    COMMITTED --> NO_TARGET: 明确无直属上级
-    COMMITTED --> RETRY_WAIT: 组织查询暂时失败
-    TARGET_RESOLVED --> DELIVERY_REQUESTED: 通知请求已接受
-    TARGET_RESOLVED --> RETRY_WAIT: 通知请求暂时失败
-    DELIVERY_REQUESTED --> COMPLETED: 收到送达结果
-    DELIVERY_REQUESTED --> MANUAL_INTERVENTION: 永久失败或超过结果等待期限
-    RETRY_WAIT --> COMMITTED: 恢复组织查询
-    RETRY_WAIT --> TARGET_RESOLVED: 恢复通知请求
-    RETRY_WAIT --> MANUAL_INTERVENTION: 超过自动恢复边界
-    MANUAL_INTERVENTION --> COMMITTED: 授权人员重试组织查询
-    MANUAL_INTERVENTION --> TARGET_RESOLVED: 授权人员重试通知请求
-    MANUAL_INTERVENTION --> COMPLETED: 对账或迟到送达结果已验证
-    NO_TARGET --> [*]
-    COMPLETED --> [*]
+```plantuml
+@startuml
+state COMMITTED
+state TARGET_RESOLVED
+state NO_TARGET
+state RETRY_WAIT
+state DELIVERY_REQUESTED
+state COMPLETED
+state MANUAL_INTERVENTION
+[*] --> COMMITTED
+COMMITTED --> TARGET_RESOLVED : 找到合法直属上级
+COMMITTED --> NO_TARGET : 明确无直属上级
+COMMITTED --> RETRY_WAIT : 组织查询暂时失败
+TARGET_RESOLVED --> DELIVERY_REQUESTED : 通知请求已接受
+TARGET_RESOLVED --> RETRY_WAIT : 通知请求暂时失败
+DELIVERY_REQUESTED --> COMPLETED : 收到送达结果
+DELIVERY_REQUESTED --> MANUAL_INTERVENTION : 永久失败或超过结果等待期限
+RETRY_WAIT --> COMMITTED : 恢复组织查询
+RETRY_WAIT --> TARGET_RESOLVED : 恢复通知请求
+RETRY_WAIT --> MANUAL_INTERVENTION : 超过自动恢复边界
+MANUAL_INTERVENTION --> COMMITTED : 授权人员重试组织查询
+MANUAL_INTERVENTION --> TARGET_RESOLVED : 授权人员重试通知请求
+MANUAL_INTERVENTION --> COMPLETED : 对账或迟到送达结果已验证
+NO_TARGET --> [*]
+COMPLETED --> [*]
+@enduml
 ```
 
 `RETRY_WAIT` 同时保存 `resumeStep`，确保恢复到失败前的确定步骤，而不是重新创建升级事实。
@@ -724,19 +764,33 @@ Reconciler 每分钟检查以下对象：
 
 用户旅程如下：
 
-```mermaid
-flowchart TD
-    Entry["从内部运维门户进入"] --> List["查看升级列表"]
-    List --> Filter["按状态、时间和脱敏任务编号筛选"]
-    Filter --> Detail["打开升级详情"]
-    Detail --> Inspect["检查业务事实、时间线、尝试和允许操作"]
-    Inspect -->|"无需人工动作"| Exit["返回列表或复制受控诊断链接"]
-    Inspect -->|"选择恢复动作"| Confirm["二次确认并填写原因"]
-    Confirm --> Submit["提交 actionId + expectedVersion"]
-    Submit -->|"成功"| Refresh["刷新详情并展示审计编号"]
-    Submit -->|"版本冲突"| Stale["提示状态已变化，刷新详情和允许操作"]
-    Submit -->|"结果未知"| Unknown["保持未确认，使用同一 actionId 查询或重试"]
-    Submit -->|"无权限/规则拒绝"| Rejected["保留上下文并解释不可执行原因"]
+```plantuml
+@startuml
+top to bottom direction
+rectangle "从内部运维门户进入" as Entry
+rectangle "查看升级列表" as List
+rectangle "按状态、时间和脱敏任务编号筛选" as Filter
+rectangle "打开升级详情" as Detail
+rectangle "检查业务事实、时间线、尝试和允许操作" as Inspect
+rectangle "返回列表或复制受控诊断链接" as Exit
+rectangle "二次确认并填写原因" as Confirm
+rectangle "提交 actionId + expectedVersion" as Submit
+rectangle "刷新详情并展示审计编号" as Refresh
+rectangle "提示状态已变化，刷新详情和允许操作" as Stale
+rectangle "保持未确认，使用同一 actionId 查询或重试" as Unknown
+rectangle "保留上下文并解释不可执行原因" as Rejected
+Entry --> List
+List --> Filter
+Filter --> Detail
+Detail --> Inspect
+Inspect --> Exit : 无需人工动作
+Inspect --> Confirm : 选择恢复动作
+Confirm --> Submit
+Submit --> Refresh : 成功
+Submit --> Stale : 版本冲突
+Submit --> Unknown : 结果未知
+Submit --> Rejected : 无权限/规则拒绝
+@enduml
 ```
 
 **关键页面线框图**
@@ -947,62 +1001,65 @@ flowchart TD
 
 ### 6.1 逻辑数据模型
 
-```mermaid
-erDiagram
-    APPROVAL_TASK ||--o{ APPROVAL_ASSIGNMENT_HISTORY : "记录处理人变化"
-    APPROVAL_TASK ||--|{ TASK_SLA_LEVEL_SNAPSHOT : "固化各级 SLA"
-    APPROVAL_TASK ||--o{ APPROVAL_ESCALATION : "产生"
-    APPROVAL_ESCALATION ||--o{ ESCALATION_ATTEMPT : "记录外部交互"
-    APPROVAL_ESCALATION ||--o{ AUDIT_RECORD : "追加审计"
-    APPROVAL_ESCALATION ||--o{ OUTBOX_EVENT : "产生事件"
-    APPROVAL_ESCALATION ||--o{ INBOX_EVENT : "消费事件"
-
-    APPROVAL_TASK {
-        string tenantId
-        string taskId
-        string state
-        long version
-        string assigneeId
-        int currentEscalationLevel
-        int nextEscalationLevel
-        datetime nextSlaDeadlineAt
-    }
-    APPROVAL_ASSIGNMENT_HISTORY {
-        string tenantId
-        string taskId
-        string assigneeId
-        datetime effectiveFrom
-        datetime effectiveTo
-    }
-    TASK_SLA_LEVEL_SNAPSHOT {
-        string tenantId
-        string taskId
-        string slaPolicyVersion
-        int escalationLevel
-        datetime slaDeadlineAt
-    }
-    APPROVAL_ESCALATION {
-        string tenantId
-        string escalationId
-        string taskId
-        string businessKey
-        string processingState
-        long version
-        datetime breachedAt
-        string targetId
-        string notificationId
-        datetime nextAttemptAt
-        string resumeStep
-    }
-    ESCALATION_ATTEMPT {
-        string attemptId
-        string escalationId
-        string step
-        int sequence
-        string resultCategory
-        datetime startedAt
-        datetime finishedAt
-    }
+```plantuml
+@startuml
+entity APPROVAL_TASK {
+    tenantId : string
+    taskId : string
+    state : string
+    version : long
+    assigneeId : string
+    currentEscalationLevel : int
+    nextEscalationLevel : int
+    nextSlaDeadlineAt : datetime
+}
+entity APPROVAL_ASSIGNMENT_HISTORY {
+    tenantId : string
+    taskId : string
+    assigneeId : string
+    effectiveFrom : datetime
+    effectiveTo : datetime
+}
+entity TASK_SLA_LEVEL_SNAPSHOT {
+    tenantId : string
+    taskId : string
+    slaPolicyVersion : string
+    escalationLevel : int
+    slaDeadlineAt : datetime
+}
+entity APPROVAL_ESCALATION {
+    tenantId : string
+    escalationId : string
+    taskId : string
+    businessKey : string
+    processingState : string
+    version : long
+    breachedAt : datetime
+    targetId : string
+    notificationId : string
+    nextAttemptAt : datetime
+    resumeStep : string
+}
+entity ESCALATION_ATTEMPT {
+    attemptId : string
+    escalationId : string
+    step : string
+    sequence : int
+    resultCategory : string
+    startedAt : datetime
+    finishedAt : datetime
+}
+entity AUDIT_RECORD
+entity OUTBOX_EVENT
+entity INBOX_EVENT
+APPROVAL_TASK ||--o{ APPROVAL_ASSIGNMENT_HISTORY : 记录处理人变化
+APPROVAL_TASK ||--|{ TASK_SLA_LEVEL_SNAPSHOT : 固化各级 SLA
+APPROVAL_TASK ||--o{ APPROVAL_ESCALATION : 产生
+APPROVAL_ESCALATION ||--o{ ESCALATION_ATTEMPT : 记录外部交互
+APPROVAL_ESCALATION ||--o{ AUDIT_RECORD : 追加审计
+APPROVAL_ESCALATION ||--o{ OUTBOX_EVENT : 产生事件
+APPROVAL_ESCALATION ||--o{ INBOX_EVENT : 消费事件
+@enduml
 ```
 
 ### 6.2 所有权和不变量
@@ -1116,25 +1173,29 @@ erDiagram
 
 ### 8.1 资产与信任边界
 
-```mermaid
-flowchart LR
-    subgraph ApprovalTrust["审批服务信任边界"]
-        A["升级编排器"]
-        D[("审批与升级数据")]
-        O["运维恢复接口"]
-    end
-    subgraph OrgTrust["组织服务信任边界"]
-        G["历史关系查询"]
-    end
-    subgraph NotifyTrust["通知服务信任边界"]
-        N["通知请求与投递"]
-    end
-    U["授权运维人员"] --> W["处置工作台 / 浏览器边界"]
-    W -->|"强认证、CSRF 防护、租户授权"| O
-    A -->|"服务身份、tenantId、effectiveAt"| G
-    A -->|"服务身份、幂等键、最小通知数据"| N
-    A --> D
-    O --> D
+```plantuml
+@startuml
+left to right direction
+package "审批服务信任边界" as ApprovalTrust {
+    component "升级编排器" as A
+    database "审批与升级数据" as D
+    component "运维恢复接口" as O
+}
+package "组织服务信任边界" as OrgTrust {
+    component "历史关系查询" as G
+}
+package "通知服务信任边界" as NotifyTrust {
+    component "通知请求与投递" as N
+}
+actor "授权运维人员" as U
+component "处置工作台 / 浏览器边界" as W
+U --> W
+W --> O : 强认证、CSRF 防护、租户授权
+A --> G : 服务身份、tenantId、effectiveAt
+A --> N : 服务身份、幂等键、最小通知数据
+A --> D
+O --> D
+@enduml
 ```
 
 受保护资产包括审批任务存在性、处理人标识、组织关系、升级状态、通知目标、审计记录、运维会话和人工恢复能力。浏览器及其本地存储不属于业务权威边界，前端展示和 `allowedActions` 不能替代服务端授权。
