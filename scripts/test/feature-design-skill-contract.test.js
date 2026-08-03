@@ -81,7 +81,7 @@ test('feature-design progressively loads one Design Guide and Spec without stage
 test('feature-design delegates one centralized review and leaves top-level state to workflow', () => {
   const skill = read('skills/feature-design/SKILL.md');
   const task4 = skill.match(/## (?:步骤)?4\. 集中 Review 并修订([\s\S]*?)## (?:步骤)?5\./)[1];
-  assert.match(task4, /fresh `design-reviewer` Agent.*不恢复或持久化旧 Reviewer/s);
+  assert.match(task4, /创建 `design-reviewer` Agent.*当前冻结的 Design Draft/s);
   assert.match(task4, /只传入 `<taskPath>`.*`<designType>`.*Review brief/s);
   assert.doesNotMatch(task4, /design review-context/);
   assert.match(task4, /brief.*本轮编号与目标.*修改内容及位置.*明确未修改范围.*用户选择继续解决的 advisory\/risk/s);
