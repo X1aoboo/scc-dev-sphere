@@ -60,9 +60,14 @@ function readConfig(workspaceRoot) {
   return JSON.parse(JSON.stringify(merged));
 }
 
+const FORBIDDEN_KEY_SEGMENTS = new Set(['__proto__', 'constructor', 'prototype']);
+
 function setConfig(workspaceRoot, key, value) {
   const parts = String(key).split('.');
-  if (parts.length === 0 || parts.some(part => !part.trim())) {
+  if (parts.some(part => !part.trim())) {
+    throw new Error(`Invalid config key: ${key}`);
+  }
+  if (parts.some(part => FORBIDDEN_KEY_SEGMENTS.has(part))) {
     throw new Error(`Invalid config key: ${key}`);
   }
   const config = readConfig(workspaceRoot);

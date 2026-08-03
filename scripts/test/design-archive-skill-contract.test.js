@@ -116,8 +116,8 @@ test('HELP exposes archive domain', () => {
   assert.match(HELP, /archive\s+list-tasks/);
 });
 
-function makeTaskWithDesigns() {
-  const created = makeTask();
+function makeTaskWithDesigns(taskId) {
+  const created = makeTask(taskId === undefined ? {} : { taskId });
   writeArtifact(created.taskPath, 'business-design', '1.0.0', '# Business');
   writeArtifact(created.taskPath, 'solution-design', '1.0.0', '# Solution');
   const assetsDir = path.join(created.taskPath, 'artifacts', 'business-design-assets', 'ucd');
@@ -183,6 +183,57 @@ test('archive run rejects symlinks in source', () => {
   const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
   fs.symlinkSync('/etc/hosts', path.join(taskPath, 'artifacts', 'evil.md'));
   assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /symbolic link/i);
+});
+
+test('archive run rejects path-traversal version before creating a layer', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const archiveRoot = path.join(workspaceRoot, 'release');
+  const escapedDest = path.join(workspaceRoot, 'escape', taskId);
+  assert.throws(() => runArchive(workspaceRoot, taskId, '../escape', archiveRoot), /Invalid version/);
+  assert.strictEqual(fs.existsSync(escapedDest), false);
+});
+
+test('archive run rejects version containing a path separator', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1/x', undefined), /Invalid version/);
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1\\x', undefined), /Invalid version/);
+});
+
+test('archive run rejects path-traversal taskId before any write', () => {
+  const { workspaceRoot } = makeTaskWithDesigns();
+  assert.throws(() => runArchive(workspaceRoot, '../FEAT-X', 'v1', undefined), /Invalid taskId/);
+  assert.strictEqual(
+    fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1', '..')),
+    false,
+  );
+});
+
+test('config set rejects prototype-polluting keys and does not pollute global prototype', () => {
+  const root = makeWorkspace();
+  assert.throws(() => setConfig(root, 'archive.__proto__.polluted', 'v'), /Invalid config key/);
+  assert.throws(() => setConfig(root, 'constructor.foo', 'v'), /Invalid config key/);
+  assert.throws(() => setConfig(root, 'prototype.bar', 'v'), /Invalid config key/);
+  assert.strictEqual(Object.prototype.polluted, undefined);
+});
+
+test('archive run rejects nested symlink before creating a layer', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  fs.symlinkSync('/etc/hosts', path.join(taskPath, 'artifacts', 'business-design-assets', 'bad-link'));
+  const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1', taskId);
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /symbolic link/i);
+  assert.strictEqual(fs.existsSync(dest), false);
+});
+
+test('archive run accepts free-format Chinese-containing task ids', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns('FEAT-个人博客系统');
+  const result = runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.strictEqual(result.mode, 'created');
+  assert.ok(fs.existsSync(path.join(
+    workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'business-design.md',
+  )));
+  assert.ok(fs.existsSync(path.join(
+    workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'business-design-assets', 'ucd', 'w1.svg',
+  )));
 });
 
 test('archive run CLI works end to end', () => {

@@ -15,7 +15,23 @@ function readJSON(filePath) {
   }
 }
 
+// Rejects values that could escape a single path segment: empty/whitespace-only,
+// '.' / '..', or anything carrying a path separator or NUL byte. Free-format
+// values (e.g. '1.2.0', 'v2-beta', 'FEAT-个人博客系统') remain valid.
+function assertSafeSegment(value, label) {
+  const unsafe = typeof value !== 'string'
+    || !value.trim()
+    || value === '.'
+    || value === '..'
+    || /[\/\\]/.test(value)
+    || value.includes('\u0000');
+  if (unsafe) {
+    throw new Error(`Invalid ${label} (must be a single path-safe segment): ${value}`);
+  }
+}
+
 function taskPathFor(workspaceRoot, taskId) {
+  assertSafeSegment(taskId, 'taskId');
   return path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', taskId);
 }
 
@@ -58,10 +74,26 @@ function copyTree(src, dest) {
   }
 }
 
+// Recursively walks src with lstatSync and throws on any symbolic link. Used to
+// pre-scan the whole source set before the destination layer is created, so a
+// deep symlink is rejected with no side effects.
+function assertNoSymlinksInSource(src) {
+  const stat = fs.lstatSync(src);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Archive source cannot contain symbolic links: ${src}`);
+  }
+  if (stat.isDirectory()) {
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      assertNoSymlinksInSource(path.join(src, entry.name));
+    }
+  }
+}
+
 function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   if (typeof version !== 'string' || !version.trim()) {
     throw new Error('Version is required');
   }
+  assertSafeSegment(version, 'version');
   const taskPath = taskPathFor(workspaceRoot, taskId);
   if (!fs.existsSync(taskPath)) throw new Error(`Task not found: ${taskId}`);
   const artifactsDir = path.join(taskPath, 'artifacts');
@@ -81,6 +113,11 @@ function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   if (docs.length === 0) {
     throw new Error('No baseline design docs to archive (no *.md in artifacts)');
   }
+
+  // Pre-scan the whole source set before creating the destination layer so any
+  // symlink (even nested inside a *-assets tree) fails with no side effects.
+  for (const doc of docs) assertNoSymlinksInSource(path.join(artifactsDir, doc));
+  for (const asset of assets) assertNoSymlinksInSource(path.join(artifactsDir, asset));
 
   const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
   const destination = path.join(archiveRoot, version, taskId);
