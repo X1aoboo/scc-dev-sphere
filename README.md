@@ -46,19 +46,28 @@
 
 ## 工作原理
 
-```mermaid
-flowchart LR
-    U["用户"] --> W["Workflow<br/>读取状态并计算 nextAction"]
-    W --> S["主会话 Skill"]
-    W --> A["专业 Agent"]
-    S --> C["项目上下文与知识源"]
-    A --> C
-    S --> D["确定性 Scripts"]
-    A --> D
-    D --> O["规范化交付件与状态"]
-    S --> O
-    A --> O
-    O --> W
+```plantuml
+@startuml
+left to right direction
+rectangle "用户" as U
+rectangle "Workflow\n读取状态并计算 nextAction" as W
+rectangle "主会话 Skill" as S
+rectangle "专业 Agent" as A
+rectangle "项目上下文与知识源" as C
+rectangle "确定性 Scripts" as D
+rectangle "规范化交付件与状态" as O
+U --> W
+W --> S
+W --> A
+S --> C
+A --> C
+S --> D
+A --> D
+D --> O
+S --> O
+A --> O
+O --> W
+@enduml
 ```
 
 - **Workflow** 读取当前 Feature 的持久化状态，由 resolver 返回 `nextAction.skill`、执行者和所需交付件；它不自行执行设计或代码工作。
@@ -96,14 +105,23 @@ claude plugin validate --strict .
 
 ## Feature 交付流程
 
-```mermaid
-flowchart LR
-    I["初始化"] --> R["需求澄清"]
-    R --> D["协作式设计"]
-    D --> A["总体设计批准"]
-    A --> P["实现规划"]
-    P --> C["开发实现"]
-    C --> V["实现验证"]
+```plantuml
+@startuml
+left to right direction
+rectangle "初始化" as I
+rectangle "需求澄清" as R
+rectangle "协作式设计" as D
+rectangle "总体设计批准" as A
+rectangle "实现规划" as P
+rectangle "开发实现" as C
+rectangle "实现验证" as V
+I --> R
+R --> D
+D --> A
+A --> P
+P --> C
+C --> V
+@enduml
 ```
 
 | 阶段 | 目标 | 执行者 | 主要交付件 |

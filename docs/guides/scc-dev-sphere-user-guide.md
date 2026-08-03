@@ -40,21 +40,22 @@
 
 ### 2.1 插件、目标项目和 `.devsphere`
 
-```mermaid
-flowchart TB
-    P["Claude Code 中加载的插件"]
-    R["用户当前打开的目标项目"]
-    W["目标项目内的 .devsphere 数据区"]
-    T1["Feature 任务 A"]
-    T2["Feature 任务 B"]
-    C["一个或多个业务代码仓"]
-
-    P --> R
-    R --> W
-    W --> T1
-    W --> T2
-    T1 --> C
-    T2 --> C
+```plantuml
+@startuml
+top to bottom direction
+rectangle "Claude Code 中加载的插件" as P
+rectangle "用户当前打开的目标项目" as R
+rectangle "目标项目内的 .devsphere 数据区" as W
+rectangle "Feature 任务 A" as T1
+rectangle "Feature 任务 B" as T2
+rectangle "一个或多个业务代码仓" as C
+P --> R
+R --> W
+W --> T1
+W --> T2
+T1 --> C
+T2 --> C
+@enduml
 ```
 
 - **插件**提供 Workflow、Skill、Agent 和辅助脚本。
@@ -252,18 +253,25 @@ initialized
 
 ### 4.1 主流程
 
-```mermaid
-flowchart LR
-    I["初始化"]
-    R["需求澄清"]
-    D["分层设计"]
-    T["测试设计"]
-    A["总体设计批准"]
-    P["实现规划"]
-    C["代码实现"]
-    V["验证与转测"]
-
-    I --> R --> D --> T --> A --> P --> C --> V
+```plantuml
+@startuml
+left to right direction
+rectangle "初始化" as I
+rectangle "需求澄清" as R
+rectangle "分层设计" as D
+rectangle "测试设计" as T
+rectangle "总体设计批准" as A
+rectangle "实现规划" as P
+rectangle "代码实现" as C
+rectangle "验证与转测" as V
+I --> R
+R --> D
+D --> T
+T --> A
+A --> P
+P --> C
+C --> V
+@enduml
 ```
 
 推荐用法很简单：
@@ -330,19 +338,24 @@ Workflow 当前按 Business → Solution → Implementation 的顺序推进。
 
 Business、Solution、Implementation 和 builtin Test Design 都使用同一个循环：
 
-```mermaid
-flowchart LR
-    A["分析与逐段确认"]
-    D["形成 Draft"]
-    L["Lint"]
-    R["独立 Review"]
-    H["人工批准"]
-    B["发布 Baseline"]
-
-    A --> D --> L --> R --> H --> B
-    L -->|"结构问题"| D
-    R -->|"发现问题"| A
-    H -->|"暂不批准"| A
+```plantuml
+@startuml
+left to right direction
+rectangle "分析与逐段确认" as A
+rectangle "形成 Draft" as D
+rectangle "Lint" as L
+rectangle "独立 Review" as R
+rectangle "人工批准" as H
+rectangle "发布 Baseline" as B
+A --> D
+D --> L
+L --> R
+R --> H
+H --> B
+L --> D : 结构问题
+R --> A : 发现问题
+H --> A : 暂不批准
+@enduml
 ```
 
 用户实际需要关注：
