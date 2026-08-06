@@ -563,6 +563,11 @@ Workflow 会让 `dev` Agent：
 
 ### 7.4 单个 Design reopen
 
+重开已基线的设计有两个入口：
+
+- **快捷入口**：直接运行 `/scc-dev-sphere:design-reopen`，选择要重开的设计类型并说明变更原因。插件执行 reopen 后自动转入 `feature-design` 继续修订到发布。
+- **语义触发**：运行 `/scc-dev-sphere:feature-design` 并在指令中说明要重开的设计类型和变更内容。`feature-design` 在 publish 时检测到已有 Baseline 会确认重开。
+
 底层设计流程可以重开一个已经发布的 Design：
 
 - 旧 Baseline 保存到历史目录；
