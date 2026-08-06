@@ -7,8 +7,6 @@ const { getTaskPath, readState, readCurrentTask } = require('./devsphere-state')
 const { validateDesignReady } = require('./devsphere-approval');
 const {
   DESIGN_TYPE_KEYS,
-  readDraftRef,
-  readArtifactRef,
   validatePersistedReview,
 } = require('./devsphere-design');
 
@@ -150,16 +148,26 @@ function checkDesignManagedShell(input) {
 function checkDesignReviewerStop(input) {
   if (!input || typeof input !== 'object') throw new Error('Invalid hook input for Design Reviewer stop guard');
   if (!isDesignReviewer(input)) return null;
-  if (/^# Design Review Failure\b/m.test(input.last_assistant_message || '')) return null;
+  const message = input.last_assistant_message || '';
+
+  // 失败返回，照旧放行
+  if (/^# Design Review Failure\b/m.test(message)) return null;
+
   const workspaceRoot = input.cwd;
   const taskPath = workspaceRoot && getTaskPath(workspaceRoot);
   if (!taskPath) return { decision: 'block', reason: 'Design Reviewer cannot stop: no active Feature task was found.' };
-  const candidates = DESIGN_TYPE_KEYS.filter(designType => readDraftRef(taskPath, designType) && !readArtifactRef(taskPath, designType));
-  if (candidates.length !== 1) {
-    return { decision: 'block', reason: `Design Reviewer cannot stop: expected one active Design Draft, found ${candidates.length}.` };
+
+  // 从返回消息解析目标 designType
+  const match = message.match(/Design type:\s*(\S+)/);
+  const target = match && match[1];
+
+  if (target && DESIGN_TYPE_KEYS.includes(target)) {
+    const result = validatePersistedReview(taskPath, target, { allowBlocked: true });
+    return result.valid ? null : { decision: 'block', reason: `Design Reviewer cannot stop: ${result.reason}.` };
   }
-  const result = validatePersistedReview(taskPath, candidates[0], { allowBlocked: true });
-  return result.valid ? null : { decision: 'block', reason: `Design Reviewer cannot stop: ${result.reason}.` };
+
+  // 解析不到合法 designType → block 并提示格式问题
+  return { decision: 'block', reason: 'Design Reviewer cannot stop: could not identify the reviewed design type from the return message.' };
 }
 
 function readHookInput() {

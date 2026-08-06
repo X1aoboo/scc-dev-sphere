@@ -772,20 +772,79 @@ test('validate-review is the deterministic main-session completion gate', () => 
   assert.match(result.issues[0], /passing lint state/);
 });
 
-test('design-reviewer SubagentStop requires a complete current persisted Review', () => {
+test('design-reviewer SubagentStop validates the target design from the return message', () => {
   const { workspaceRoot, taskPath } = makeTask();
   writeDraft(taskPath, 'businessDesign');
   lintDraft(taskPath, 'businessDesign');
   const input = {
     agent_type: 'scc-dev-sphere:design-reviewer',
     cwd: workspaceRoot,
-    last_assistant_message: '# Design Review\n\n- Result: pass',
+    last_assistant_message: '# Design Review\n\n- Design type: businessDesign\n- Result: pass',
   };
+  // review not recorded yet → block
   assert.strictEqual(checkDesignReviewerStop(input).decision, 'block');
+  // record review → pass
   recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
   assert.strictEqual(checkDesignReviewerStop(input), null);
+  // lint deleted → block with reason
   fs.unlinkSync(lintStatusPath(taskPath, 'businessDesign'));
   assert.match(checkDesignReviewerStop(input).reason, /passing lint state/);
+});
+
+test('design-reviewer SubagentStop with multiple un-baselined drafts only checks the target', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  setRequired(taskPath, ['businessDesign', 'solutionDesign']);
+  // Both designs have Draft, no Baseline
+  writeDraft(taskPath, 'businessDesign');
+  writeDraft(taskPath, 'solutionDesign', VALID_SOLUTION_DRAFT);
+  installSolutionAssets(taskPath);
+  lintDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'solutionDesign');
+  // Reviewer reviewed solutionDesign successfully
+  recordReview(taskPath, 'solutionDesign', passingSummary(taskPath, 'solutionDesign'));
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- Design type: solutionDesign\n- Result: pass',
+  };
+  // Even though businessDesign has no review, solutionDesign's review is valid → pass
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+
+  // Reverse: reviewer reviewed businessDesign but its review is invalid
+  const inputBusiness = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- Design type: businessDesign\n- Result: pass',
+  };
+  assert.strictEqual(checkDesignReviewerStop(inputBusiness).decision, 'block');
+});
+
+test('design-reviewer SubagentStop blocks when design type is missing from return message', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- Result: pass',
+  };
+  const result = checkDesignReviewerStop(input);
+  assert.strictEqual(result.decision, 'block');
+  assert.match(result.reason, /could not identify the reviewed design type/);
+});
+
+test('design-reviewer SubagentStop still allows failure returns', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  // No review recorded, but it's a failure return → pass
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review Failure\n\n- Design type: businessDesign\n- Reason: missing inputs',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input), null);
 });
 
 test('semantic revision invalidates review while formatting-only change can refresh it', () => {
