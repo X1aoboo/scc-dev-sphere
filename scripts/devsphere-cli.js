@@ -21,7 +21,7 @@ Domains:
   workspace  create-feature-task
   workflow   resolve-next-action | set-task-status | sync-design-status |
              validate-design-entry | complete-external-test-design
-  design     inspect-workspace | init-design | inspect-design | lint | validate-review |
+  design     inspect-workspace | init-design | inspect-design | lint | validate-draft | validate-review |
              review-context | record-review | refresh-format-review | approve-current-design |
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
@@ -179,6 +179,10 @@ function dispatchDesign(action, options, io) {
     case 'init-design': return design.initDesign(taskPath, designType);
     case 'inspect-design': return design.inspectDesign(taskPath, designType);
     case 'lint': return design.lintDraft(taskPath, designType);
+    case 'validate-draft': {
+      const result = design.validateDraft(taskPath, designType);
+      return { value: result, exitCode: result.valid ? 0 : 1 };
+    }
     case 'validate-review': {
       const result = design.validateReview(taskPath, designType);
       return { value: result, exitCode: result.valid ? 0 : 1 };

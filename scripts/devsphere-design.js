@@ -1021,6 +1021,22 @@ function validatePersistedReview(taskPath, designType, options = {}) {
   return { valid: true, review, draft };
 }
 
+function validateDraft(taskPath, designType) {
+  definitionFor(designType);
+  try {
+    const draft = readDraftRef(taskPath, designType);
+    if (!draft) {
+      return { valid: false, designType, issues: ['No current Draft ref'] };
+    }
+    if (!currentLintStatus(taskPath, designType, draft)) {
+      return { valid: false, designType, issues: ['Lint is not passing or not bound to the current Draft'] };
+    }
+    return { valid: true, designType };
+  } catch (error) {
+    return { valid: false, designType, issues: [error.message] };
+  }
+}
+
 function validateReview(taskPath, designType) {
   definitionFor(designType);
   try {
@@ -1569,6 +1585,7 @@ function main() {
       case 'init-design': result = initDesign(args[0], args[1]); break;
       case 'inspect-design': result = inspectDesign(args[0], args[1]); break;
       case 'lint': result = lintDraft(args[0], args[1]); break;
+      case 'validate-draft': result = validateDraft(args[0], args[1]); break;
       case 'validate-review': result = validateReview(args[0], args[1]); break;
       case 'review-context': result = reviewContext(args[0], args[1]); break;
       case 'record-review': result = recordReview(args[0], args[1], parseJSONArg(args[2], 'review summary')); break;
@@ -1617,6 +1634,7 @@ module.exports = {
   loadReviewPolicy,
   reviewContext,
   validatePersistedReview,
+  validateDraft,
   validateReview,
   recordReview,
   refreshFormattingReview,

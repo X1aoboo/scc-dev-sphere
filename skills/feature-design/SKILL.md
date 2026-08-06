@@ -73,9 +73,17 @@ description: 协作完成当前 Feature 设计活动。用于需要业务、方�
 
 Lint 只检查 frontmatter、固定结构、映射关系、适用性说明、明显占位符和格式等确定性事实，不判断方案是否具体、专业或语义成立。Lint 失败时由主会话修复确定性问题并重新运行；Lint `pass` 后才能调用 Reviewer。专业完整性仍由 Design Guide 收敛标准、隔离 Reviewer 和用户评审确认。
 
+Lint `pass` 后运行以下命令，确认 Lint 状态绑定的是当前 Draft：
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design validate-draft --task-path "<taskPath>" --design-type <designType>
+```
+
+命令失败时，需重新运行`design lint` 对Design Draft进行Lint检查。
+
 如果 `design-draft` 或 Lint 修复过程发现设计冲突、缺口、未决事项，或者必须新增设计语义才能完成 Draft，不得自行补全或继续 Lint。将任务 3 恢复为 `pending`，将任务 2 恢复为 `in_progress`，重新调用 `feature-design-analysis` 完成分析和用户确认，再重新进入步骤 3。
 
-完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft 及其配套资产；Draft 可脱离聊天独立评审；不存在未确认语义；Lint 为 `pass`。
+完成条件：最终有效设计及必要上下文已完整、忠实地写入 Draft 及其配套资产；Draft 可脱离当前会话上下文独立评审；不存在未确认语义；`validate-draft` 运行成功。
 
 ## 步骤4. 集中 Review 并修订
 
@@ -113,7 +121,7 @@ Review 返回 `pass` 后运行：
 
 命令失败时，根据返回问题继续修订和 Review，不得完成当前步骤。
 
-完成条件：`validate-review` 成功。
+完成条件：`validate-review` 运行成功。
 
 ## 步骤5. 批准并发布 Baseline
 
@@ -147,12 +155,6 @@ Review 返回 `pass` 后运行：
 
 批准失败时检查 JSON 和 Draft/Lint/Review hash。
 
-`publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。已有不同 Baseline 时，先向用户确认重开，再运行：
+`publish` 将获批 Draft 原样复制为 Baseline，不在发布时改写内容。
 
-```bash
-"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --task-path "<taskPath>" --design-type <designType>
-```
-
-本 Skill 不修改顶层工作流状态，也不硬编码总体需要哪些设计活动。调用者负责根据最新工作空间事实和外层合同同步顶层状态。
-
-完成条件：Artifact 与获批 Draft 字节一致；Approval、Lint 和 Review 绑定同一 hash；Baseline 版本有效；向调用者返回“当前 Design Baseline 已获用户批准并发布”。
+完成条件：`publish` 运行成功；向调用者返回“当前 Design Baseline 已获用户批准并发布”。

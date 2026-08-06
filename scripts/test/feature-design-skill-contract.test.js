@@ -47,6 +47,8 @@ test('feature-design delegates lossless Draft writing and retains workflow-owned
   assert.match(task3, /任务 3.*pending.*任务 2.*in_progress/s);
   assert.match(task3, /重新调用 `feature-design-analysis`/);
   assert.match(task3, /最终有效设计及必要上下文.*完整、忠实/s);
+  assert.match(task3, /"\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/devsphere" design validate-draft --task-path "<taskPath>" --design-type <designType>/);
+  assert.match(task3, /完成条件：.*`validate-draft` 成功/s);
 });
 
 test('feature-design keeps external Evidence persistence commands out of its contract', () => {
@@ -92,7 +94,7 @@ test('feature-design delegates one centralized review and leaves top-level state
   assert.match(task4, /每次 Draft 或配套资产变化后.*重新运行 Lint.*再次调用 `design-reviewer`/s);
   assert.match(task4, /Review 返回 `pass` 后运行/);
   assert.match(skill, /devsphere" design validate-review --task-path "<taskPath>" --design-type <designType>/);
-  assert.match(skill, /完成条件：`validate-review` 成功/);
+  assert.match(skill, /完成条件：`validate-review` 运行成功/);
   assert.match(task4, /命令失败时.*不得完成当前步骤/s);
   assert.doesNotMatch(skill, /为每份适用 Checklist 创建.*Reviewer/);
   assert.doesNotMatch(task4, /Agent runtime|Draft 快照|稳定.*(?:item|finding).*ID|依赖图|baseReportHash|reportAppend|rebuildBaseline|schema\s*2|Policy JSON|Checklist Markdown|不适用变为适用|候选受影响评审项|候选复评项/i);

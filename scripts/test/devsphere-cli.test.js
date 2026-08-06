@@ -50,6 +50,7 @@ test('help exposes every public domain and launcher works without Claude variabl
   assert.strictEqual(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: devsphere/);
   assert.match(result.stdout, /validate-review/);
+  assert.match(result.stdout, /validate-draft/);
 });
 
 test('guard domain consumes hook stdin, denies protected writes, and stays silent otherwise', () => {
@@ -250,6 +251,37 @@ test('review and approval actions consume structured stdin before domain validat
   ], { cwd: workspaceRoot, stdin: '{"approvedBy":"human"}' });
   assert.strictEqual(result.exitCode, 1);
   assert.match(result.stderr, /Task status must be/);
+});
+
+test('validate-draft uses exit status as the Design Draft completion gate', () => {
+  const workspaceRoot = makeWorkspace('draft gate');
+  let result = capture([
+    'workspace', 'create-feature-task',
+    '--workspace-root', workspaceRoot,
+    '--task-id', 'FEAT-draft-gate',
+  ]);
+  const taskPath = JSON.parse(result.stdout).taskPath;
+
+  result = capture([
+    'design', 'validate-draft',
+    '--task-path', taskPath,
+    '--design-type', 'businessDesign',
+  ], { cwd: workspaceRoot });
+  assert.strictEqual(result.exitCode, 1);
+  assert.strictEqual(JSON.parse(result.stdout).valid, false);
+
+  initDesign(taskPath, 'businessDesign');
+  fs.writeFileSync(draftPath(taskPath, 'businessDesign'), businessDraft('FEAT-draft-gate'), 'utf8');
+  installBusinessAssets(taskPath);
+  lintDraft(taskPath, 'businessDesign');
+
+  result = capture([
+    'design', 'validate-draft',
+    '--task-path', taskPath,
+    '--design-type', 'businessDesign',
+  ], { cwd: workspaceRoot });
+  assert.strictEqual(result.exitCode, 0, result.stderr);
+  assert.deepStrictEqual(JSON.parse(result.stdout), { valid: true, designType: 'businessDesign' });
 });
 
 test('validate-review uses exit status as the Design Review completion gate', () => {

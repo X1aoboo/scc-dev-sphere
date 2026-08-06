@@ -27,11 +27,10 @@ disable-model-invocation: true
 
 5. 执行 reopen：`"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --task-path "<taskPath>" --design-type <designType>`，解析脚本输出的 JSON。脚本报错（任务不存在、无 Baseline 等）时透传错误并终止。向用户展示归档路径和新 Draft 版本。
 
-6. 转入 feature-design：直接执行 `/scc-dev-sphere:feature-design`，调用上下文中传入 `taskPath`、`designType`（刚 reopen 的）和变更说明（作为设计目标的一部分）。`feature-design` 步骤1 `inspect-workspace` 会看到"Draft 存在、Baseline 不存在"，识别为恢复进行中的设计；步骤2 使用变更说明作为本次设计修订的输入。
+6. 转入 feature-design：直接执行 `/scc-dev-sphere:feature-design`，调用上下文中传入 `taskPath`、`designType`（刚 reopen 的）和变更说明（作为设计目标的一部分）。
 
 ## 规则
 
-- **仅用户显式调用**：不得被模型自动触发；只在用户在主会话输入 `/scc-dev-sphere:design-reopen` 时执行。
 - **只重开有 Baseline 的设计**：无 Baseline 的设计不需要 reopen，直接用 `feature-design` 恢复。
 - **变更说明必填**：重开是设计变更决策，不可无理由执行。
 - **确定性执行**：reopen 操作全部由 `devsphere` CLI 完成；Skill 不自行拼接路径或执行文件操作。
