@@ -80,6 +80,16 @@ function normalized(value) {
   return typeof value === 'string' ? value.replace(/\\/g, '/') : '';
 }
 
+function normalizeReviewerMessage(message) {
+  return message
+    // 剥离 markdown 强调语法：**bold**, __bold__, *italic*, _italic_
+    .replace(/([*_]{1,2})(.+?)\1/g, '$2')
+    // 全角冒号 → 半角冒号
+    .replace(/：/g, ':')
+    // 全角空格（U+3000）→ 半角空格
+    .replace(/　/g, ' ');
+}
+
 function isDesignReviewer(input) {
   const agentType = input && input.agent_type;
   return typeof agentType === 'string' && /^(?:scc-dev-sphere:)?design-reviewer$/.test(agentType);
@@ -148,17 +158,17 @@ function checkDesignManagedShell(input) {
 function checkDesignReviewerStop(input) {
   if (!input || typeof input !== 'object') throw new Error('Invalid hook input for Design Reviewer stop guard');
   if (!isDesignReviewer(input)) return null;
-  const message = input.last_assistant_message || '';
+  const message = normalizeReviewerMessage(input.last_assistant_message || '');
 
   // 失败返回，照旧放行
-  if (/^# Design Review Failure\b/m.test(message)) return null;
+  if (/^# Design Review Failure\b/im.test(message)) return null;
 
   const workspaceRoot = input.cwd;
   const taskPath = workspaceRoot && getTaskPath(workspaceRoot);
   if (!taskPath) return { decision: 'block', reason: 'Design Reviewer cannot stop: no active Feature task was found.' };
 
   // 从返回消息解析目标 designType
-  const match = message.match(/Design type:\s*(\S+)/);
+  const match = message.match(/Design type:\s*(\S+)/i);
   const target = match && match[1];
 
   if (target && DESIGN_TYPE_KEYS.includes(target)) {
@@ -209,5 +219,5 @@ module.exports = {
   hasActiveTask, checkImplementEntry, checkApproveEntry, checkStateAdvance,
   checkEvidenceWritesFromStdin, checkEvidenceBashFromStdin,
   checkInternalResourceAccess, checkDesignManagedWrite, checkDesignManagedShell,
-  checkDesignReviewerStop, isDesignReviewer, isManagedShellMutation,
+  checkDesignReviewerStop, normalizeReviewerMessage, isDesignReviewer, isManagedShellMutation,
 };

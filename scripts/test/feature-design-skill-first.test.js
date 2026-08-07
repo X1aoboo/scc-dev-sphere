@@ -21,7 +21,7 @@ const {
   solutionDraft,
 } = require('./fixtures/solution-design');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
-const { checkDesignReviewerStop } = require('../devsphere-guard');
+const { checkDesignReviewerStop, normalizeReviewerMessage } = require('../devsphere-guard');
 const {
   DESIGN_TYPES,
   initDesign,
@@ -843,6 +843,74 @@ test('design-reviewer SubagentStop still allows failure returns', () => {
     agent_type: 'scc-dev-sphere:design-reviewer',
     cwd: workspaceRoot,
     last_assistant_message: '# Design Review Failure\n\n- Design type: businessDesign\n- Reason: missing inputs',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+});
+
+test('normalizeReviewerMessage strips markdown emphasis syntax', () => {
+  assert.strictEqual(normalizeReviewerMessage('**Design type**: businessDesign'), 'Design type: businessDesign');
+  assert.strictEqual(normalizeReviewerMessage('*Design type*: businessDesign'), 'Design type: businessDesign');
+  assert.strictEqual(normalizeReviewerMessage('__Design type__: businessDesign'), 'Design type: businessDesign');
+  assert.strictEqual(normalizeReviewerMessage('_Design type_: businessDesign'), 'Design type: businessDesign');
+});
+
+test('normalizeReviewerMessage normalizes full-width punctuation and spaces', () => {
+  assert.strictEqual(normalizeReviewerMessage('Design type： businessDesign'), 'Design type: businessDesign');
+  assert.strictEqual(normalizeReviewerMessage('Design　type: businessDesign'), 'Design type: businessDesign');
+});
+
+test('normalizeReviewerMessage preserves single asterisks used as list bullets', () => {
+  assert.strictEqual(normalizeReviewerMessage('- *item*'), '- item');
+  assert.strictEqual(normalizeReviewerMessage('- item'), '- item');
+});
+
+test('design-reviewer SubagentStop tolerates markdown emphasis in Design type field', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- **Design type**: businessDesign\n- Result: pass',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+});
+
+test('design-reviewer SubagentStop tolerates full-width colon in Design type field', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- Design type： businessDesign\n- Result: pass',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+});
+
+test('design-reviewer SubagentStop tolerates case-insensitive Design type field', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  recordReview(taskPath, 'businessDesign', passingSummary(taskPath, 'businessDesign'));
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# Design Review\n\n- design type: businessDesign\n- Result: pass',
+  };
+  assert.strictEqual(checkDesignReviewerStop(input), null);
+});
+
+test('design-reviewer SubagentStop tolerates markdown emphasis in Failure heading', () => {
+  const { workspaceRoot, taskPath } = makeTask();
+  writeDraft(taskPath, 'businessDesign');
+  lintDraft(taskPath, 'businessDesign');
+  const input = {
+    agent_type: 'scc-dev-sphere:design-reviewer',
+    cwd: workspaceRoot,
+    last_assistant_message: '# **Design Review Failure**\n\n- Design type: businessDesign\n- Reason: missing inputs',
   };
   assert.strictEqual(checkDesignReviewerStop(input), null);
 });
