@@ -1,0 +1,622 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Approval Escalation Operations API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/internal/operations/escalations": {
+      "get": {
+        "operationId": "listEscalations",
+        "description": "Lists escalation summaries within the tenant scope derived from the authenticated session.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EscalationState"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/EscalationStage"
+            }
+          },
+          {
+            "name": "occurredFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "occurredTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "taskRef",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "UPDATED_AT_DESC",
+                "OCCURRED_AT_DESC"
+              ],
+              "default": "UPDATED_AT_DESC"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque server-signed cursor.",
+            "schema": {
+              "type": "string",
+              "maxLength": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Escalation page",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscalationPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/Throttled"
+          }
+        }
+      }
+    },
+    "/internal/operations/escalations/{escalationId}": {
+      "get": {
+        "operationId": "getEscalation",
+        "description": "Returns the authoritative detail and currently allowed recovery actions.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EscalationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Escalation detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscalationDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotAvailable"
+          }
+        }
+      }
+    },
+    "/internal/operations/escalations/{escalationId}/actions": {
+      "post": {
+        "operationId": "executeEscalationAction",
+        "description": "Executes one authorized recovery action. Reusing actionId returns the first result.",
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/EscalationId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "First or replayed action result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotAvailable"
+          },
+          "409": {
+            "$ref": "#/components/responses/VersionConflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ActionNotAllowed"
+          },
+          "429": {
+            "$ref": "#/components/responses/Throttled"
+          }
+        }
+      }
+    },
+    "/internal/operations/escalation-actions/{actionId}": {
+      "get": {
+        "operationId": "getEscalationActionResult",
+        "description": "Returns the first result for an action whose HTTP response may have been lost.",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "actionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Action status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AuthRequired"
+          },
+          "404": {
+            "$ref": "#/components/responses/ResourceNotAvailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "OPS_SESSION"
+      },
+      "csrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-CSRF-Token"
+      }
+    },
+    "parameters": {
+      "EscalationId": {
+        "name": "escalationId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "schemas": {
+      "EscalationState": {
+        "type": "string",
+        "enum": [
+          "COMMITTED",
+          "TARGET_RESOLVED",
+          "DELIVERY_REQUESTED",
+          "RETRY_WAIT",
+          "MANUAL_INTERVENTION",
+          "NO_TARGET",
+          "COMPLETED"
+        ]
+      },
+      "EscalationStage": {
+        "type": "string",
+        "enum": [
+          "COMMIT",
+          "RESOLVE_TARGET",
+          "REQUEST_NOTIFICATION",
+          "WAIT_DELIVERY",
+          "MANUAL_RECOVERY"
+        ]
+      },
+      "EscalationSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "escalationId",
+          "displayTaskRef",
+          "state",
+          "level",
+          "updatedAt"
+        ],
+        "properties": {
+          "escalationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayTaskRef": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "state": {
+            "$ref": "#/components/schemas/EscalationState"
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EscalationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/EscalationSummary"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512
+          }
+        }
+      },
+      "TimelineItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occurredAt",
+          "category",
+          "summary"
+        ],
+        "properties": {
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "category": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 256
+          }
+        }
+      },
+      "EscalationDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EscalationSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "version",
+              "timeline",
+              "allowedActions",
+              "diagnosticsAvailable"
+            ],
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "timeline": {
+                "type": "array",
+                "maxItems": 200,
+                "items": {
+                  "$ref": "#/components/schemas/TimelineItem"
+                }
+              },
+              "allowedActions": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/RecoveryAction"
+                }
+              },
+              "diagnosticsAvailable": {
+                "type": "boolean"
+              },
+              "nextAutomaticAction": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 128
+              }
+            }
+          }
+        ]
+      },
+      "RecoveryAction": {
+        "type": "string",
+        "enum": [
+          "RETRY_CURRENT_STEP",
+          "STOP_AUTOMATIC_RETRY",
+          "RECONCILE_NOTIFICATION"
+        ]
+      },
+      "RecoveryRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "expectedVersion",
+          "action",
+          "reason"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "action": {
+            "$ref": "#/components/schemas/RecoveryAction"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 500
+          }
+        }
+      },
+      "RecoveryResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "auditId",
+          "version",
+          "state"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "auditId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "$ref": "#/components/schemas/EscalationState"
+          }
+        }
+      },
+      "ActionResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "actionId",
+          "status"
+        ],
+        "properties": {
+          "actionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCEEDED",
+              "REJECTED",
+              "UNKNOWN"
+            ]
+          },
+          "auditId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "traceId",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "traceId": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "Request validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "AuthRequired": {
+        "description": "Authentication is required",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The operation is outside the authorized tenant scope",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ResourceNotAvailable": {
+        "description": "The resource does not exist or is not visible to the caller",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "VersionConflict": {
+        "description": "The escalation version has changed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ActionNotAllowed": {
+        "description": "The requested action is not allowed in the current state",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Throttled": {
+        "description": "The caller exceeded the operation quota",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

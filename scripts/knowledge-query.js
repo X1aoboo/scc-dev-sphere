@@ -7,7 +7,7 @@ const path = require('path');
 const { getTaskPath } = require('./devsphere-state');
 
 const REPO_ROOT = path.join(__dirname, '..');
-const SKILL_DEFAULT_CONFIG = path.join(REPO_ROOT, 'skills', 'knowledge-query', 'knowledge-sources.json');
+const DEFAULT_CONFIG = path.join(REPO_ROOT, 'config', 'knowledge-sources.json');
 
 // --- Core I/O ---
 
@@ -29,10 +29,6 @@ function writeJSON(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
 }
 
-function ensureDir(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-}
-
 // --- Config paths ---
 
 function getWorkspaceConfigPath(workspaceRoot) {
@@ -41,43 +37,56 @@ function getWorkspaceConfigPath(workspaceRoot) {
 
 // --- Config operations ---
 
-// 两层 fallback: workspace config > skill default
-function getEffectiveConfig(workspaceRoot) {
-  const defaultCfg = readJSON(SKILL_DEFAULT_CONFIG);
-  const workspaceCfg = readJSON(getWorkspaceConfigPath(workspaceRoot));
+const SOURCE_SPECS = {
+  mcp: { collection: 'tools', target: 'name' },
+  skill: { collection: 'names', target: 'name' },
+  local: { collection: 'dirs', target: 'dir' },
+  repo: { collection: 'paths', target: 'path' },
+};
 
-  const effective = {
-    sources: {},
-    priority: [],
-    _source: {}  // 标注每个字段的来源
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function normalizeConfig(rawConfig, source) {
+  const rawSources = rawConfig && rawConfig.sources && typeof rawConfig.sources === 'object'
+    ? rawConfig.sources
+    : {};
+  const sources = {};
+
+  for (const [type, spec] of Object.entries(SOURCE_SPECS)) {
+    const raw = rawSources[type] && typeof rawSources[type] === 'object' ? rawSources[type] : {};
+    const entries = raw.enabled === true && Array.isArray(raw[spec.collection])
+      ? raw[spec.collection].filter(item => item && typeof item === 'object'
+        && nonEmptyString(item[spec.target]) && nonEmptyString(item.description))
+        .map(item => ({
+          [spec.target]: item[spec.target].trim(),
+          description: item.description.trim(),
+        }))
+      : [];
+    sources[type] = {
+      enabled: raw.enabled === true && entries.length > 0,
+      [spec.collection]: entries,
+    };
+  }
+
+  const rawWeb = rawSources.web && typeof rawSources.web === 'object' ? rawSources.web : {};
+  const webEnabled = rawWeb.enabled === true && nonEmptyString(rawWeb.description);
+  sources.web = {
+    enabled: webEnabled,
+    description: webEnabled ? rawWeb.description.trim() : '',
   };
 
-  // Merge sources: workspace overrides default per-source
-  const sources = ['mcp', 'skill', 'local', 'repo', 'web'];
-  for (const src of sources) {
-    const wsSrc = workspaceCfg && workspaceCfg.sources ? workspaceCfg.sources[src] : undefined;
-    const defSrc = defaultCfg && defaultCfg.sources ? defaultCfg.sources[src] : undefined;
-    if (wsSrc !== undefined) {
-      effective.sources[src] = wsSrc;
-      effective._source[`sources.${src}`] = 'workspace';
-    } else if (defSrc !== undefined) {
-      effective.sources[src] = defSrc;
-      effective._source[`sources.${src}`] = 'skill-default';
-    }
-  }
+  return { sources, _source: source };
+}
 
-  // priority: workspace overrides default
-  const wsPriority = workspaceCfg && workspaceCfg.priority;
-  const defPriority = defaultCfg && defaultCfg.priority;
-  if (wsPriority && Array.isArray(wsPriority)) {
-    effective.priority = wsPriority;
-    effective._source['priority'] = 'workspace';
-  } else if (defPriority && Array.isArray(defPriority)) {
-    effective.priority = defPriority;
-    effective._source['priority'] = 'skill-default';
+// 项目配置存在时是唯一配置；不存在时使用插件默认配置。
+function getEffectiveConfig(workspaceRoot) {
+  const workspacePath = getWorkspaceConfigPath(workspaceRoot);
+  if (fs.existsSync(workspacePath)) {
+    return normalizeConfig(readJSON(workspacePath), 'workspace');
   }
-
-  return effective;
+  return normalizeConfig(readJSON(DEFAULT_CONFIG), 'plugin-default');
 }
 
 function readConfig(workspaceRoot) {
@@ -86,22 +95,18 @@ function readConfig(workspaceRoot) {
 
 function showConfig(workspaceRoot) {
   const cfg = getEffectiveConfig(workspaceRoot);
-  const lines = ['当前生效数据源配置：', ''];
-
-  lines.push('优先级: ' + cfg.priority.join(' → ') + '');
-  lines.push('  来源: ' + cfg._source['priority']);
-  lines.push('');
+  const lines = [`当前生效数据源配置（${cfg._source}）：`, ''];
 
   for (const [name, src] of Object.entries(cfg.sources)) {
     const status = src && src.enabled ? '启用' : '禁用';
-    const detail = src ? JSON.stringify(Object.assign({}, src, { enabled: undefined })) : '{}';
-    const source = cfg._source[`sources.${name}`] || '-';
-    lines.push(`${name}: ${status}  来源: ${source}`);
-    if (src) {
-      const names = src.names || src.dirs || src.paths;
-      if (names && names.length) {
-        lines.push(`  ${names.join(', ')}`);
-      }
+    lines.push(`${name}: ${status}`);
+    if (name === 'web' && src.description) {
+      lines.push(`  ${src.description}`);
+      continue;
+    }
+    const spec = SOURCE_SPECS[name];
+    for (const item of spec ? src[spec.collection] : []) {
+      lines.push(`  ${item[spec.target]} — ${item.description}`);
     }
   }
 
@@ -131,65 +136,84 @@ function updateConfig(workspaceRoot, key, value) {
   if (!workspaceRoot || !key || value === undefined) {
     throw new Error('Usage: update-config <key> <value>');
   }
+  if (key === 'priority' || key.startsWith('priority.')) {
+    throw new Error('priority is not part of the knowledge source configuration');
+  }
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
-  if (!wsCfg) {
-    // Clone from default config
-    wsCfg = JSON.parse(JSON.stringify(readJSON(SKILL_DEFAULT_CONFIG)));
-  }
+  if (!fs.existsSync(wsPath)) wsCfg = JSON.parse(JSON.stringify(readJSON(DEFAULT_CONFIG)));
+  if (!wsCfg || typeof wsCfg !== 'object') wsCfg = { sources: {} };
+  delete wsCfg.priority;
   setNested(wsCfg, key, value);
   writeJSON(wsPath, wsCfg);
   return { updated: true, key, value, file: wsPath };
 }
 
-function addConfigItem(workspaceRoot, field, item) {
-  if (!workspaceRoot || !field || item === undefined) {
-    throw new Error('Usage: add-config-item <field> <item>');
+function upsertSource(workspaceRoot, type, target, description) {
+  if (!workspaceRoot || !type) {
+    throw new Error('Usage: upsert-source <type> <target> <description> | upsert-source web <description>');
   }
+  if (type === 'web' && description === undefined) {
+    description = target;
+    target = null;
+  }
+  if (!nonEmptyString(description)) throw new Error('Source description is required');
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
   let wsCfg = readJSON(wsPath);
-  if (!wsCfg) {
-    wsCfg = JSON.parse(JSON.stringify(readJSON(SKILL_DEFAULT_CONFIG)));
+  if (!fs.existsSync(wsPath)) wsCfg = JSON.parse(JSON.stringify(readJSON(DEFAULT_CONFIG)));
+  if (!wsCfg || typeof wsCfg !== 'object') wsCfg = { sources: {} };
+  delete wsCfg.priority;
+  if (!wsCfg.sources || typeof wsCfg.sources !== 'object') wsCfg.sources = {};
+
+  if (type === 'web') {
+    wsCfg.sources.web = { enabled: true, description: description.trim() };
+    writeJSON(wsPath, wsCfg);
+    return { upserted: true, type, description: description.trim(), file: wsPath };
   }
-  const parts = field.split('.');
-  let current = wsCfg;
-  for (const part of parts) {
-    if (!current[part]) {
-      current[part] = [];
-    }
-    current = current[part];
-  }
-  // current is now the array
-  const arr = parts.reduce((obj, p) => obj[p], wsCfg);
-  if (!Array.isArray(arr)) {
-    throw new Error(`Field ${field} is not an array`);
-  }
-  if (!arr.includes(item)) {
-    arr.push(item);
-  }
+
+  const spec = SOURCE_SPECS[type];
+  if (!spec) throw new Error(`Unsupported source type: ${type}`);
+  if (!nonEmptyString(target)) throw new Error('Source target is required');
+  const raw = wsCfg.sources[type] && typeof wsCfg.sources[type] === 'object' ? wsCfg.sources[type] : {};
+  const entries = Array.isArray(raw[spec.collection])
+    ? raw[spec.collection].filter(item => item && typeof item === 'object')
+    : [];
+  const normalizedTarget = target.trim();
+  const existing = entries.find(item => item[spec.target] === normalizedTarget);
+  if (existing) existing.description = description.trim();
+  else entries.push({ [spec.target]: normalizedTarget, description: description.trim() });
+  wsCfg.sources[type] = { enabled: true, [spec.collection]: entries };
   writeJSON(wsPath, wsCfg);
-  return { added: true, field, item, file: wsPath };
+  return { upserted: true, type, target: normalizedTarget, description: description.trim(), file: wsPath };
 }
 
-function removeConfigItem(workspaceRoot, field, item) {
-  if (!workspaceRoot || !field || item === undefined) {
-    throw new Error('Usage: remove-config-item <field> <item>');
-  }
+function removeSource(workspaceRoot, type, target) {
+  if (!workspaceRoot || !type) throw new Error('Usage: remove-source <type> <target> | remove-source web');
   const wsPath = getWorkspaceConfigPath(workspaceRoot);
-  let wsCfg = readJSON(wsPath);
-  if (!wsCfg) {
-    throw new Error('No workspace config to remove from');
+  if (!fs.existsSync(wsPath)) throw new Error('No workspace config to remove from');
+  const wsCfg = readJSON(wsPath);
+  if (!wsCfg || !wsCfg.sources || typeof wsCfg.sources !== 'object') {
+    throw new Error('Workspace config has no sources');
   }
-  const arr = field.split('.').reduce((obj, p) => obj[p], wsCfg);
-  if (!Array.isArray(arr)) {
-    throw new Error(`Field ${field} is not an array`);
+  delete wsCfg.priority;
+
+  if (type === 'web') {
+    const removed = Boolean(wsCfg.sources.web);
+    wsCfg.sources.web = { enabled: false };
+    writeJSON(wsPath, wsCfg);
+    return { removed, type, file: wsPath };
   }
-  const idx = arr.indexOf(item);
-  if (idx !== -1) {
-    arr.splice(idx, 1);
-  }
+
+  const spec = SOURCE_SPECS[type];
+  if (!spec) throw new Error(`Unsupported source type: ${type}`);
+  if (!nonEmptyString(target)) throw new Error('Source target is required');
+  const raw = wsCfg.sources[type] && typeof wsCfg.sources[type] === 'object' ? wsCfg.sources[type] : {};
+  const entries = Array.isArray(raw[spec.collection]) ? raw[spec.collection] : [];
+  const filtered = entries.filter(item => !item || typeof item !== 'object' || item[spec.target] !== target.trim());
+  const removed = filtered.length !== entries.length;
+  wsCfg.sources[type] = { ...raw, [spec.collection]: filtered };
   writeJSON(wsPath, wsCfg);
-  return { removed: idx !== -1, field, item, file: wsPath };
+  return { removed, type, target: target.trim(), file: wsPath };
 }
 
 function resetConfig(workspaceRoot) {
@@ -217,82 +241,57 @@ function getRegistryPath(workspaceRoot) {
   return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'evidence-registry.json');
 }
 
-function getEvidenceDir(workspaceRoot) {
-  return path.join(resolveTaskRoot(workspaceRoot), 'evidence', 'knowledge');
-}
-
 function readRegistry(workspaceRoot) {
   const registryPath = getRegistryPath(workspaceRoot);
   let registry = readJSON(registryPath);
-  if (!registry) {
-    registry = { evidences: [] };
-    writeJSON(registryPath, registry);
-  }
+  if (!registry) registry = { evidences: [] };
   if (!registry.evidences) {
     registry.evidences = [];
   }
   return registry;
 }
 
-// --- Evidence operations ---
-
-function nextEvId(workspaceRoot) {
-  const registry = readRegistry(workspaceRoot);
-  const maxId = registry.evidences.reduce((max, ev) => {
-    const num = parseInt((ev.id || '').replace('EV-', ''), 10);
-    return num > max ? num : max;
-  }, 0);
-  const nextNum = maxId + 1;
-  const nextId = 'EV-' + String(nextNum).padStart(3, '0');
-  return { nextId };
-}
-
-function sanitizeDescription(desc) {
-  return desc.replace(/[^a-zA-Z0-9一-鿿_-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'evidence';
-}
-
-function registerEvidence(workspaceRoot, description, sourceType, query) {
-  const VALID_SOURCE_TYPES = ['skill', 'local', 'repo', 'mcp', 'web', 'user'];
-  if (!workspaceRoot || !description || !sourceType) {
-    throw new Error('Usage: echo "<summary>" | register-evidence <description> <sourceType> <query>');
-  }
-  if (!VALID_SOURCE_TYPES.includes(sourceType)) {
-    throw new Error(`Invalid sourceType: ${sourceType}. Must be one of: ${VALID_SOURCE_TYPES.join(', ')}`);
-  }
-
-  const taskRoot = resolveTaskRoot(workspaceRoot);
-  const { nextId } = nextEvId(workspaceRoot);
-  const safeDesc = sanitizeDescription(description);
-  const snapshotName = `${nextId}-${safeDesc}.md`;
-  const snapshotPath = path.join(getEvidenceDir(workspaceRoot), snapshotName);
-  const timestamp = new Date().toISOString();
-
-  // Read content summary from stdin
-  const summary = fs.readFileSync(0, 'utf-8').trim();
-  const snapshotContent = `# ${nextId}: ${description}
-
-- **Source:** ${sourceType}
-- **Query:** ${query || '-'}
-- **Retrieved:** ${timestamp}
-- **Content Summary:**
-${summary}`;
-
-  ensureDir(getEvidenceDir(workspaceRoot));
-  fs.writeFileSync(snapshotPath, snapshotContent, 'utf-8');
-
-  // Update registry
-  const registry = readRegistry(workspaceRoot);
-  registry.evidences.push({
-    id: nextId,
-    description: description,
-    sourceType: sourceType,
-    query: query || '',
-    file: path.relative(taskRoot, snapshotPath),
-    retrievedAt: timestamp
+function registerEvidenceRecord(workspaceRoot, input) {
+  if (!input || typeof input.topic !== 'string' || !input.topic.trim()) throw new Error('Evidence topic is required');
+  if (typeof input.summary !== 'string' || !input.summary.trim()) throw new Error('Evidence summary is required');
+  if (!Array.isArray(input.sources) || input.sources.length === 0) throw new Error('Evidence requires at least one source');
+  const allowedSourceTypes = new Set(['mcp', 'skill', 'local', 'repo', 'web', 'user']);
+  input.sources.forEach((source, index) => {
+    for (const field of ['type', 'reference', 'summary']) {
+      if (!source || typeof source[field] !== 'string' || !source[field].trim()) {
+        throw new Error(`Evidence source ${index + 1} requires non-empty ${field}`);
+      }
+    }
+    if (!allowedSourceTypes.has(source.type)) throw new Error(`Unsupported Evidence source type: ${source.type}`);
+    const marker = `S${index + 1}`;
+    if (!input.summary.includes(`[${marker}]`)) throw new Error(`Evidence summary must reference [${marker}]`);
   });
+  const taskRoot = resolveTaskRoot(workspaceRoot);
+  const registry = readRegistry(workspaceRoot);
+  const max = registry.evidences.reduce((value, item) => {
+    const match = String(item.id || '').match(/^EV-(\d+)$/);
+    return match ? Math.max(value, Number(match[1])) : value;
+  }, 0);
+  const id = `EV-${String(max + 1).padStart(3, '0')}`;
+  const record = {
+    id,
+    topic: input.topic,
+    summary: input.summary,
+    sources: input.sources.map((source, index) => ({
+      marker: `S${index + 1}`,
+      type: source.type,
+      reference: source.reference,
+      summary: source.summary,
+    })),
+    conflicts: input.conflicts || [],
+    gaps: input.gaps || [],
+    recordedAt: new Date().toISOString(),
+  };
+  const recordPath = path.join(taskRoot, 'evidence', 'knowledge', `${id}.json`);
+  writeJSON(recordPath, record);
+  registry.evidences.push({ id, topic: record.topic, file: path.relative(taskRoot, recordPath) });
   writeJSON(getRegistryPath(workspaceRoot), registry);
-
-  return { evId: nextId, snapshotPath };
+  return record;
 }
 
 function readEvidence(workspaceRoot, evId) {
@@ -327,7 +326,7 @@ function guardWrite(stdinJson) {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: `${target} 禁止直接 Write/Edit。数据源配置须通过 knowledge-query.js CLI（update-config / add-config-item / remove-config-item / reset-config）修改。`,
+      permissionDecisionReason: `${target} 禁止直接 Write/Edit。数据源配置须通过 devsphere knowledge（update-config / upsert-source / remove-source / reset-config）修改。`,
     },
   };
 }
@@ -338,13 +337,11 @@ function guardBash(stdinJson) {
   const command = ti.command;
   const targetsConfig = /knowledge-sources\.json/.test(command);
   if (!targetsConfig) return null;
-  const isCLI = command.includes('knowledge-query.js');
-  if (isCLI) return null;
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
       permissionDecision: 'deny',
-      permissionDecisionReason: 'knowledge-sources.json 禁止通过 Bash 直接操作；数据源配置须通过 knowledge-query.js CLI 修改。',
+      permissionDecisionReason: 'knowledge-sources.json 禁止通过 Shell 直接操作；数据源配置须通过 devsphere knowledge 修改。',
     },
   };
 }
@@ -363,13 +360,14 @@ function main() {
     console.error('  read-config');
     console.error('  show-config');
     console.error('  update-config <key> <value>');
-    console.error('  add-config-item <field> <item>');
-    console.error('  remove-config-item <field> <item>');
+    console.error('  upsert-source <type> <target> <description>');
+    console.error('  upsert-source web <description>');
+    console.error('  remove-source <type> <target>');
+    console.error('  remove-source web');
     console.error('  reset-config');
     console.error('');
-    console.error('Evidence commands:');
-    console.error('  next-ev-id');
-    console.error('  register-evidence <description> <sourceType> <query>  (content from stdin)');
+    console.error('Evidence commands (main session only):');
+    console.error('  register-evidence-record  (JSON from stdin)');
     console.error('  read-evidence <evId>');
     process.exit(0);
   }
@@ -389,26 +387,24 @@ function main() {
         result = updateConfig(workspaceRoot, args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
-      case 'add-config-item':
-        result = addConfigItem(workspaceRoot, args[2], args[3]);
+      case 'upsert-source':
+        result = upsertSource(workspaceRoot, args[2], args[3], args[4]);
         console.log(JSON.stringify(result));
         break;
-      case 'remove-config-item':
-        result = removeConfigItem(workspaceRoot, args[2], args[3]);
+      case 'remove-source':
+        result = removeSource(workspaceRoot, args[2], args[3]);
         console.log(JSON.stringify(result));
         break;
       case 'reset-config':
         result = resetConfig(workspaceRoot);
         console.log(JSON.stringify(result));
         break;
-      case 'next-ev-id':
-        result = nextEvId(workspaceRoot);
-        console.log(JSON.stringify(result));
+      case 'register-evidence-record': {
+        const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+        result = registerEvidenceRecord(workspaceRoot, input);
+        console.log(JSON.stringify(result, null, 2));
         break;
-      case 'register-evidence':
-        result = registerEvidence(workspaceRoot, args[2], args[3], args[4]);
-        console.log(JSON.stringify(result));
-        break;
+      }
       case 'read-evidence':
         result = readEvidence(workspaceRoot, args[2]);
         console.log(result);
@@ -448,17 +444,17 @@ if (require.main === module) {
 module.exports = {
   readJSON,
   writeJSON,
-  ensureDir,
   getEffectiveConfig,
   readConfig,
   showConfig,
   updateConfig,
-  addConfigItem,
-  removeConfigItem,
+  normalizeConfig,
+  upsertSource,
+  removeSource,
   resetConfig,
-  nextEvId,
-  registerEvidence,
+  registerEvidenceRecord,
   readEvidence,
+  readRegistry,
   guardWrite,
   guardBash,
 };

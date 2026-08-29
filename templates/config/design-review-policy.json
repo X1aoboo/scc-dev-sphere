@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "designTypes": {
+    "businessDesign": {
+      "required": [
+        { "checklistId": "business-semantic-consistency", "path": "skills/feature-design/references/review-checklists/business-semantic-consistency.md" },
+        { "checklistId": "business-documentation-quality", "path": "skills/feature-design/references/review-checklists/business-documentation-quality.md" },
+        { "checklistId": "design-traceability", "path": "skills/feature-design/references/review-checklists/design-traceability.md" }
+      ],
+      "conditional": [
+        {
+          "checklistId": "business-change-impact-review",
+          "path": "skills/feature-design/references/review-checklists/business-change-impact-review.md",
+          "condition": "存量增强实质改变既有业务概念、规则、状态、历史结果或业务承诺"
+        }
+      ]
+    },
+    "solutionDesign": {
+      "required": [
+        { "checklistId": "architecture-consistency", "path": "skills/feature-design/references/review-checklists/architecture-consistency.md" },
+        { "checklistId": "architecture-documentation-quality", "path": "skills/feature-design/references/review-checklists/architecture-documentation-quality.md" },
+        { "checklistId": "design-traceability", "path": "skills/feature-design/references/review-checklists/design-traceability.md" }
+      ],
+      "conditional": [
+        { "checklistId": "data-review", "path": "skills/feature-design/references/review-checklists/data-review.md", "condition": "持久或共享数据的模型、所有权、生命周期或访问方式变化" },
+        { "checklistId": "reliability-review", "path": "skills/feature-design/references/review-checklists/reliability-review.md", "condition": "跨进程、网络、队列、存储或可用性边界影响正确性" },
+        { "checklistId": "security-review", "path": "skills/feature-design/references/review-checklists/security-review.md", "condition": "存在信任边界、身份、权限、秘密、外部输入、敏感数据或滥用路径" },
+        { "checklistId": "operability-review", "path": "skills/feature-design/references/review-checklists/operability-review.md", "condition": "生产运行、诊断、发布、回滚、容量或值守责任受到影响" }
+      ]
+    },
+    "implementationDesign": {
+      "required": [
+        { "checklistId": "implementation-feasibility", "path": "skills/feature-design/references/review-checklists/implementation-feasibility.md" },
+        { "checklistId": "implementation-documentation-quality", "path": "skills/feature-design/references/review-checklists/implementation-documentation-quality.md" },
+        { "checklistId": "design-traceability", "path": "skills/feature-design/references/review-checklists/design-traceability.md" }
+      ],
+      "conditional": [
+        { "checklistId": "concurrency-review", "path": "skills/feature-design/references/review-checklists/concurrency-review.md", "condition": "存在并发写入、异步执行、共享状态、顺序或重复交付" },
+        { "checklistId": "migration-review", "path": "skills/feature-design/references/review-checklists/migration-review.md", "condition": "存在数据、接口、事件、配置、依赖或部署兼容迁移" },
+        { "checklistId": "operability-review", "path": "skills/feature-design/references/review-checklists/operability-review.md", "condition": "生产运行、诊断、发布、回滚、资源或容量受到实质影响" },
+        { "checklistId": "security-review", "path": "skills/feature-design/references/review-checklists/security-review.md", "condition": "存在外部输入、身份权限、租户、敏感数据、凭据或滥用路径" }
+      ]
+    },
+    "testDesign": {
+      "required": [
+        { "checklistId": "risk-coverage", "path": "skills/feature-design/references/review-checklists/risk-coverage.md" },
+        { "checklistId": "design-traceability", "path": "skills/feature-design/references/review-checklists/design-traceability.md" }
+      ],
+      "conditional": [
+        { "checklistId": "security-test-review", "path": "skills/feature-design/references/review-checklists/security-test-review.md", "condition": "存在身份、权限、输入、秘密或滥用风险" },
+        { "checklistId": "performance-test-review", "path": "skills/feature-design/references/review-checklists/performance-test-review.md", "condition": "存在延迟、吞吐、容量或资源目标" },
+        { "checklistId": "compatibility-test-review", "path": "skills/feature-design/references/review-checklists/compatibility-test-review.md", "condition": "存在客户端、Schema、协议、版本、平台或滚动部署风险" }
+      ]
+    }
+  }
+}

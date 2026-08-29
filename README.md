@@ -1,317 +1,97 @@
 # scc-dev-sphere
 
-> 面向 Claude Code 的可编排、可审计、人机协同研发流程插件。
+`scc-dev-sphere` 是一个面向 Feature 交付的 Claude Code Plugin：它用主会话 Skill、专业 Agent、人工批准和确定性脚本，把需求提案逐步推进为 Requirement、Design Baseline、Implementation Plan、代码变更和验证交付件。
 
-`scc-dev-sphere` 将需求研发过程拆成可持久化的任务状态、设计产物、决策、证据、评审和批准记录，再使用 Claude Code 原生的 Skills、Agents、Hooks 与 Node.js 脚本推进流程。
+项目当前只实现 Feature 工作流，不提供独立 Agent Runtime，也不替代 Claude Code 的会话、Agent 调用、权限和工具执行机制。
 
-它不是独立的 Agent runtime，也不是一个 npm 应用：
+## 目录
 
-- Claude Code 负责承载主会话、teammate 和用户交互。
-- Skills 负责领域方法和执行契约。
-- Agents 负责 SA、SE、MDE、DEV、TSE、CIE 等角色视角。
-- Hooks 负责写入保护、决策门禁和事实同步。
-- Node.js 脚本负责状态读写、路由、评审矩阵和确定性校验。
+- [项目简介](#项目简介)
+- [核心能力](#核心能力)
+- [工作原理](#工作原理)
+- [快速开始](#快速开始)
+- [Feature 交付流程](#feature-交付流程)
+- [Agent、Skill 与脚本](#agentskill-与脚本)
+- [知识查询与知识源配置](#知识查询与知识源配置)
+- [项目结构](#项目结构)
+- [本地开发与验证](#本地开发与验证)
+- [当前边界](#当前边界)
+- [详细文档](#详细文档)
+- [贡献与许可证](#贡献与许可证)
 
-## 全局约束
+## 项目简介
 
-1. **Claude Code Plugins 优先。** 本项目定位为 Claude Code Plugin；架构设计和实现必须遵循 [Claude Code 官方插件文档](https://code.claude.com/docs/en/plugins) 及其支持的 manifest、目录结构和扩展点。官方插件契约与仓库既有约定冲突时，以官方契约为准。
-2. **简洁优先，避免自建 Agent runtime。** 优先复用 Claude Code 原生能力和最小必要改动，不引入独立的 Agent 调度器、生命周期管理器、注册表、消息总线、持久化 Agent ID 或执行引擎。Node.js 脚本仅承担确定性的状态、路由、校验和产物操作，不演变为自建 runtime；确有例外时必须有明确需求、取舍记录，并先确认官方插件模型无法满足。
+这个插件用于需要保留需求、设计、批准、实现和验证依据的软件 Feature 交付场景。它解决的重点不是“自动生成所有内容”，而是让 Claude Code 在可恢复的任务工作区中：
 
-当前仓库已经实现 Feature 研发 golden path；`taskType` 是后续接入 Bugfix 等研发流程的扩展边界。
+- 先澄清目标、范围和验收，再进入设计；
+- 在主会话中协作完成业务、方案、实现和测试设计；
+- 通过结构 Lint、隔离 Checklist Review 和人工批准保护正式 Baseline；
+- 将已批准设计交给开发 Agent 规划、实现和验证；
+- 在需要外部事实时，按问题语义查询已配置的知识源；
+- 用磁盘上的状态和交付件计算下一项合法动作。
 
-## 设计目标
+流程状态和交付件保存在目标项目的 `.devsphere/` 中，可用于继续会话、检查进度和追溯批准依据。
 
-### 产物与状态驱动
+## 核心能力
 
-流程不依赖某个 Agent 是否“感觉完成”。需求、设计文档、评审矩阵、决策和批准记录落盘后，workflow resolver 根据持久化事实计算下一步动作。
+- **Feature 初始化**：保存原始需求提案，创建任务工作区并设为当前任务。
+- **需求澄清**：收敛问题、目标、范围和验收，经独立 Review 与用户批准后，使 `inputs/` 中的需求输入共同成为 Requirement Baseline。
+- **协作式设计**：依次完成 Business、Solution、Implementation 和 Test Design；每次设计都经历分析、Draft、Lint、隔离 Review、人工批准和 Baseline 发布。
+- **总体设计批准**：确认当前 Feature 所需的全部 Design Baseline 后，才允许进入实现规划。
+- **实现规划与开发**：由 `dev` Agent 生成 Implementation Plan、执行代码变更并记录范围偏差和 diff 摘要。
+- **实现验证**：运行计划中的本地检查并生成测试交接材料；只有验证阶段可以把任务标记为 `completed`。
+- **知识查询**：`knowledge-query` Agent 从 Skill、Local、Repo、MCP 和 Web 来源中按需选取相关来源并返回带最小来源的自然语言结论。
+- **知识源配置**：`knowledge-config` Skill 查询、修改或新增项目级知识源配置。
+- **流程导航**：`workflow` 计算下一项动作，`status` 只读展示任务、Baseline、Review、批准和后续建议。
 
-### 分层编排
+## 工作原理
 
-任务级 workflow 与设计阶段 workflow 是两层不同的编排：
-
-- 任务级 workflow 决定当前任务应该进入澄清、评估、设计、批准、实现计划、实现还是验证。
-- 设计 workflow 只在任务进入 `designing` 后启动，负责业务、方案、实现、测试四个设计阶段及其评审修订循环。
-
-主干 workflow 不选择具体设计子阶段，也不生成设计 teammate prompt；设计 workflow 也不替代任务级状态路由。
-
-### 人机协同门禁
-
-自动化只覆盖可以确定性判断的部分。需求最终确认、工作流模式选择、设计批准、风险接受和首次代码变更等动作保留在主会话，由 Lead 使用 `AskUserQuestion` 完成。teammate 不能直接向用户提问，需要把决策记录交给 Lead 代问。
-
-### 可追溯闭环
-
-每个重要结论都应能回溯到用户确认、知识证据、设计决策、评审 issue 或批准记录。评审问题使用稳定的 issue ID，修订后由评审 Agent 复评并关闭原 issue，不通过创建影子 issue 维护状态。
-
-## 当前 Feature 生命周期
-
-正常任务生命周期为：
-
-```mermaid
-flowchart LR
-  initialized["initialized"] --> clarified["clarified"]
-  clarified --> assessed["assessed"]
-  assessed --> designing["designing"]
-  designing --> design_ready["design_ready"]
-  design_ready --> approved["approved_for_implementation"]
-  approved --> planned["implementation_planned"]
-  planned --> implementing["implementing"]
-  implementing --> verification_ready["verification_ready"]
-  verification_ready --> completed["completed"]
-  designing -.-> blocked["blocked"]
-  implementing -.-> blocked
-  blocked -.-> designing
-  blocked -.-> implementing
+```plantuml
+@startuml
+left to right direction
+rectangle "用户" as U
+rectangle "Workflow\n读取状态并计算 nextAction" as W
+rectangle "主会话 Skill" as S
+rectangle "专业 Agent" as A
+rectangle "项目上下文与知识源" as C
+rectangle "确定性 Scripts" as D
+rectangle "规范化交付件与状态" as O
+U --> W
+W --> S
+W --> A
+S --> C
+A --> C
+S --> D
+A --> D
+D --> O
+S --> O
+A --> O
+O --> W
+@enduml
 ```
 
-异常或不可继续时进入 `blocked`，处理阻塞原因后再回到允许的阶段。顶层 resolver 当前支持的 Feature 状态包括：
+- **Workflow** 读取当前 Feature 的持久化状态，由 resolver 返回 `nextAction.skill`、执行者和所需交付件；它不自行执行设计或代码工作。
+- **Agent** 定义专业角色、职责边界和工具权限。当前实现规划、开发和验证由 `dev` 承担，设计评审与知识查询使用隔离 Agent。
+- **Skill** 定义可复用的工作方法、人工闸口、输入输出和完成标准。没有 Agent 的阶段直接在主会话执行；需要 `dev` 的阶段由 Workflow 委派。
+- **Scripts** 处理适合机器判断的状态读写、下一步解析、配置管理、hash、结构 Lint、Review/Approval 绑定和 Baseline 发布。
+- **Artifact** 是跨阶段消费的正式事实载体；`work/` 中的 Draft 和临时 Review 只服务于当前阶段恢复与校验。
 
-| 状态 | 下一步 | 主要产物或前置条件 |
-| --- | --- | --- |
-| `initialized` | `feature-clarify` | 原始需求已创建 |
-| `clarified` | `feature-assess` | `inputs/requirement.md` 已完成用户确认 |
-| `assessed` | 主会话运行 `feature-design` | `workflowMode` 已确认 |
-| `designing` | 主会话继续运行 `feature-design` | 四个设计阶段按序推进 |
-| `design_ready` | `feature-approve` | 集成设计和评审矩阵已满足批准前置条件 |
-| `approved_for_implementation` | DEV 生成实现计划 | 最终设计批准记录 |
-| `implementation_planned` | DEV 开始实现 | 实现计划和 repo 绑定 |
-| `implementing` | 继续实现或补充验证 | 代码和实现日志 |
-| `verification_ready` | `feature-verify` | 代码实现完成 |
-| `completed` | 无 | 转测交付包已生成 |
+## 快速开始
 
-## 架构分层
+### 环境要求
 
-```mermaid
-flowchart TB
-  U["用户 / Claude Code 主会话"] --> WS["/scc-dev-sphere:workflow"]
-  WS --> WR["scripts/devsphere-workflow.js"]
-  WR --> FR["scripts/workflows/feature-workflow.js"]
-  FR --> NA["nextAction"]
+- **Claude Code**：负责加载 Plugin、执行 Skill 和调用 Agent。仓库未声明最低版本。
+- **Node.js**：运行仓库中的 CommonJS 脚本和 `node:test` 合同测试。仓库未声明最低版本，也没有第三方运行时依赖或安装步骤。
 
-  NA --> CL["feature-clarify"]
-  NA --> AS["feature-assess"]
-  NA --> FD["feature-design 主会话薄执行器"]
-  NA --> AP["feature-approve"]
-  NA --> IP["feature-plan-implementation"]
-  NA --> IM["feature-implement"]
-  NA --> VE["feature-verify"]
+当前仓库只有插件清单 `.claude-plugin/plugin.json`，没有 marketplace 清单、发布地址或经过仓库固化的安装命令。开发态请把仓库根目录作为本地 Claude Code Plugin 加载；具体加载参数以所用 Claude Code 版本的本地插件机制为准。加载后可先在仓库根目录验证结构：
 
-  FD --> SY["sync-stage-status"]
-  SY --> DR["scripts/feature-design-router.js"]
-  DR --> DA["designAction"]
-  DA --> DS["devsphere-dispatch.js"]
-  DS --> TM["确定性 teammate 名称"]
-  TM --> SK["阶段 Skill / feature-review"]
-  SK --> ART["artifacts / decisions / evidence / reviews"]
-  ART --> FD
-
-  H["hooks/hooks.json"] --> G["写入保护与状态同步"]
-  G --> ART
-  S["状态 / 评审 / 决策 / 批准脚本"] --> ART
+```bash
+claude plugin validate --strict .
 ```
 
-### 组件职责
+### 启动第一个 Feature
 
-| 组件 | 负责 | 不负责 |
-| --- | --- | --- |
-| `skills/workflow` | 主入口、任务列表/切换、执行 `nextAction` | 生成设计内容、维护 Agent ID |
-| `scripts/devsphere-workflow.js` | 按 `taskType` 选择 resolver | 选择设计子阶段 |
-| `scripts/workflows/feature-workflow.js` | 计算 Feature 任务级 `nextAction` | 直接派发设计 owner |
-| `skills/feature-design` | 在主会话创建/复用设计团队并执行设计子编排循环 | 自行判断阶段路由、直接维护状态 |
-| `scripts/feature-design-router.js` | 根据 state、matrix、decisions 生成唯一 `designAction` | 直接调用 Agent 或写状态 |
-| `skills/feature-design-*` | 具体领域设计方法，生成设计产物 | 跨阶段 workflow 决策 |
-| `skills/feature-review` | 角色化评审、写入角色快照和复评结论 | 修改共享 matrix、调用 `AskUserQuestion`、接受风险 |
-| `agents/` | 提供角色上下文和评审视角 | 充当 workflow 主干 |
-| `scripts/` | 状态、决策、矩阵、批准、派发 prompt 和守卫 | 生成业务或技术设计内容 |
-| `hooks/` | 保护关键写入、校验 decisions、同步 artifact 事实 | 替代人工判断 |
-| `templates/` | 定义任务产物和交付文件结构 | 维护流程状态 |
-
-## 设计阶段 workflow
-
-设计阶段固定按以下顺序推进：
-
-```mermaid
-flowchart LR
-  businessDesign["businessDesign / SA"] --> solutionDesign["solutionDesign / SE"]
-  solutionDesign --> implementationDesign["implementationDesign / MDE"]
-  implementationDesign --> testDesign["testDesign / TSE"]
-```
-
-每个阶段均遵循：
-
-```mermaid
-flowchart TD
-  owner["owner 产出当前 artifact version"] --> authorize["Lead 授权当前版本评审"]
-  authorize --> reviewers["稳定 design-* teammates 并行评审"]
-  reviewers --> snapshots["各角色写自己的 JSON 快照 + Markdown"]
-  snapshots --> merge["Lead 等全部完成后一次性合并 matrix"]
-  merge --> decision{"pending advisory/risk?"}
-  decision -->|否| reviseCheck{"open blocking 或 apply issue?"}
-  decision -->|是| ask["Lead AskUserQuestion 并记录原 issue 决策"]
-  ask --> reviseCheck
-  reviseCheck -->|是| revise["Lead 汇总 reviewItems，唤醒 owner revise"]
-  revise --> owner
-  reviseCheck -->|否| gate["matrix reviewed + stage 门禁同步"]
-  gate --> next["进入下一阶段"]
-```
-
-设计团队在当前 Claude Code 会话开始设计阶段时一次性创建，并按逻辑名称复用：`design-sa`、`design-se`、`design-mde`、`design-tse`、`design-dev`；`ciCdRisk=true` 时追加 `design-cie`。Lead 直接向已有 teammate 派发设计或评审任务，Reviewer 可以通过 teammate-to-teammate 消息进行事实澄清，但正式评审结论只写角色快照并交由 Lead 合并。Agent Teams 不可用时设计阶段阻断，不退回串行临时 Agent。
-
-### 设计阶段 owner 与评审者
-
-| 阶段 | owner | 主产物 | 默认评审者 |
-| --- | --- | --- | --- |
-| `businessDesign` | SA | `artifacts/business-design.md` | SE |
-| `solutionDesign` | SE | `artifacts/solution-design.md` | SA、MDE、TSE |
-| `implementationDesign` | MDE | `artifacts/implementation-design.md` | SE、DEV、TSE |
-| `testDesign` | TSE | `artifacts/test-design.md` | SA、SE、MDE |
-| `integrated-design` | 主会话流程 | `artifacts/integrated-design.md` | SA、SE、MDE、TSE |
-
-当 `state.ciCdRisk === true` 时，设计阶段评审会按需追加 CIE，检查部署、配置、环境、流水线、数据迁移和发布风险。
-
-### workflow mode
-
-`feature-assess` 根据复杂度和风险推荐模式，用户在主会话确认后写入 `state.json`：
-
-| 模式 | 设计阶段行为 | 人工决策边界 |
-| --- | --- | --- |
-| `auto-design` | 评审通过后自动推进非人工门禁阶段 | Agent 可自主处理设计决策；最终设计批准和代码首次修改仍需人工 |
-| `collaborative-design` | `humanGateStages` 中的阶段需要人工批准，其余阶段自动推进 | 仅指定阶段的 gated decision 交由 Lead 代问 |
-| `strict-human-loop` | 所有设计阶段均为人工门禁 | gated decision 和阶段批准均由 Lead 处理 |
-
-workflow mode 由编排层使用；设计领域 Skill 只关心本阶段的输入、方法、产物和交接契约，不自行实现 workflow 分支。
-
-### designAction
-
-`feature-design-router.js` 是设计阶段的确定性决策点。它只读当前任务数据，每次返回一个动作。设计 Agent 不读取或判断 workflow mode；Lead/router 将门禁策略压缩为 `decisionPolicy=lead-confirm` 或 `agent-autonomy` 传入设计 prompt。
-
-| action | 含义 |
-| --- | --- |
-| `produce_draft` | owner 生成初稿、续稿或按 `reviewItems` 修订 |
-| `ask_gated` | 存在 gated decision，Lead 逐项向用户确认 |
-| `dispatch_reviews` | Lead 授权当前 artifactVersion，并向稳定 reviewer teammate 并行派发 |
-| `wait_reviews` | 已有当前版本评审在执行，等待全部 required Reviewer 完成 |
-| `merge_reviews` | Lead 将全部角色快照一次性合并到 matrix |
-| `ask_review` | advisory/risk pending，Lead 代评审 Agent 向用户询问处理意见 |
-| `human_approve` | 当前阶段产物通过评审，请用户批准阶段 |
-| `design_phase_complete` | 四个设计阶段完成，进入集成设计或后续任务级流程 |
-| `design_blocked` | 修订达到配置上限或 state 配置非法，停止并展示原因 |
-
-router 输出的 `dispatchCmd` 交给 `devsphere-dispatch.js` 渲染为确定性 prompt，再由 Claude Code 以稳定 teammate 名称派发。router 不保存 agentId；恢复或重新拉起由主会话按 teammate 名称处理。
-
-### review issue 闭环
-
-评审矩阵中的 issue 类型和职责如下：
-
-| 类型 | 评审含义 | 后续处理 |
-| --- | --- | --- |
-| `blocking` | 必须处理的问题 | 保持 open 会阻断 artifact 和 stage 通过；修订后由评审 Agent 复评 |
-| `advisory` | 建议项 | Lead 询问用户 `apply` 或不处理；`apply` 的 open issue 进入统一 revise |
-| `risk_candidate` | 风险候选 | Lead 询问用户是否修复或接受；需要修复的 open issue 进入统一 revise |
-
-所有人工决定都写回原 issue，不创建新的 blocking 影子 issue。评审结果先按角色分别落盘，全部 Reviewer 完成后由 Lead 一次性合并；设计 Agent 只处理 router 给出的统一 `payload.reviewItems`，不接收未汇总的单角色正式结论：
-
-- 已修复：Reviewer 在自己的快照中以原 issue ID 写 `closureDecisions`，Lead 合并时关闭原 issue。
-- 未修复：Reviewer 在快照中保持 open，Lead 继续派发统一 revise。
-- Lead：记录 advisory/risk 的人工决定、合并快照，以及 artifact/stage 状态推进。
-
-角色快照的当前版本路径为 `reviews/<artifact>/<role>.json`，同一角色的新版本覆盖该路径中的当前快照；历史评审叙述追加到 `reviews/<artifact>/<role>-review.md`。`artifactVersion` 复用产物 frontmatter 的 `version` 作为评审批次键，不新增 `reviewBatchId` 或版本目录。
-
-`set-status reviewed` 和阶段状态门禁会阻断以下情况：
-
-- 存在 open blocking；
-- 存在 pending advisory/risk；
-- 存在仍为 open 且人工决定为 `apply` 的修订项。
-
-### 修订循环上限
-
-任务级 `state.json` 可配置设计修订上限：
-
-```json
-{
-  "workflowMode": "auto-design",
-  "humanGateStages": [],
-  "designRevisionLimit": 25
-}
-```
-
-- 新任务默认写入 `25`。
-- 历史任务缺少该字段时按 `25` 兼容运行。
-- 必须为正整数；非法值会使 router 返回配置阻断。
-- 当前轮次仍由 artifact 中 open blocking issue 的最大 `round` 推导，未引入额外 revision counter。
-
-## 角色模型
-
-| Agent | 主要职责 | 典型产物/视角 |
-| --- | --- | --- |
-| SA | 业务分析、业务设计、业务一致性评审 | 业务规则、范围、术语、异常流程 |
-| SE | 方案设计、系统架构评审 | 系统边界、接口、数据模型、集成约束 |
-| MDE | 模块级实现设计、模块影响评审 | 调用链、模块拆解、实现可行性 |
-| DEV | 实现计划、代码实现、验证和开发风险评审 | repo 绑定、实现日志、代码变更、验证结果 |
-| TSE | 测试设计、可测性和回归风险评审 | 验收标准、测试策略、回归范围 |
-| CIE | 按风险触发的部署、配置、CI/CD 评审 | 环境准备、发布、回滚和流水线检查清单 |
-
-teammate 共享 `devsphere-teammate-conduct`：不能直接调用 `AskUserQuestion`，不能用 Write/Edit/Bash 直接写 `decisions/` 或设计关键产物，决策和 issue 必须通过对应 CLI 记录。
-
-## 任务工作区与审计链
-
-活跃任务由 `.devsphere/current-task.json` 指向，任务内容位于：
-
-```text
-.devsphere/
-├── current-task.json
-└── tasks/feature/<task-id>/
-    ├── state.json                         # 任务状态、模式、阶段和修订上限
-    ├── inputs/requirement.md               # 原始需求与澄清结论
-    ├── artifacts/                         # 四阶段设计和 integrated-design
-    ├── decisions/                         # gated/autonomous 决策记录
-    ├── evidence/
-    │   ├── evidence-registry.json         # 证据索引与缺口
-    │   ├── knowledge/                     # EV 快照
-    │   └── repository/                    # 代码仓证据
-    ├── reviews/
-    │   ├── review-matrix.json             # Lead 合并后的 issue 与 artifact 状态
-    │   └── <artifact>/                    # 角色当前快照 + Markdown 历史
-    │       ├── <role>.json                # 当前 artifactVersion 的机器快照
-    │       └── <role>-review.md           # 按 artifactVersion 追加的叙述
-    ├── approvals/                         # 最终设计/计划批准
-    ├── implementation/                    # implementation-plan/log
-    ├── verification/                     # test-handoff
-    ├── links/                             # repo 绑定
-    └── quality-gates/                     # 可选的模板/质量门禁结果
-```
-
-### 关键状态层次
-
-| 层次 | 事实源 | 写入职责 |
-| --- | --- | --- |
-| 任务状态 | `state.json.status` | workflow/feature Skill 按阶段推进 |
-| 阶段状态 | `state.json.stages.*.status` | `sync-stage-status` 和 Lead 的阶段批准动作 |
-| 人工/自主决策 | `decisions/*.json` | `devsphere-decisions.js` |
-| 角色评审当前快照 | `reviews/<artifact>/<role>.json` | Reviewer 通过 `devsphere-review-state.js complete` |
-| review issue / artifact review 状态 | `reviews/review-matrix.json` | Lead 通过 `devsphere-review-state.js merge` 和 matrix 门禁 |
-| 最终批准 | `approvals/*.json` | `feature-approve` 或实现计划批准流程 |
-| 验证交付 | `verification/test-handoff.md` | `feature-verify` |
-
-`knowledge-query` 的采用事实需要保存 EV 快照并登记到 `evidence/evidence-registry.json`；知识不足时记录 gap，不把未经确认的推断伪装成事实。
-
-## Hooks 与安全边界
-
-`hooks/hooks.json` 当前配置了以下生命周期保护：
-
-- `UserPromptExpansion`：进入 `feature-implement` 和 `feature-approve` 时检查任务前置条件。
-- `PreToolUse Write|Edit`：人工门禁阶段禁止在 gated decision 未解决时写主设计产物，并校验 decisions JSON 内容格式。
-- `PreToolUse Bash`：禁止用 Bash 直接写 `decisions/` 和 `artifacts/`，对应 CLI 调用保留豁免。
-- `PreToolUse Write|Edit/Bash`：禁止直接写入共享 `review-matrix.json` 或角色 JSON 快照，要求使用评审状态脚本；角色之间通过独立快照降低并发写冲突。
-- `TeammateIdle`：teammate 空闲时再次扫描 decisions 文件，发现非法内容则阻止静默结束。
-- `PostToolUse Write|Edit`：根据 artifact 是否存在同步阶段的确定性事实。
-
-这些 Hook 是安全兜底，不替代 Lead 对风险、建议项和最终设计的判断。
-
-## 使用方式
-
-### 日常入口
-
-在 Claude Code 中，推荐从主 workflow 推进：
+在已经加载插件的 Claude Code 会话中，进入需要交付 Feature 的目标项目，然后依次调用：
 
 ```text
 /scc-dev-sphere:feature-init
@@ -319,125 +99,222 @@ teammate 共享 `devsphere-teammate-conduct`：不能直接调用 `AskUserQuesti
 /scc-dev-sphere:status
 ```
 
-`workflow` 支持：
+`feature-init` 会在会话中收集需求描述和任务 ID，并创建 `.devsphere/tasks/feature/<task-id>/`。之后反复调用 `workflow`；它会根据当前状态展示并确认下一项合法动作。`status` 只读查看当前进度，不推进流程。
+
+如果项目还没有活动 Feature，直接调用 `workflow` 也会提示先使用 `feature-init`。
+
+## Feature 交付流程
+
+```plantuml
+@startuml
+left to right direction
+rectangle "初始化" as I
+rectangle "需求澄清" as R
+rectangle "协作式设计" as D
+rectangle "总体设计批准" as A
+rectangle "实现规划" as P
+rectangle "开发实现" as C
+rectangle "实现验证" as V
+I --> R
+R --> D
+D --> A
+A --> P
+P --> C
+C --> V
+@enduml
+```
+
+| 阶段 | 目标 | 执行者 | 主要交付件 |
+|---|---|---|---|
+| 初始化 | 保存原始提案并建立 Feature 工作区 | 主会话 `feature-init` | `inputs/proposal.md`、`state.json` |
+| 需求澄清 | 补充并确认需求目标、边界和验收 | 主会话 `feature-clarify`，内部 `feature-clarify-analysis`，独立 Reviewer Subagent | `inputs/proposal.md`、`inputs/requirement-clarification.md` |
+| 协作式设计 | 完成当前专业设计，并通过 Lint、隔离 Review 和人工批准 | 主会话 `feature-design`、`design-reviewer` | `work/<design-slug>/draft.md`、`artifacts/<design-slug>.md` |
+| 总体设计批准 | 批准当前 Feature 所需的 Baseline 集合 | 主会话 `feature-approve` | `approvals/design-final-approval.json` |
+| 实现规划 | 绑定代码仓并形成可执行计划 | `dev` Agent + `feature-plan-implementation` | `implementation/implementation-plan.md`、`links/repos.json` |
+| 开发实现 | 按批准计划修改代码、验证并记录 diff | `dev` Agent + `feature-implement` | 代码变更、`implementation/implementation-log.md` |
+| 实现验证 | 汇总本地检查并准备测试交接 | `dev` Agent + `feature-verify` | `verification/test-handoff.md` |
+
+默认 Feature 要求四类 Design Baseline。外层 Workflow 按以下顺序选择尚未完成的类型，并在进入下一类型前校验上游 Baseline：
 
 ```text
-/scc-dev-sphere:workflow list
-/scc-dev-sphere:workflow switch <task-id>
+Requirement → Business Design → Solution Design → Implementation Design → Test Design
 ```
 
-任务级 workflow 会根据当前状态给出唯一的下一步。正常情况下不需要手动选择 SA、SE、MDE 或 TSE；设计阶段由 `feature-design-router` 决定 owner、评审者和动作。
+顶层状态依次覆盖 `initialized`、`clarified`、`designing`、`design_ready`、`approved_for_implementation`、`implementation_planned`、`implementing`、`verification_ready` 和 `completed`；无法继续时可以进入 `blocked`。完整路由以 [`scripts/workflows/feature-workflow.js`](scripts/workflows/feature-workflow.js) 为准。
 
-### 专项入口
+## Agent、Skill 与脚本
 
-以下入口用于 workflow 自动推进、专家干预或故障恢复：
+### Agent
+
+| Agent | 核心职责 | 在当前流程中的调用点 |
+|---|---|---|
+| [`dev`](agents/dev.md) | 实现计划、代码落地、本地验证和开发风险反馈 | Workflow 在实现规划、开发实现和验证阶段委派 |
+| [`cie`](agents/cie.md) | 部署、配置、流水线和环境风险评估 | 按风险需要使用，不在默认 Workflow 派发链路中 |
+| [`design-reviewer`](agents/design-reviewer.md) | 通过 CLI 获取内部 Review Policy，对冻结 Draft 执行全部适用 Checklist，维护 Review 门禁状态并返回完整 findings | `feature-design` 在 Draft 通过 Lint 后调用 |
+| [`knowledge-query`](agents/knowledge-query.md) | 只读查询相关知识源，返回可追溯的自然语言结果 | 主会话或 `design-reviewer` 在事实不足时调用 |
+
+这些 Agent 的 frontmatter 当前都没有预加载 Skill；Workflow 或调用方把 Skill 名称、任务上下文和交付件路径传给对应 Agent。`dev` 再根据实现影响面使用开发专项 Skill 的方法。
+
+### Skill
+
+| 类别 | 当前 Skill |
+|---|---|
+| 工作流入口 | [`workflow`](skills/workflow/SKILL.md)、[`status`](skills/status/SKILL.md) |
+| Feature 生命周期 | [`feature-init`](skills/feature-init/SKILL.md)、[`feature-clarify`](skills/feature-clarify/SKILL.md)、[`feature-design`](skills/feature-design/SKILL.md)、[`feature-approve`](skills/feature-approve/SKILL.md)、[`feature-plan-implementation`](skills/feature-plan-implementation/SKILL.md)、[`feature-implement`](skills/feature-implement/SKILL.md)、[`feature-verify`](skills/feature-verify/SKILL.md) |
+| 设计通用能力 | [`design-draft`](skills/design-draft/SKILL.md)、[`design-reopen`](skills/design-reopen/SKILL.md)、[`design-archive`](skills/design-archive/SKILL.md) |
+| 开发专项 | [`backend-development`](skills/backend-development/SKILL.md)、[`frontend-development`](skills/frontend-development/SKILL.md)、[`fullstack-change-planning`](skills/fullstack-change-planning/SKILL.md) |
+| 知识配置 | [`knowledge-config`](skills/knowledge-config/SKILL.md) |
+
+三个开发专项 Skill 不是默认 Workflow 阶段，也没有在 `dev` frontmatter 中预加载；`dev` 根据后端、前端或全栈变更影响面按需采用。
+
+### 确定性脚本
+
+[`scripts/`](scripts/) 中的 Node.js 脚本负责：
+
+- 创建 `.devsphere` 工作区并读写顶层状态；
+- 按 Feature 状态计算下一项 Skill 和执行者；
+- 检查 Design Draft 结构，持久化当前 Lint 状态，并校验 Review Policy、Review、Approval 和 Baseline 的 hash 一致性；
+- 维护 Evidence 和知识源配置；
+- 为关键入口、Evidence、Design 生命周期文件和内部 Review Policy 提供 Hook 守卫；
+- 通过 [`scripts/test/`](scripts/test/) 中的合同测试验证上述行为。
+
+## 知识查询与知识源配置
+
+### 查询行为
+
+`knowledge-query` 先读取当前生效配置，再根据自然语言问题和每个来源的 `description` 选择一个或多个最相关来源。若已有结果仍有缺口，它只扩展到描述明确相关的其他来源，不固定遍历全部来源。
+
+支持的来源类型为：
+
+| 类型 | 目标 |
+|---|---|
+| `skill` | 知识查询 Skill 名称 |
+| `local` | 本地知识目录 |
+| `repo` | 代码仓或项目路径 |
+| `mcp` | 当前环境可用的 MCP 查询能力名称 |
+| `web` | 外部公开信息，无单独 target |
+
+查询结果使用自然语言表达，并为事实保留足以定位依据的最小来源。不同来源发生冲突时并列呈现，不替调用方裁决。Agent 禁止写文件、调用其他 Agent 或维护查询运行时状态；是否采用结论，以及是否登记为 Evidence，由外层主会话决定。
+
+### 配置与生效规则
+
+- 插件默认配置：[`config/knowledge-sources.json`](config/knowledge-sources.json)
+- 项目配置：`.devsphere/config/knowledge-sources.json`
+- 项目配置不存在时，读取插件默认配置。
+- 第一次修改或新增来源时，脚本以默认配置创建完整的项目配置，再应用变更。
+- 项目配置一旦存在，它就是唯一生效配置，不与默认配置逐项合并。
+- 非 Web 来源只有在启用且至少包含一个带非空 `description` 的有效目标时才实际生效；Web 需要启用且具有非空 `description`。
+
+在 Claude Code 中可调用：
 
 ```text
-/scc-dev-sphere:feature-clarify
-/scc-dev-sphere:feature-assess
-/scc-dev-sphere:feature-review --target <artifact>
-/scc-dev-sphere:feature-approve
-/scc-dev-sphere:feature-plan-implementation
-/scc-dev-sphere:feature-implement
-/scc-dev-sphere:feature-verify
-/scc-dev-sphere:knowledge-query
-/scc-dev-sphere:design-quality-gate --target <artifact>
-/scc-dev-sphere:design-template-check --target <artifact>
+/scc-dev-sphere:knowledge-config
 ```
 
-`feature-design` 是主会话中的薄执行器；`feature-design-business`、`feature-design-solution`、`feature-design-implementation` 和 `feature-design-test` 通常由 router 派发给对应 teammate，不建议绕过编排器直接执行。
+然后用自然语言要求它“查询当前配置”“禁用已有 Repo 来源”或“新增一个 Skill 来源”。Skill 会通过统一 `devsphere` CLI 修改配置并回读验证。
 
-设计 teammate 依赖 Claude Code Agent Teams，需启用：
+插件启用时，宿主必须将 `<pluginRoot>/bin` 加入命令执行 PATH；Claude Code 的 Bash Tool 会自动完成该注入。其他宿主需提供等价的 Plugin 适配，Windows PowerShell 通过 `bin/devsphere.cmd` 启动。宿主无法提供 CLI 时应明确报错，不得让 Skill 搜索或猜测脚本位置。
+
+CLI 默认把当前目录作为项目根，也可使用 `--workspace-root <path>` 或 `DEVSPHERE_PROJECT_ROOT` 显式指定。在插件仓库根目录调试时可执行：
 
 ```bash
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+# 查询当前生效配置
+devsphere knowledge show-config
+
+# 修改来源类型的启用状态
+devsphere knowledge update-config --key sources.repo.enabled --value false
+
+# 新增 Repo 来源；同一 type + target 已存在时更新其 description
+devsphere knowledge upsert-source --type repo --target . --description "当前项目的代码、测试和文档"
 ```
 
-### 底层脚本诊断
+这些写操作会创建或更新当前目录下的 `.devsphere/config/knowledge-sources.json`。完整的交互约束见 [`knowledge-config` Skill](skills/knowledge-config/SKILL.md)；`devsphere --help` 是公开 CLI 命令清单，原有脚本入口仅保留兼容。`devsphere guard ...` 是供宿主 Hook 适配器调用的可移植守卫入口，不依赖 Claude 的输入变量。
 
-仓库没有 `package.json`、构建步骤或独立服务。Node.js 脚本既可 CLI 调用，也可被其他脚本 `require()`：
+Claude Code 会在插件启用时自动将插件 `bin/` 加入 Bash 工具的 PATH，因此 Skill 和 Agent 不需要 SessionStart PATH Hook。其他 Bash 宿主可按自身环境机制选择以下任一操作：
 
 ```bash
-# 读取任务级 nextAction
-node scripts/devsphere-workflow.js <workspace-root>
+# Hook 能 source 脚本时
+source /absolute/plugin/path/scripts/setup-devsphere-bash-path.sh
 
-# 查询当前任务和状态
-node scripts/devsphere-state.js read-current-task <workspace-root>
-node scripts/devsphere-state.js read-state <task-path>
-
-# 设计阶段同步与路由
-node scripts/workflows/feature-workflow.js sync-stage-status <workspace-root>
-node scripts/feature-design-router.js <workspace-root>
-
-# 创建任务工作区
-node scripts/devsphere-workspace.js create-feature-task <workspace-root> <task-id> [workflow-mode]
-
-# 决策和评审矩阵
-node scripts/devsphere-decisions.js read <task-path> <artifact-slug>
-node scripts/devsphere-review-matrix.js read <task-path>
-node scripts/devsphere-review-matrix.js list <task-path>
-node scripts/devsphere-review-state.js status <task-path> <artifact>
-node scripts/devsphere-review-state.js merge <task-path> <artifact> <artifact-version>
-
-# 门禁检查
-node scripts/devsphere-guard.js check-implement <workspace-root>
-node scripts/devsphere-guard.js check-approve <workspace-root>
-node scripts/devsphere-guard.js check-advance <workspace-root> <target-status>
+# Hook 通过环境文件向后续工具调用持久化变量时
+/absolute/plugin/path/scripts/setup-devsphere-bash-path.sh --env-file "$AGENT_SESSION_ENV_FILE"
 ```
 
-创建任务后，可以直接编辑该任务的 `state.json` 调整 `designRevisionLimit`，但必须使用正整数；缺失字段按默认值 `25` 处理。
+直接执行脚本不能修改父进程 PATH，因此未使用 `source` 或 `--env-file` 时会失败。不同 Agent 的会话环境文件变量由对应宿主决定。Claude PreToolUse Hook 通过 `${CLAUDE_PLUGIN_ROOT}/bin/devsphere` 绝对定位统一 CLI。
 
 ## 项目结构
 
 ```text
-.claude-plugin/plugin.json       # Claude Code 插件清单
-agents/                          # SA / SE / MDE / DEV / TSE / CIE
-hooks/hooks.json                 # 生命周期 Hook 配置
-references/                      # AskUserQuestion 交互规范
-scripts/                         # 状态、路由、评审、批准、派发和守卫
-scripts/workflows/               # taskType 专属 resolver
-scripts/test/                    # Node.js node:test 测试
-skills/                          # slash command 与阶段 Skill
-templates/                       # artifacts / decisions / reviews / approvals / verification
-docs/governance/                 # 运行时治理契约
-docs/superpowers/                # 设计规格与实施计划
-docs/raw/                        # 原始 PRD、技术方案和澄清记录
-docs/backup/                     # 历史架构、评估和 roadmap 文档
+.
+├── .claude-plugin/        # Claude Code Plugin 元数据
+├── agents/                # 专业 Agent 定义与工具权限
+├── bin/                   # 统一 devsphere CLI 的 POSIX/Windows launcher
+├── skills/                # 工作流、Feature 生命周期和专项方法
+├── scripts/               # 状态、路由、配置和合同校验脚本
+│   ├── workflows/         # taskType 对应的确定性 resolver
+│   └── test/              # Node.js 合同测试
+├── hooks/                 # 高风险入口和受保护写入的 Hook 配置
+├── config/                # 插件默认知识源配置
+├── docs/                  # 工作流、设计、治理和研究文档
+└── README.md              # 项目入口与使用导航
 ```
 
-## 开发与验证
+目标项目中的运行时工作区不属于插件源码，结构如下：
 
-修改脚本或 Skill 后运行完整测试：
+```text
+.devsphere/
+├── current-task.json
+├── config/knowledge-sources.json
+└── tasks/feature/<task-id>/
+    ├── state.json
+    ├── inputs/
+    ├── work/
+    ├── artifacts/
+    ├── approvals/
+    ├── implementation/
+    ├── verification/
+    ├── links/
+    └── evidence/
+```
+
+## 本地开发与验证
+
+仓库没有 `package.json`、构建命令、lint/format 脚本或第三方依赖安装步骤。修改插件后，在仓库根目录运行：
 
 ```bash
 node --test scripts/test/*.test.js
-```
-
-常用校验：
-
-```bash
+claude plugin validate --strict .
 git diff --check
-node scripts/devsphere-workflow.js <workspace-root>
-node scripts/feature-design-router.js <workspace-root>
+git status --short --untracked-files=all
 ```
 
-本项目的可验证对象主要是：
+前三项分别验证脚本合同、插件结构和补丁格式；最后一项用于确认修改范围，不是质量门禁。
 
-- resolver 是否只返回合法的下一步动作；
-- state、stage、artifact、review issue 和 decision 的门禁是否一致；
-- 三种 workflow mode 的人工门禁是否符合 `humanGateStages`；
-- 评审修订是否复用原 issue ID，并阻止未完成项提前通过；
-- 评审是否按 artifactVersion 校验、按角色快照并在全部 Reviewer 完成后由 Lead 合并；
-- Hook 是否阻止绕过 CLI 或绕过人工决策直接写入关键文件。
+## 当前边界
 
-## 当前范围与限制
+- 插件依赖 Claude Code 的 Plugin、Skill、Agent、Hook 和会话能力；仓库没有声明其他宿主的兼容性。
+- Guard 规则由统一 CLI 提供；Claude Skill、Agent 和 PreToolUse Hook 使用 `${CLAUDE_PLUGIN_ROOT}/bin/devsphere` 绝对定位。其他宿主可替换对应的插件根变量并复用 CLI，或使用通用 PATH 脚本，但需要提供自己的 Hook 适配器。
+- Workflow resolver 当前只支持 `feature` taskType，不支持通用任务编排。
+- 插件不实现独立 Agent Runtime、Agent 生命周期或后台调度服务。
+- Requirement、各 Design Baseline、总体设计、首次代码变更和部分高风险计划仍需要人工确认。
+- Knowledge Query 只提供只读事实查询和冲突呈现，不裁决哪个来源正确，也不自动把查询结果登记为 Evidence。
+- `frontend-development` 提供页面、组件、交互、状态和 API 适配上下文；仓库没有独立的多模态 UI 设计流程或交付件合同。
+- `cie` 是按需角色，当前默认 Workflow 不会自动派发它。
 
-- 当前真正注册并可运行的 taskType 只有 `feature`；Bugfix 等流程仍是扩展方向。
-- 知识证据能力依赖运行环境提供可用的知识库 MCP；没有知识库时应记录 evidence gap，而不是编造事实。
-- `feature-design` 需要 Claude Code Agent Teams；不具备该能力时无法按当前 teammate 协议执行设计并行协作。
-- `docs/superpowers/` 和 `docs/backup/` 中的计划、规格与历史文档用于设计追溯；运行时行为以当前 `skills/`、`agents/`、`hooks/` 和 `scripts/` 实现为准。
-- 插件不负责目标业务仓库的具体实现逻辑；代码变更由 DEV 按已批准的实现计划在绑定的 repo 中执行。
+## 详细文档
 
-## License
+- [完整中文使用指南](docs/guides/scc-dev-sphere-user-guide.md)：面向实际使用者的工作空间、Feature 生命周期、阶段输入输出、人工闸口、恢复、故障处理和端到端示例。
+- [SDLC Agentic Workflow](docs/workflows/sdlc-agentic-workflow.md)：Feature 主流程、Review、批准和失败处理概览。
+- [Feature Design Skill-first 重构设计规格](docs/design-refactor/06-skill-first-feature-design-refactor.md)：主会话协作设计、职责边界和恢复模型。
+- [Artifact Contract](docs/governance/artifact-registry-contract.md)：正式 Artifact 的标识、依赖和 hash 合同。
+- [Feature Design 领域语言](docs/matt/CONTEXT.md)：当前设计术语和语义边界。
+- [Knowledge Config Skill](skills/knowledge-config/SKILL.md)：知识源配置的查询、修改和新增方法。
+- [Agent 定义](agents/) 与 [Skill 定义](skills/)：各角色和方法的当前可执行契约。
 
-[MIT](LICENSE)
+`docs/raw/` 和 `docs/superpowers/` 包含历史需求、研究或实施计划，不应代替当前 Agent、Skill 和脚本作为运行时事实来源。
+
+## 贡献与许可证
+
+仓库当前没有单独的 `CONTRIBUTING.md`、Issue 模板或已配置的公开反馈地址。提交改动前，请先运行[本地开发与验证](#本地开发与验证)中的命令，并确保变更没有把历史设计重新引入当前运行时契约。
+
+本仓库根目录的 [`LICENSE`](LICENSE) 是 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0)。

@@ -4,18 +4,27 @@
 const fs = require('fs');
 const path = require('path');
 const {
-  writeState, writeCurrentTask, getDesignRevisionLimit,
+  writeState, writeCurrentTask,
 } = require('./devsphere-state');
+const {
+  BUILTIN_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_TEST_DESIGN_OUTPUT_DIR,
+  readEffectiveTestDesignConfig,
+  readPluginDefaultTestDesignConfig,
+  validateTestDesignConfig,
+} = require('./devsphere-test-design-config');
+
+const DEFAULT_REQUIRED_DESIGN_TYPES = BUILTIN_REQUIRED_DESIGN_TYPES;
 
 const DIRS = [
   'inputs',
   'artifacts',
-  'reviews',
   'approvals',
   'implementation',
   'verification',
   'links',
-  'decisions',
+  'work',
   'evidence/knowledge',
   'evidence/repository',
 ];
@@ -29,20 +38,26 @@ function ensureDirectories(taskPath) {
   }
 }
 
+function initEvidenceRegistry(taskPath) {
+  const registryPath = path.join(taskPath, 'evidence', 'evidence-registry.json');
+  fs.writeFileSync(registryPath, `${JSON.stringify({ evidences: [] }, null, 2)}\n`, 'utf8');
+  return registryPath;
+}
+
 function initState(taskPath, opts = {}) {
+  const testDesignConfig = validateTestDesignConfig(
+    opts.testDesignConfig || readPluginDefaultTestDesignConfig(),
+    'testDesignConfig',
+  );
+  const external = testDesignConfig.mode === 'external';
   const state = {
     taskId: opts.taskId || path.basename(taskPath),
     taskType: 'feature',
-    workflowMode: opts.workflowMode || 'auto-design',
-    humanGateStages: opts.humanGateStages || [],
-    designRevisionLimit: getDesignRevisionLimit(opts),
+    requiredDesignTypes: external
+      ? [...EXTERNAL_REQUIRED_DESIGN_TYPES]
+      : [...DEFAULT_REQUIRED_DESIGN_TYPES],
     status: 'initialized',
-    stages: {
-      businessDesign: { status: 'not_started', artifact: 'artifacts/business-design.md' },
-      solutionDesign: { status: 'not_started', artifact: 'artifacts/solution-design.md' },
-      implementationDesign: { status: 'not_started', artifact: 'artifacts/implementation-design.md' },
-      testDesign: { status: 'not_started', artifact: 'artifacts/test-design.md' },
-    },
+    ...(external ? { externalTestDesign: { skillId: testDesignConfig.externalSkillId } } : {}),
   };
   writeState(taskPath, state);
 }
@@ -55,8 +70,13 @@ function createFeatureTask(workspaceRoot, taskId, opts = {}) {
     throw new Error(`Task workspace already exists: ${taskPath}`);
   }
 
+  const testDesignConfig = readEffectiveTestDesignConfig(workspaceRoot);
   ensureDirectories(taskPath);
-  initState(taskPath, { ...opts, taskId });
+  initEvidenceRegistry(taskPath);
+  if (testDesignConfig.mode === 'external') {
+    fs.mkdirSync(path.join(taskPath, EXTERNAL_TEST_DESIGN_OUTPUT_DIR), { recursive: true });
+  }
+  initState(taskPath, { ...opts, taskId, testDesignConfig });
 
   // Set as current task
   writeCurrentTask(workspaceRoot, {
@@ -80,8 +100,8 @@ function main() {
       case 'create-feature-task': {
         const workspaceRoot = args[1];
         const taskId = args[2];
-        const workflowMode = args[3] || 'auto-design';
-        const taskPath = createFeatureTask(workspaceRoot, taskId, { workflowMode });
+        if (args.length !== 3) throw new Error('Usage: create-feature-task <workspaceRoot> <taskId>');
+        const taskPath = createFeatureTask(workspaceRoot, taskId);
         process.stdout.write(JSON.stringify({ taskPath }));
         break;
       }
@@ -99,4 +119,11 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { createFeatureTask, ensureDirectories, initState };
+module.exports = {
+  DEFAULT_REQUIRED_DESIGN_TYPES,
+  EXTERNAL_REQUIRED_DESIGN_TYPES,
+  createFeatureTask,
+  ensureDirectories,
+  initEvidenceRegistry,
+  initState,
+};

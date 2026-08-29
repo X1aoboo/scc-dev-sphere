@@ -30,9 +30,9 @@ description: 设计批准后生成开发执行计划。DEV Agent 产出 implemen
 
 5. 将代码仓证据保存到 `evidence/repository/`。
 
-## 人工确认（高风险或 Strict 模式）
+## 人工确认（高风险）
 
-如果 `workflowMode === 'strict-human-loop'` 或任务风险较高：
+根据获批 Design Baselines、总体批准中记录的风险与限制，以及真实实现影响判断任务风险。高风险时：
 1. 展示实现计划供人工评审。
 2. 等待人工确认。
 3. 生成 `approvals/implementation-plan-approval.json`。
@@ -40,4 +40,4 @@ description: 设计批准后生成开发执行计划。DEV Agent 产出 implemen
 ## 状态更新
 
 - 普通任务：`status = 'implementation_planned'`
-- 高风险/strict：仅在 `implementation-plan-approval.json` 生成后
+- 高风险：仅在 `implementation-plan-approval.json` 生成后

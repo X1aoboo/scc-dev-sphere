@@ -10,7 +10,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 ## 集成契约
 
 - **入口:** `/scc-dev-sphere:workflow [list|switch <task-id>]`
-- **入参:** 可选子动作通过 `$ARGUMENTS` 传入
+- **入参:** 从调用上下文取得可选子动作 `list` 或 `switch <task-id>`；没有子动作时推进当前任务
 - **输出:** nextAction 展示给用户
 - **完成标准:** nextAction 计算并呈现
 
@@ -18,14 +18,14 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 
 ### 步骤1：解析参数
 
-检查 `$ARGUMENTS`：
+检查调用上下文中的可选子动作：
 - `list` → 列出 `.devsphere/tasks/` 下所有任务及其状态
 - `switch <task-id>` → 更新 `current-task.json` 指向指定任务
 - （空）→ 计算当前活跃任务的下一步动作
 
 ### 步骤2：处理 `list` 子动作
 
-如果 `$ARGUMENTS` 以 `list` 开头：
+如果子动作以 `list` 开头：
 
 1. 读取 `.devsphere/tasks/` 下的所有子目录
 2. 对每个任务目录，读取其 `state.json`
@@ -35,7 +35,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 
 ### 步骤3：处理 `switch` 子动作
 
-如果 `$ARGUMENTS` 以 `switch` 开头：
+如果子动作以 `switch` 开头：
 
 提取 `<task-id>`（`switch` 之后的第二个词）。
 
@@ -62,7 +62,7 @@ description: scc-dev-sphere 主编排入口。读取当前任务状态，计算�
 运行确定性 workflow resolver：
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/../../scripts/devsphere-workflow.js ${CLAUDE_PROJECT_DIR}
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow resolve-next-action
 ```
 
 resolver 会：
@@ -93,6 +93,21 @@ resolver 会：
 ### 步骤5：向用户展示 nextAction
 
 根据 `nextAction.kind`：
+
+#### `sync_design_status`
+
+执行一次确定性状态同步：
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status
+```
+
+解析命令返回的 JSON：
+
+- `status` 已离开 `designing`：回到步骤4，重新计算并处理 nextAction；
+- `status` 仍为 `designing`：展示 `issues`，本次停止，等待 Design Baseline 或批准事实修复。
+
+完成标准：同步命令成功返回，且新的持久化状态或阻塞原因已经向用户呈现。不得把 `reason` 文本当作执行命令的依据。
 
 #### `run_skill`
 
@@ -127,7 +142,29 @@ resolver 会：
 
 #### 无 Agent 场景（agents 为空）
 
-在 main 会话中直接执行 `nextAction.skill`。完成后根据输出继续派发。
+在 main 会话中直接执行 `nextAction.skill`。调用前从当前任务上下文取得 `taskId`，并从 `.devsphere/current-task.json` 取得 `taskPath`；不得要求被调用 Skill 自行猜测当前任务。
+
+把以下结构化上下文转换为本次 Skill 的调用 instruction：
+
+- `taskId`
+- `taskPath`
+- `nextAction.requiredArtifacts`
+- `nextAction.expectedArtifacts`
+- `nextAction.args`
+
+instruction 应说明本次需要读取的产物、工作产物路径和正式输出路径，但不得把整段命令字符串放进 `nextAction.args`，不得通过 Shell 调用 Skill，也不得让 resolver 执行动作。完成后根据 Skill 输出继续派发。
+
+如果 `nextAction.skill === 'feature-clarify'`，instruction 必须明确：全部 `requiredArtifacts` 都是需求数据源，必须完整读取，不得只读取 `proposal.md`；`nextAction.args.clarificationPath` 是唯一澄清结果文件。
+
+如果 `nextAction.stage === 'external-test-design'`，instruction 还必须明确：全部 `requiredArtifacts` 都是本次输入，不得筛选或忽略；全部输出写入 `taskPath/nextAction.args.outputDir`；workflow 已取得本次启动确认，Skill 执行过程中不再发起人工交互。外部 Skill 正常结束才算本次派发完成。
+
+如果 `nextAction.skill` 为 `feature-design` 且当前状态为 `clarified`，用户确认继续后、调用 Skill 前先执行：
+
+```bash
+"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow set-task-status --status designing
+```
+
+这表示设计活动已经开始。直接调用专业 Skill 不承诺推进 Feature Task 顶层状态；`/scc-dev-sphere:workflow` 是正式生命周期入口。
 
 #### 单 Agent 场景（agents 含 1 个元素）
 
@@ -147,25 +184,33 @@ resolver 会：
 - 对 `nextAction.agents` 中的每个 agentName，各派发一个 Agent tool
 - 每个 Agent 的 prompt 包含相同的 skill 和任务上下文，但注明自身职责视角
 
-#### Agent 完成后
+#### 派发完成后
 
-所有 Agent 完成后，执行以下同步流程：
+main 会话 Skill 或所有 Agent 完成后，执行以下适用的同步流程：
 
-1. **任务状态同步（仅 feature-assess 完成后）：** 如果刚完成的 skill 是 `feature-assess`，由于 feature-assess 在主会话中运行并通过 AskUserQuestion 获取了模式/门禁决策，需将决策写入任务状态，完成 `clarified → assessed` 迁移：
-
-   ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js set-task-status ${CLAUDE_PROJECT_DIR} assessed <workflowMode> <humanGateStages> <ciCdRisk>
-   ```
-
-   - `<workflowMode>`（第3位）为 feature-assess 中用户确认的模式：`auto-design` / `collaborative-design` / `strict-human-loop`
-   - `<humanGateStages>`（第4位，逗号分隔，无则传空串）为门禁阶段名（仅 `collaborative-design` 时需要），如 `businessDesign,testDesign`
-   - `<ciCdRisk>`（第5位，`'true'`/`'false'`）来自 feature-assess 的 CI/CD 风险评估；仅当评估命中部署/配置/CI/CD/环境风险时为 `'true'`。
-
-2. **阶段状态同步：**
+1. **需求澄清状态同步：** 如果刚完成的 skill 是 `feature-clarify`，仅当它明确返回“需求澄清结果已经用户批准”时，才由外层 workflow 完成顶层状态迁移：
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/../../scripts/workflows/feature-workflow.js sync-stage-status ${CLAUDE_PROJECT_DIR}
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow set-task-status --status clarified
    ```
+
+   如果 Skill 暂停等待用户回答、Review 或最终批准，不得更新状态。
+
+2. **设计状态同步：** 如果刚完成的 skill 是 `feature-design`，只有它明确返回“当前 Design Baseline 已获用户批准并发布”时，执行一次幂等同步：
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status
+   ```
+
+   同步根据工作空间中的 Baseline 和 `state.requiredDesignTypes` 判定保持 `designing` 或进入 `design_ready`，不按固定设计类型顺序推进。每次 Skill 只完成一份 Design Baseline；同步后回到步骤4重新计算下一动作。
+
+3. **外部测试设计完成：** 如果本次 `nextAction.stage === 'external-test-design'`，仅在外部 Skill 正常结束后执行：
+
+   ```bash
+   "${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow complete-external-test-design
+   ```
+
+   命令成功且返回 `status: external_test_design_ready` 才表示完成。Skill 不可用、报错或中断时保持 `design_ready`，展示失败原因并停止本次派发。
 
 然后回到步骤4 重新运行 resolver 计算下一步 nextAction。
 
@@ -246,10 +291,10 @@ multiSelect: false
 
 ### 步骤6：用户执行后
 
-用户执行推荐的 agent/skill 后，对应的 skill 会生成产物并更新状态。下次调用 `/scc-dev-sphere:workflow` 时，resolver 将基于更新后的持久化状态重新计算 nextAction。
+用户执行推荐的 Agent/Skill 后，按步骤5中适用的确定性命令同步状态。下次调用 `/scc-dev-sphere:workflow` 时，resolver 基于最新持久化事实重新计算 nextAction。
 
 ## 约束
 
-- Workflow 不修改状态文件 —— 这是 skill 和 hook 的职责
+- Workflow 只通过步骤5声明的确定性命令更新状态，不直接编辑状态文件
 - Workflow 始终从当前持久化状态重新计算 nextAction（不跨调用缓存）
 - Workflow 通过 AskUserQuestion 获取用户确认后，自动派发 Agent 执行；如果用户选择暂停，则不做任何操作
