@@ -35,12 +35,19 @@
 
 - [ ] **Step 1: 重写失败测试**
 
-在 `scripts/test/design-archive-skill-contract.test.js` 中，删除以下旧用例（复制语义将被移除）：
+在 `scripts/test/design-archive-skill-contract.test.js` 中，删除以下旧用例（复制语义将被移除；最后一个断言 `mode: 'created'`，随 mode 字段删除而失效）：
 
 - `archive run creates version layer and copies docs and assets byte-identical`
 - `archive run updates existing version layer in place and keeps unrelated files`
 - `archive run treats existing empty version dir as created`
 - `archive run accepts free-format Chinese-containing task ids`
+- `archive run CLI works end to end`（被下方 move 语义版本取代）
+
+测试文件顶部 require 区新增：
+
+```js
+const { createFeatureTask } = require('../devsphere-workspace');
+```
 
 将其替换为（放在原 `makeTaskWithDesigns` helper 之后）：
 
@@ -72,13 +79,18 @@ test('archive run clears current task reference when archiving the active task',
 });
 
 test('archive run keeps current task reference when archiving a non-active task', () => {
-  const first = makeTaskWithDesigns();
-  const second = makeTaskWithDesigns('FEAT-OTHER-002');
-  runArchive(second.workspaceRoot, second.taskId, 'v1.0.0', undefined);
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  // create a second task in the same workspace; it becomes the current task
+  createFeatureTask(workspaceRoot, 'FEAT-OTHER-002');
+  writeArtifact(
+    path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', 'FEAT-OTHER-002'),
+    'business-design', '1.0.0',
+  );
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined); // archive the FIRST (non-current) task
   const current = JSON.parse(fs.readFileSync(
-    path.join(first.workspaceRoot, '.devsphere', 'current-task.json'), 'utf8',
+    path.join(workspaceRoot, '.devsphere', 'current-task.json'), 'utf8',
   ));
-  assert.strictEqual(current.activeTaskId, first.taskId);
+  assert.strictEqual(current.activeTaskId, 'FEAT-OTHER-002');
 });
 
 test('archive run rejects duplicate version archive without side effects', () => {
