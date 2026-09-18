@@ -26,7 +26,7 @@ Domains:
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
   config     read | set
-  archive    list-tasks | run
+  archive    list-tasks | run | list-versions | list-archived | activate
   knowledge  read-config | show-config | update-config | upsert-source |
              remove-source | reset-config | register-evidence-record | read-evidence
   state      read-state | read-current-task | get-task-path

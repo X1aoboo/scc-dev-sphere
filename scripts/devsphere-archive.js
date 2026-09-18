@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { readConfig, DEFAULT_ARCHIVE_ROOT } = require('./devsphere-config');
+const { readCurrentTask } = require('./devsphere-state');
 
 function readJSON(filePath) {
   try {
@@ -89,6 +90,16 @@ function assertNoSymlinksInSource(src) {
   }
 }
 
+function moveTree(src, dest) {
+  try {
+    fs.renameSync(src, dest);
+  } catch (error) {
+    if (error.code !== 'EXDEV') throw error;
+    copyTree(src, dest);
+    fs.rmSync(src, { recursive: true });
+  }
+}
+
 function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   if (typeof version !== 'string' || !version.trim()) {
     throw new Error('Version is required');
@@ -100,43 +111,36 @@ function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   if (!fs.existsSync(artifactsDir)) {
     throw new Error(`No baseline design docs to archive (missing artifacts dir)`);
   }
-
-  const docs = [];
-  const assets = [];
-  for (const entry of fs.readdirSync(artifactsDir, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) {
-      throw new Error(`Archive source cannot contain symbolic links: ${entry.name}`);
-    }
-    if (entry.isFile() && entry.name.endsWith('.md')) docs.push(entry.name);
-    else if (entry.isDirectory() && entry.name.endsWith('-assets')) assets.push(entry.name);
-  }
-  if (docs.length === 0) {
+  const hasBaselineDocs = fs.readdirSync(artifactsDir, { withFileTypes: true })
+    .some(entry => entry.isFile() && entry.name.endsWith('.md'));
+  if (!hasBaselineDocs) {
     throw new Error('No baseline design docs to archive (no *.md in artifacts)');
   }
 
-  // Pre-scan the whole source set before creating the destination layer so any
-  // symlink (even nested inside a *-assets tree) fails with no side effects.
-  for (const doc of docs) assertNoSymlinksInSource(path.join(artifactsDir, doc));
-  for (const asset of assets) assertNoSymlinksInSource(path.join(artifactsDir, asset));
+  // Pre-scan the whole task tree before any write so any symlink (even deep
+  // inside work/ or evidence/) fails with no side effects.
+  assertNoSymlinksInSource(taskPath);
 
   const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
   const destination = path.join(archiveRoot, version, taskId);
-  const hasFiles = fs.existsSync(destination) && fs.readdirSync(destination).length > 0;
-  const mode = hasFiles ? 'updated' : 'created';
-  fs.mkdirSync(destination, { recursive: true });
+  if (fs.existsSync(destination)) {
+    throw new Error(`Task already archived at this version: ${version}/${taskId}`);
+  }
+  fs.mkdirSync(path.dirname(destination), { recursive: true });
+  moveTree(taskPath, destination);
 
-  for (const doc of docs) copyTree(path.join(artifactsDir, doc), path.join(destination, doc));
-  for (const asset of assets) copyTree(path.join(artifactsDir, asset), path.join(destination, asset));
+  const current = readCurrentTask(workspaceRoot);
+  if (current && current.activeTaskId === taskId) {
+    fs.rmSync(path.join(workspaceRoot, '.devsphere', 'current-task.json'));
+  }
 
   return {
     taskId,
     version,
     archiveRoot,
     destination,
-    mode,
-    docs,
-    assets,
+    movedTree: fs.readdirSync(destination).sort(),
   };
 }
 
-module.exports = { taskPathFor, listTasks, runArchive };
+module.exports = { taskPathFor, listTasks, runArchive, moveTree };

@@ -14,6 +14,7 @@ const {
 } = require('../devsphere-config');
 const { HELP, main } = require('../devsphere-cli');
 const { listTasks, runArchive } = require('../devsphere-archive');
+const { createFeatureTask } = require('../devsphere-workspace');
 const { makeTask, writeArtifact } = require('./helpers');
 
 const root = path.join(__dirname, '..', '..');
@@ -126,40 +127,95 @@ function makeTaskWithDesigns(taskId) {
   return created;
 }
 
-test('archive run creates version layer and copies docs and assets byte-identical', () => {
+test('archive run moves whole task tree to version layer and removes source', () => {
   const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
   const result = runArchive(workspaceRoot, taskId, 'v1.2.0', path.join(workspaceRoot, 'release'));
-  assert.strictEqual(result.mode, 'created');
-  assert.deepStrictEqual(result.docs.sort(), ['business-design.md', 'solution-design.md']);
-  assert.deepStrictEqual(result.assets, ['business-design-assets']);
-  assert.deepStrictEqual(
-    fs.readFileSync(path.join(result.destination, 'business-design.md')),
-    fs.readFileSync(path.join(taskPath, 'artifacts', 'business-design.md')),
+  assert.ok(Array.isArray(result.movedTree) && result.movedTree.includes('state.json'));
+  assert.ok(result.movedTree.includes('artifacts'));
+  assert.strictEqual(fs.existsSync(taskPath), false, 'source task dir must be removed');
+  assert.ok(fs.existsSync(path.join(result.destination, 'state.json')));
+  assert.match(
+    fs.readFileSync(path.join(result.destination, 'artifacts', 'business-design.md'), 'utf8'),
+    /# Business/,
   );
+  assert.ok(fs.existsSync(path.join(result.destination, 'artifacts', 'business-design-assets', 'ucd', 'w1.svg')));
+  assert.ok(fs.existsSync(path.join(result.destination, 'work')));
+  assert.strictEqual(result.mode, undefined, 'mode field is removed');
+});
+
+test('archive run clears current task reference when archiving the active task', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
   assert.strictEqual(
-    fs.readFileSync(path.join(result.destination, 'business-design-assets', 'ucd', 'w1.svg'), 'utf8'),
-    '<svg/>',
+    fs.existsSync(path.join(workspaceRoot, '.devsphere', 'current-task.json')),
+    false,
+    'current-task.json must be removed',
   );
 });
 
-test('archive run updates existing version layer in place and keeps unrelated files', () => {
+test('archive run keeps current task reference when archiving a non-active task', () => {
   const { workspaceRoot, taskId } = makeTaskWithDesigns();
-  const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1.2.0', taskId);
-  fs.mkdirSync(dest, { recursive: true });
-  fs.writeFileSync(path.join(dest, 'business-design.md'), 'OLD', 'utf8');
-  fs.writeFileSync(path.join(dest, 'extra.txt'), 'keep me', 'utf8');
-  const result = runArchive(workspaceRoot, taskId, 'v1.2.0', undefined);
-  assert.strictEqual(result.mode, 'updated');
-  assert.match(fs.readFileSync(path.join(dest, 'business-design.md'), 'utf8'), /# Business/);
-  assert.strictEqual(fs.readFileSync(path.join(dest, 'extra.txt'), 'utf8'), 'keep me');
+  // create a second task in the same workspace; it becomes the current task
+  createFeatureTask(workspaceRoot, 'FEAT-OTHER-002');
+  writeArtifact(
+    path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', 'FEAT-OTHER-002'),
+    'business-design', '1.0.0',
+  );
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined); // archive the FIRST (non-current) task
+  const current = JSON.parse(fs.readFileSync(
+    path.join(workspaceRoot, '.devsphere', 'current-task.json'), 'utf8',
+  ));
+  assert.strictEqual(current.activeTaskId, 'FEAT-OTHER-002');
 });
 
-test('archive run treats existing empty version dir as created', () => {
-  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+test('archive run rejects duplicate version archive without side effects', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
   const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1.2.0', taskId);
   fs.mkdirSync(dest, { recursive: true });
-  const result = runArchive(workspaceRoot, taskId, 'v1.2.0', undefined);
-  assert.strictEqual(result.mode, 'created');
+  fs.writeFileSync(path.join(dest, 'old.md'), 'old', 'utf8');
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1.2.0', undefined), /already archived at this version/i);
+  assert.ok(fs.existsSync(taskPath), 'source must be untouched');
+  assert.strictEqual(fs.readFileSync(path.join(dest, 'old.md'), 'utf8'), 'old');
+});
+
+test('archive run rejects when destination exists as an empty dir', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  fs.mkdirSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1', taskId), { recursive: true });
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /already archived at this version/i);
+  assert.ok(fs.existsSync(taskPath));
+});
+
+test('archive run rejects symlink anywhere in the task tree', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  fs.symlinkSync('/etc/hosts', path.join(taskPath, 'work', 'evil-link'));
+  assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /symbolic link/i);
+  assert.ok(fs.existsSync(taskPath));
+  assert.strictEqual(fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1')), false);
+});
+
+test('archive run accepts free-format Chinese-containing task ids', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns('FEAT-个人博客系统');
+  const result = runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.ok(fs.existsSync(path.join(
+    result.destination, 'artifacts', 'business-design.md',
+  )));
+  assert.strictEqual(fs.existsSync(path.join(
+    workspaceRoot, '.devsphere', 'tasks', 'feature', taskId,
+  )), false);
+});
+
+test('archive run CLI works end to end with move semantics', () => {
+  const { workspaceRoot, taskId, taskPath } = makeTaskWithDesigns();
+  const out = capture([
+    'archive', 'run', '--workspace-root', workspaceRoot,
+    '--task-id', taskId, '--version', 'v1.0.0',
+    '--archive-root', path.join(workspaceRoot, 'release'),
+  ]);
+  assert.strictEqual(out.exitCode, 0, out.stderr);
+  const result = JSON.parse(out.stdout);
+  assert.ok(Array.isArray(result.movedTree));
+  assert.ok(fs.existsSync(path.join(result.destination, 'state.json')));
+  assert.strictEqual(fs.existsSync(taskPath), false);
 });
 
 test('archive run rejects unknown task id without side effects', () => {
@@ -222,31 +278,6 @@ test('archive run rejects nested symlink before creating a layer', () => {
   const dest = path.join(workspaceRoot, '.devsphere', 'archive', 'v1', taskId);
   assert.throws(() => runArchive(workspaceRoot, taskId, 'v1', undefined), /symbolic link/i);
   assert.strictEqual(fs.existsSync(dest), false);
-});
-
-test('archive run accepts free-format Chinese-containing task ids', () => {
-  const { workspaceRoot, taskId } = makeTaskWithDesigns('FEAT-个人博客系统');
-  const result = runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
-  assert.strictEqual(result.mode, 'created');
-  assert.ok(fs.existsSync(path.join(
-    workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'business-design.md',
-  )));
-  assert.ok(fs.existsSync(path.join(
-    workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'business-design-assets', 'ucd', 'w1.svg',
-  )));
-});
-
-test('archive run CLI works end to end', () => {
-  const { workspaceRoot, taskId } = makeTaskWithDesigns();
-  const out = capture([
-    'archive', 'run', '--workspace-root', workspaceRoot,
-    '--task-id', taskId, '--version', 'v1.0.0',
-    '--archive-root', path.join(workspaceRoot, 'release'),
-  ]);
-  assert.strictEqual(out.exitCode, 0, out.stderr);
-  const result = JSON.parse(out.stdout);
-  assert.strictEqual(result.mode, 'created');
-  assert.ok(fs.existsSync(path.join(result.destination, 'business-design.md')));
 });
 
 test('design-archive skill is user-invocable only and forbids model invocation', () => {
