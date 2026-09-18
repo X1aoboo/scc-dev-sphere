@@ -405,7 +405,7 @@ test('activate keeps version layer when other tasks remain in it', () => {
   const { workspaceRoot, taskId } = makeTaskWithDesigns();
   const other = makeTaskWithDesigns('FEAT-OTHER-002');
   runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
-  runArchive(other.workspaceRoot, other.taskId, 'v1.0.0', undefined);
+  runArchive(other.workspaceRoot, other.taskId, 'v1.0.0', path.join(workspaceRoot, '.devsphere', 'archive'));
   activateTask(workspaceRoot, taskId, 'v1.0.0', undefined);
   assert.ok(fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1.0.0', other.taskId)));
 });
@@ -424,8 +424,8 @@ test('activate rejects when task already exists in workspace', () => {
 
 test('activate rejects unknown version layer and unknown task', () => {
   const { workspaceRoot, taskId } = makeTaskWithDesigns();
-  assert.throws(() => activateTask(workspaceRoot, taskId, 'v9.9.9', undefined), /Version layer not found/);
   runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.throws(() => activateTask(workspaceRoot, taskId, 'v9.9.9', undefined), /Version layer not found/);
   assert.throws(() => activateTask(workspaceRoot, 'FEAT-NOPE', 'v1.0.0', undefined), /Archived task not found/);
 });
 
