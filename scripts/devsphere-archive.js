@@ -48,6 +48,29 @@ function listTasks(workspaceRoot) {
     .sort((a, b) => a.taskId.localeCompare(b.taskId));
 }
 
+function listVersions(workspaceRoot, explicitArchiveRoot) {
+  const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
+  if (!fs.existsSync(archiveRoot)) return [];
+  return fs.readdirSync(archiveRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function listArchived(workspaceRoot, version, explicitArchiveRoot) {
+  assertSafeSegment(version, 'version');
+  const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
+  const versionDir = path.join(archiveRoot, version);
+  if (!fs.existsSync(versionDir)) throw new Error(`Version layer not found: ${version}`);
+  return fs.readdirSync(versionDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const state = readJSON(path.join(versionDir, entry.name, 'state.json'));
+      return { taskId: entry.name, status: state ? state.status : null };
+    })
+    .sort((a, b) => a.taskId.localeCompare(b.taskId));
+}
+
 function resolveArchiveRoot(workspaceRoot, explicit) {
   let value;
   if (typeof explicit === 'string' && explicit.trim()) {
@@ -143,4 +166,4 @@ function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   };
 }
 
-module.exports = { taskPathFor, listTasks, runArchive, moveTree };
+module.exports = { taskPathFor, listTasks, listVersions, listArchived, runArchive, moveTree };

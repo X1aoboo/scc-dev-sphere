@@ -241,6 +241,18 @@ function dispatchArchive(action, options, io) {
       options['archive-root'],
     );
   }
+  if (action === 'list-versions') {
+    requireAllowedOptions(options, ['archive-root']);
+    return archive.listVersions(workspaceRoot, options['archive-root']);
+  }
+  if (action === 'list-archived') {
+    requireAllowedOptions(options, ['version', 'archive-root']);
+    return archive.listArchived(
+      workspaceRoot,
+      requireOption(options, 'version'),
+      options['archive-root'],
+    );
+  }
   throw new Error(`Unknown archive action: ${action}`);
 }
 

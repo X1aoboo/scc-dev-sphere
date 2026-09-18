@@ -13,7 +13,7 @@ const {
   DEFAULT_ARCHIVE_ROOT,
 } = require('../devsphere-config');
 const { HELP, main } = require('../devsphere-cli');
-const { listTasks, runArchive } = require('../devsphere-archive');
+const { listTasks, runArchive, listVersions, listArchived } = require('../devsphere-archive');
 const { createFeatureTask } = require('../devsphere-workspace');
 const { makeTask, writeArtifact } = require('./helpers');
 
@@ -262,6 +262,43 @@ test('archive run rejects path-traversal taskId before any write', () => {
     fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1', '..')),
     false,
   );
+});
+
+test('list-versions returns version layer names and empty list when no archive root', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const root2 = makeWorkspace();
+  assert.deepStrictEqual(listVersions(workspaceRoot, undefined), ['v1.0.0']);
+  assert.deepStrictEqual(listVersions(root2, undefined), []);
+});
+
+test('list-archived returns tasks with status from archived state.json', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const tasks = listArchived(workspaceRoot, 'v1.0.0', undefined);
+  assert.ok(tasks.some(task => task.taskId === taskId && task.status === 'initialized'));
+});
+
+test('list-archived rejects unknown version layer', () => {
+  const { workspaceRoot } = makeTaskWithDesigns();
+  assert.throws(() => listArchived(workspaceRoot, 'v9.9.9', undefined), /Version layer not found/);
+});
+
+test('list-versions and list-archived CLI work end to end', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const versions = capture(['archive', 'list-versions', '--workspace-root', workspaceRoot]);
+  assert.strictEqual(versions.exitCode, 0, versions.stderr);
+  assert.deepStrictEqual(JSON.parse(versions.stdout), ['v1.0.0']);
+  const tasks = capture([
+    'archive', 'list-archived', '--workspace-root', workspaceRoot, '--version', 'v1.0.0',
+  ]);
+  assert.strictEqual(tasks.exitCode, 0, tasks.stderr);
+  assert.ok(JSON.parse(tasks.stdout).some(task => task.taskId === taskId));
+});
+
+test('HELP exposes new archive actions', () => {
+  assert.match(HELP, /list-versions\s*\|\s*list-archived\s*\|\s*activate/);
 });
 
 test('config set rejects prototype-polluting keys and does not pollute global prototype', () => {
