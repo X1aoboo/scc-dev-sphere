@@ -21,7 +21,7 @@ disable-model-invocation: true
 2. 枚举版本层供用户选择：执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" archive list-versions --workspace-root "<workspaceRoot>" --archive-root "<resolved-root>"`，把结果以单选列表呈现给用户。列表为空时，提示归档区为空、无任务可激活并终止。
 3. 枚举该版本层下的任务供用户选择：执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" archive list-archived --workspace-root "<workspaceRoot>" --version "<version>" --archive-root "<resolved-root>"`，把结果（含任务状态）以单选列表呈现给用户。列表为空时提示该版本层无任务并终止。
 4. 执行激活：`"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" archive activate --workspace-root "<workspaceRoot>" --task-id "<task-id>" --version "<version>" --archive-root "<resolved-root>"`，解析脚本输出的 JSON。脚本报错（版本层不存在、任务不存在、工作区已存在同 ID 任务等）时透传错误并终止。
-5. 展示激活摘要：迁回路径、已设为当前激活任务、空版本层已清理（如适用）。若任务的设计处于已发布状态，提示先执行 `design-reopen` 回到草稿状态再做设计变更。
+5. 展示激活摘要：迁回路径、已设为当前激活任务、空版本层已清理（如适用）。若任务的设计处于已发布状态，提示先执行 `design-reopen` 回到草稿状态再做设计变更。激活会将当前激活任务切换为本任务；原当前任务仍保留在工作区，如需继续处理可重新指定。
 
 ## 规则
 

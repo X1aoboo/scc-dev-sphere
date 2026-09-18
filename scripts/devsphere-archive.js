@@ -118,7 +118,12 @@ function moveTree(src, dest) {
     fs.renameSync(src, dest);
   } catch (error) {
     if (error.code !== 'EXDEV') throw error;
-    copyTree(src, dest);
+    try {
+      copyTree(src, dest);
+    } catch (copyError) {
+      fs.rmSync(dest, { recursive: true, force: true });
+      throw copyError;
+    }
     fs.rmSync(src, { recursive: true });
   }
 }
@@ -162,6 +167,7 @@ function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
     version,
     archiveRoot,
     destination,
+    // Top-level entries of the archived task directory (not a recursive manifest).
     movedTree: fs.readdirSync(destination).sort(),
   };
 }
@@ -180,6 +186,10 @@ function activateTask(workspaceRoot, taskId, version, explicitArchiveRoot) {
   const archivedPath = path.join(versionDir, taskId);
   if (!fs.existsSync(archivedPath)) {
     throw new Error(`Archived task not found: ${version}/${taskId}`);
+  }
+  const archivedState = readJSON(path.join(archivedPath, 'state.json'));
+  if (!archivedState) {
+    throw new Error(`Not a whole-task archive (missing state.json, legacy copy-mode layer): ${version}/${taskId}`);
   }
   assertNoSymlinksInSource(archivedPath);
 

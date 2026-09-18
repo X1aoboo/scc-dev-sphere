@@ -360,6 +360,14 @@ test('design-active skill orchestrates two-level selection via devsphere CLI', (
   assert.match(skill, /## 完成/);
 });
 
+test('activate rejects legacy copy-mode layer without state.json', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  fs.rmSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'state.json'));
+  assert.throws(() => activateTask(workspaceRoot, taskId, 'v1.0.0', undefined), /legacy copy-mode layer/);
+  assert.ok(fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1.0.0', taskId, 'artifacts')));
+});
+
 test('.gitignore ignores .devsphere data area', () => {
   const ignore = read('.gitignore');
   assert.match(ignore, /^\.devsphere\/?$/m);
