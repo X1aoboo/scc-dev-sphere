@@ -339,6 +339,27 @@ test('design-archive skill orchestrates whole-task migration via devsphere CLI',
   assert.doesNotMatch(skill, /纯复制/);
 });
 
+test('design-active skill is user-invocable only and forbids model invocation', () => {
+  const skill = read('skills/design-active/SKILL.md');
+  assert.match(skill, /^name: design-active$/m);
+  assert.match(skill, /激活/);
+  assert.match(skill, /^disable-model-invocation: true$/m);
+  assert.doesNotMatch(skill, /^user-invocable:\s*false$/m);
+  assert.doesNotMatch(skill, /^context:\s*fork$/m);
+});
+
+test('design-active skill orchestrates two-level selection via devsphere CLI', () => {
+  const skill = read('skills/design-active/SKILL.md');
+  const process = skill.match(/## 执行步骤([\s\S]*?)## 规则/)[1];
+  assert.strictEqual((process.match(/^\d+\. /gm) || []).length, 5);
+  for (const phrase of [/archive list-versions/, /archive list-archived/, /archive activate/, /config read/]) {
+    assert.match(skill, phrase);
+  }
+  assert.match(skill, /design-reopen/);
+  assert.match(skill, /## 集成契约/);
+  assert.match(skill, /## 完成/);
+});
+
 test('.gitignore ignores .devsphere data area', () => {
   const ignore = read('.gitignore');
   assert.match(ignore, /^\.devsphere\/?$/m);
