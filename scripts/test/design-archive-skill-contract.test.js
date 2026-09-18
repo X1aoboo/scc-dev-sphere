@@ -13,7 +13,7 @@ const {
   DEFAULT_ARCHIVE_ROOT,
 } = require('../devsphere-config');
 const { HELP, main } = require('../devsphere-cli');
-const { listTasks, runArchive, listVersions, listArchived } = require('../devsphere-archive');
+const { listTasks, runArchive, listVersions, listArchived, activateTask } = require('../devsphere-archive');
 const { createFeatureTask } = require('../devsphere-workspace');
 const { makeTask, writeArtifact } = require('./helpers');
 
@@ -340,4 +340,90 @@ test('design-archive skill orchestrates archive via devsphere CLI', () => {
 test('.gitignore ignores .devsphere data area', () => {
   const ignore = read('.gitignore');
   assert.match(ignore, /^\.devsphere\/?$/m);
+});
+
+test('activate moves archived task back, sets current task, cleans empty version layer', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const result = activateTask(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.strictEqual(result.activated, true);
+  const taskPath = path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', taskId);
+  assert.ok(fs.existsSync(path.join(taskPath, 'state.json')));
+  assert.ok(fs.existsSync(path.join(taskPath, 'artifacts', 'business-design.md')));
+  assert.strictEqual(
+    fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1.0.0')),
+    false,
+    'empty version layer must be cleaned up',
+  );
+  const current = JSON.parse(fs.readFileSync(
+    path.join(workspaceRoot, '.devsphere', 'current-task.json'), 'utf8',
+  ));
+  assert.strictEqual(current.activeTaskId, taskId);
+  assert.strictEqual(current.taskPath, `.devsphere/tasks/feature/${taskId}`);
+});
+
+test('activate keeps version layer when other tasks remain in it', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const other = makeTaskWithDesigns('FEAT-OTHER-002');
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  runArchive(other.workspaceRoot, other.taskId, 'v1.0.0', path.join(workspaceRoot, '.devsphere', 'archive'));
+  activateTask(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.ok(fs.existsSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v1.0.0', other.taskId)));
+});
+
+test('activate rejects when task already exists in workspace', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  const other = makeTaskWithDesigns('FEAT-OTHER-002');
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  // other task stays in workspace; try to activate a same-id task from another layer
+  assert.throws(
+    () => activateTask(other.workspaceRoot, other.taskId, 'v1.0.0', path.join(workspaceRoot, '.devsphere', 'archive')),
+    /already exists in workspace/i,
+  );
+  assert.ok(fs.existsSync(path.join(other.workspaceRoot, '.devsphere', 'tasks', 'feature', other.taskId)));
+});
+
+test('activate rejects unknown version layer and unknown task', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.throws(() => activateTask(workspaceRoot, taskId, 'v9.9.9', undefined), /Version layer not found/);
+  assert.throws(() => activateTask(workspaceRoot, 'FEAT-NOPE', 'v1.0.0', undefined), /Archived task not found/);
+});
+
+test('activate rejects path traversal in version and task id', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  assert.throws(() => activateTask(workspaceRoot, taskId, '../escape', undefined), /Invalid version/);
+  assert.throws(() => activateTask(workspaceRoot, '../' + taskId, 'v1.0.0', undefined), /Invalid taskId/);
+});
+
+test('archive activate round trip: v1 consumed, modified task archives as v2', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  activateTask(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const taskPath = path.join(workspaceRoot, '.devsphere', 'tasks', 'feature', taskId);
+  fs.writeFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), '# Changed', 'utf8');
+  runArchive(workspaceRoot, taskId, 'v2.0.0', undefined);
+  assert.match(
+    fs.readFileSync(path.join(workspaceRoot, '.devsphere', 'archive', 'v2.0.0', taskId, 'artifacts', 'business-design.md'), 'utf8'),
+    /# Changed/,
+  );
+  activateTask(workspaceRoot, taskId, 'v2.0.0', undefined);
+  assert.match(
+    fs.readFileSync(path.join(taskPath, 'artifacts', 'business-design.md'), 'utf8'),
+    /# Changed/,
+  );
+});
+
+test('activate CLI works end to end', () => {
+  const { workspaceRoot, taskId } = makeTaskWithDesigns();
+  runArchive(workspaceRoot, taskId, 'v1.0.0', undefined);
+  const out = capture([
+    'archive', 'activate', '--workspace-root', workspaceRoot,
+    '--task-id', taskId, '--version', 'v1.0.0',
+  ]);
+  assert.strictEqual(out.exitCode, 0, out.stderr);
+  const result = JSON.parse(out.stdout);
+  assert.strictEqual(result.activated, true);
+  assert.ok(fs.existsSync(path.join(result.taskPath, 'state.json')));
 });

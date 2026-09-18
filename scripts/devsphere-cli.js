@@ -253,6 +253,15 @@ function dispatchArchive(action, options, io) {
       options['archive-root'],
     );
   }
+  if (action === 'activate') {
+    requireAllowedOptions(options, ['task-id', 'version', 'archive-root']);
+    return archive.activateTask(
+      workspaceRoot,
+      requireOption(options, 'task-id'),
+      requireOption(options, 'version'),
+      options['archive-root'],
+    );
+  }
   throw new Error(`Unknown archive action: ${action}`);
 }
 

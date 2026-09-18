@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { readConfig, DEFAULT_ARCHIVE_ROOT } = require('./devsphere-config');
-const { readCurrentTask } = require('./devsphere-state');
+const { readCurrentTask, writeCurrentTask } = require('./devsphere-state');
 
 function readJSON(filePath) {
   try {
@@ -166,4 +166,38 @@ function runArchive(workspaceRoot, taskId, version, explicitArchiveRoot) {
   };
 }
 
-module.exports = { taskPathFor, listTasks, listVersions, listArchived, runArchive, moveTree };
+function activateTask(workspaceRoot, taskId, version, explicitArchiveRoot) {
+  assertSafeSegment(taskId, 'taskId');
+  assertSafeSegment(version, 'version');
+  const tasksDir = path.join(workspaceRoot, '.devsphere', 'tasks', 'feature');
+  const taskPath = path.join(tasksDir, taskId);
+  if (fs.existsSync(taskPath)) {
+    throw new Error(`Task already exists in workspace: ${taskId} (complete or archive it first)`);
+  }
+  const archiveRoot = resolveArchiveRoot(workspaceRoot, explicitArchiveRoot);
+  const versionDir = path.join(archiveRoot, version);
+  if (!fs.existsSync(versionDir)) throw new Error(`Version layer not found: ${version}`);
+  const archivedPath = path.join(versionDir, taskId);
+  if (!fs.existsSync(archivedPath)) {
+    throw new Error(`Archived task not found: ${version}/${taskId}`);
+  }
+  assertNoSymlinksInSource(archivedPath);
+
+  fs.mkdirSync(tasksDir, { recursive: true });
+  moveTree(archivedPath, taskPath);
+
+  writeCurrentTask(workspaceRoot, {
+    activeTaskId: taskId,
+    activeTaskType: 'feature',
+    workspaceRoot: workspaceRoot,
+    taskPath: `.devsphere/tasks/feature/${taskId}`,
+  });
+
+  if (fs.existsSync(versionDir) && fs.readdirSync(versionDir).length === 0) {
+    fs.rmdirSync(versionDir);
+  }
+
+  return { taskId, version, taskPath, destination: taskPath, activated: true };
+}
+
+module.exports = { taskPathFor, listTasks, listVersions, listArchived, runArchive, moveTree, activateTask };
