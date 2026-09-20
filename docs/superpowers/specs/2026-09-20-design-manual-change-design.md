@@ -68,7 +68,8 @@
 
 1. draft 存在；lint 通过且绑定当前 draft（`currentLintStatus`：`lint.status === 'pass' && lint.draftHash === draft.hash`）；
 2. 无既有 review 状态（`review.json`/`review.md` 均不存在；存在则报错"review state already exists; reopen first"，防止覆盖 AI 评审记录）；
-3. `reason` 非空。
+3. 存在 `artifacts/history/<slug>/`（standard/protect 两种 reopen 均会创建历史快照；从未发布过基线的设计没有该目录 → 拒绝，落实 §2 "仅已发布基线" 的脚本级拦截）；
+4. `reason` 非空。
 
 写入两个文件（与现有 review schema 完全兼容，`validate-review`/`approve-current-design`/`publish` 现有校验零改动通过）：
 
@@ -130,7 +131,7 @@ frontmatter：`name: design-manual-change`、中文描述、`disable-model-invoc
 
 | 场景 | 行为 |
 |---|---|
-| 无已发布基线的设计 | 入口过滤（`artifact` 不存在）不可选；全部无基线则终止 |
+| 无已发布基线的设计（从未发布） | Skill 入口过滤 + 脚本级拦截（`record-manual-review` 要求 `artifacts/history/<slug>/` 存在） |
 | protect 模式下 draft 不存在 | CLI 报错提示改用 standard |
 | draft version frontmatter 被改坏 | `bumpMajorVersion` 报错拦截 |
 | lint 失败 | AI 辅助机械性修复（保真约束）+ diff 确认环；无法保真修复交回用户；不绕过 lint |

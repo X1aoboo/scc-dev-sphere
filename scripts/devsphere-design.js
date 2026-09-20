@@ -1378,7 +1378,7 @@ function recordReview(taskPath, designType, input) {
 // without modification; `reviewer: 'human'` + `manual: true` keep the audit
 // trail distinguishable from AI reviews.
 function recordManualReview(taskPath, designType, input) {
-  definitionFor(designType);
+  const definition = definitionFor(designType);
   const draft = readDraftRef(taskPath, designType);
   if (!draft) throw new Error(`No valid Draft for ${designType}`);
   if (!currentLintStatus(taskPath, designType, draft)) {
@@ -1386,6 +1386,12 @@ function recordManualReview(taskPath, designType, input) {
   }
   if (!input || typeof input.reason !== 'string' || !input.reason.trim()) {
     throw new Error('Manual review requires a non-empty reason');
+  }
+  // Both reopen modes snapshot the previous baseline into artifacts/history,
+  // so a missing history root means this design was never published — manual
+  // review exists only for changing published baselines (spec §2 适用范围).
+  if (!fs.existsSync(path.join(taskPath, 'artifacts', 'history', definition.slug))) {
+    throw new Error('Manual review requires a previously published baseline (no artifacts/history for this design type)');
   }
   const summaryFile = reviewSummaryPath(taskPath, designType);
   const reportFile = reviewReportPath(taskPath, designType);
@@ -1395,13 +1401,14 @@ function recordManualReview(taskPath, designType, input) {
   const loaded = loadReviewPolicy(designType);
   const policy = loaded.policy.designTypes[designType];
   const reviewKey = `${designType}:${draft.semanticHash}`;
+  const now = new Date().toISOString();
   const report = [
     '# 人工设计变更检视记录',
     '',
     `- 设计类型: ${designType}`,
     `- 变更原因: ${input.reason.trim()}`,
     '- 声明: 人工已检视完成，豁免隔离 AI Reviewer',
-    `- 检视时间: ${new Date().toISOString()}`,
+    `- 检视时间: ${now}`,
     `- Draft 哈希: ${draft.hash}`,
     '',
   ].join('\n');
@@ -1425,7 +1432,7 @@ function recordManualReview(taskPath, designType, input) {
     reviewer: 'human',
     manual: true,
     reason: input.reason.trim(),
-    reviewedAt: new Date().toISOString(),
+    reviewedAt: now,
   };
   summary.reportHash = sha256File(reportFile);
   writeJSON(summaryFile, summary);
@@ -1598,7 +1605,7 @@ function copyAssetFiles(sourceRoot, targetRoot) {
 }
 
 function reopenDesign(taskPath, designType, options = {}) {
-  const mode = options.mode || 'standard';
+  const mode = options.mode === undefined ? 'standard' : options.mode;
   if (!['standard', 'protect'].includes(mode)) {
     throw new Error(`Invalid reopen mode: ${mode}`);
   }

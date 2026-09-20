@@ -20,7 +20,6 @@ const {
   approveCurrentDesign,
   publish,
   reopenDesign,
-  readDraftRef,
   readArtifactRef,
   inspectDesign,
   designReady,
@@ -276,6 +275,20 @@ test('record-manual-review CLI works end to end', () => {
 
 test('HELP exposes record-manual-review', () => {
   assert.match(HELP, /record-manual-review/);
+});
+
+test('record-manual-review rejects a never-published draft (no prior baseline)', () => {
+  const { taskPath } = prepareDesigningTask();
+  initDesign(taskPath, 'businessDesign');
+  fs.writeFileSync(draftPath(taskPath, 'businessDesign'), businessDraft(TASK_ID), 'utf8');
+  installBusinessAssets(taskPath);
+  passLint(taskPath);
+  assert.throws(
+    () => recordManualReview(taskPath, 'businessDesign', { reason: '首次发布' }),
+    /previously published baseline/,
+  );
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.json')), false);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.md')), false);
 });
 
 test('design-manual-change skill is user-invocable only and forbids model invocation', () => {

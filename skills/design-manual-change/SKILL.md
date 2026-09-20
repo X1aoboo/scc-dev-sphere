@@ -12,7 +12,7 @@ disable-model-invocation: true
 
 - **入口:** `/scc-dev-sphere:design-manual-change`
 - **入参:** 设计类型（存在已发布基线者单选）、变更原因（必填）、人工批准确认（必选）
-- **输出:** 新版本基线（major+1）+ `artifacts/history/` 历史快照 + `reviewer: 'human'` 审计记录
+- **输出:** 新版本基线（major+1）、`artifacts/history/` 历史快照、人工变更审计（approval 记录带 `manual-design-change:` 前缀；review 状态在 publish 后被清除）
 - **完成标准:** 新基线已发布、状态已同步、审计记录可区分人工变更
 
 ## 执行步骤
@@ -23,8 +23,8 @@ disable-model-invocation: true
 4. 收集变更原因：以自然语言向用户提问，必填非空。
 5. 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design lint --task-path "<taskPath>" --design-type <designType>`；失败时按下述"内容保真"规则辅助修复，向用户展示修复 diff 并获确认后重跑，直至通过；无法保真修复时向用户说明冲突点并交回。
 6. 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design validate-draft --task-path "<taskPath>" --design-type <designType>` 确认 lint 状态绑定当前 draft。
-7. 将变更原因写入临时 JSON 文件（`{"reason": "<原因>"}`），执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design record-manual-review --task-path "<taskPath>" --design-type <designType> --input-file <file>`。
-8. 人工批准：向用户呈现变更摘要（原因、版本、lint 结果），获用户**明确确认**后执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design approve-current-design --task-path "<taskPath>" --design-type <designType> --input-file <file>`，输入 `{"approvedBy": "human", "summary": "manual-design-change: <原因>", "acceptedRisks": []}`；用户不确认则终止，不写批准记录。
+7. 将变更原因写入临时 JSON 文件（`{"reason": "<原因>"}`），执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design record-manual-review --task-path "<taskPath>" --design-type <designType> --input-file <file>`（approval 输入文件另行创建，本临时文件用后可删）。
+8. 人工批准：向用户呈现变更摘要（原因、版本、lint 结果），获用户**明确确认**后执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design approve-current-design --task-path "<taskPath>" --design-type <designType> --input-file <approvalFile>`，输入 `{"approvedBy": "human", "summary": "manual-design-change: <原因>", "acceptedRisks": []}`；用户不确认则终止，不写批准记录。
 9. 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design publish --task-path "<taskPath>" --design-type <designType>`，随后 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status --workspace-root "<workspaceRoot>"`。
 10. 展示摘要：新基线版本与路径、历史快照位置、`reviewer: 'human'` 审计标记、下游设计入场校验已恢复。
 
