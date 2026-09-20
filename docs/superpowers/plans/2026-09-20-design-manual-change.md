@@ -123,7 +123,7 @@ test('reopen protect preserves the hand-edited draft and bumps only the version'
   publishBaseline(taskPath);
 
   // Simulate the user hand-editing the draft after publish.
-  const edited = businessDraft(TASK_ID).replace('# 业务设计', '# 业务设计\n\n人工修改：新增审批链路降级策略。');
+  const edited = businessDraft(TASK_ID).replace('# Business Design', '# Business Design\n\n人工修改：新增审批链路降级策略。');
   fs.writeFileSync(draftPath(taskPath, 'businessDesign'), edited, 'utf8');
   fs.writeFileSync(path.join(draftAssetsPath(taskPath, 'businessDesign'), 'ucd', 'manual-note.svg'), '<svg>edited</svg>', 'utf8');
 
