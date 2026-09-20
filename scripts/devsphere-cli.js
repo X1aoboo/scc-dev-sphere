@@ -22,7 +22,7 @@ Domains:
   workflow   resolve-next-action | set-task-status | sync-design-status |
              validate-design-entry | complete-external-test-design
   design     inspect-workspace | init-design | inspect-design | lint | validate-draft | validate-review |
-             review-context | record-review | refresh-format-review | approve-current-design |
+             review-context | record-review | record-manual-review | refresh-format-review | approve-current-design |
              publish | reopen | design-ready
   approval   validate-design-ready | approve-design
   config     read | set
@@ -171,7 +171,7 @@ function dispatchDesign(action, options, io) {
   }
   requireAllowedOptions(options, [
     ...taskAndType,
-    ...(['record-review', 'approve-current-design'].includes(action) ? ['input-file'] : []),
+    ...(['record-review', 'approve-current-design', 'record-manual-review'].includes(action) ? ['input-file'] : []),
     ...(action === 'reopen' ? ['mode'] : []),
   ]);
   const taskPath = resolvePathOption(options, 'task-path', io);
@@ -190,6 +190,7 @@ function dispatchDesign(action, options, io) {
     }
     case 'review-context': return design.reviewContext(taskPath, designType);
     case 'record-review': return design.recordReview(taskPath, designType, readStructuredInput(options, io));
+    case 'record-manual-review': return design.recordManualReview(taskPath, designType, readStructuredInput(options, io));
     case 'refresh-format-review': return design.refreshFormattingReview(taskPath, designType);
     case 'approve-current-design': return design.approveCurrentDesign(taskPath, designType, readStructuredInput(options, io));
     case 'publish': return design.publish(taskPath, designType);

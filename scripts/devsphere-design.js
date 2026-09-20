@@ -1372,6 +1372,66 @@ function recordReview(taskPath, designType, input) {
   return summary;
 }
 
+// Records a human-verified manual design change in place of the isolated AI
+// Reviewer. The written state deliberately mirrors recordReview's schema so
+// validatePersistedReview, approveCurrentDesign, publish and designReady pass
+// without modification; `reviewer: 'human'` + `manual: true` keep the audit
+// trail distinguishable from AI reviews.
+function recordManualReview(taskPath, designType, input) {
+  definitionFor(designType);
+  const draft = readDraftRef(taskPath, designType);
+  if (!draft) throw new Error(`No valid Draft for ${designType}`);
+  if (!currentLintStatus(taskPath, designType, draft)) {
+    throw new Error('lint_not_ready: current Draft must have a matching passing lint state before review');
+  }
+  if (!input || typeof input.reason !== 'string' || !input.reason.trim()) {
+    throw new Error('Manual review requires a non-empty reason');
+  }
+  const summaryFile = reviewSummaryPath(taskPath, designType);
+  const reportFile = reviewReportPath(taskPath, designType);
+  if (fs.existsSync(summaryFile) || fs.existsSync(reportFile)) {
+    throw new Error('Review state already exists; reopen the design first');
+  }
+  const loaded = loadReviewPolicy(designType);
+  const policy = loaded.policy.designTypes[designType];
+  const reviewKey = `${designType}:${draft.semanticHash}`;
+  const report = [
+    '# 人工设计变更检视记录',
+    '',
+    `- 设计类型: ${designType}`,
+    `- 变更原因: ${input.reason.trim()}`,
+    '- 声明: 人工已检视完成，豁免隔离 AI Reviewer',
+    `- 检视时间: ${new Date().toISOString()}`,
+    `- Draft 哈希: ${draft.hash}`,
+    '',
+  ].join('\n');
+  fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+  fs.writeFileSync(reportFile, report, { encoding: 'utf8', flag: 'wx' });
+  const summary = {
+    schemaVersion: 3,
+    designType,
+    reviewKey,
+    draftHash: draft.hash,
+    semanticHash: draft.semanticHash,
+    policyHash: loaded.hash,
+    status: 'pass',
+    checklists: [...policy.required, ...policy.conditional].map(item => ({
+      checklistId: item.checklistId,
+      result: 'pass',
+      summary: '人工检视',
+    })),
+    notApplicable: [],
+    findingSummary: { blocking: 0, advisory: 0, risk: 0, total: 0 },
+    reviewer: 'human',
+    manual: true,
+    reason: input.reason.trim(),
+    reviewedAt: new Date().toISOString(),
+  };
+  summary.reportHash = sha256File(reportFile);
+  writeJSON(summaryFile, summary);
+  return summary;
+}
+
 function refreshFormattingReview(taskPath, designType) {
   const draft = readDraftRef(taskPath, designType);
   if (!draft || !currentLintStatus(taskPath, designType, draft)) throw new Error('Current Draft must have a matching passing lint state');
@@ -1652,6 +1712,7 @@ module.exports = {
   validateDraft,
   validateReview,
   recordReview,
+  recordManualReview,
   refreshFormattingReview,
   approveCurrentDesign,
   publish,

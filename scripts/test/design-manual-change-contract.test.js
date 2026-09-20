@@ -15,12 +15,16 @@ const {
   lintDraft,
   reviewContext,
   recordReview,
+  recordManualReview,
+  validateReview,
   approveCurrentDesign,
   publish,
   reopenDesign,
   readDraftRef,
   readArtifactRef,
   inspectDesign,
+  designReady,
+  syncDesignState,
 } = require('../devsphere-design');
 const { HELP, main } = require('../devsphere-cli');
 const { validateDesignEntry } = require('../workflows/feature-workflow');
@@ -166,4 +170,110 @@ test('reopen CLI accepts --mode and rejects unknown values', () => {
   assert.strictEqual(out.exitCode, 1);
   assert.match(out.stderr, /Invalid reopen mode/);
   assert.ok(fs.existsSync(artifactPath(taskPath, 'businessDesign')));
+});
+
+// Sets up a published baseline, reopens it in protect mode, then applies the
+// caller's edit. Does NOT run lint — each test decides whether lint has run,
+// because recordManualReview's precondition order is draft → lint → existing
+// review → reason.
+function manualChangeScenario(applyEdit = () => {}) {
+  const created = prepareDesigningTask();
+  publishBaseline(created.taskPath);
+  reopenDesign(created.taskPath, 'businessDesign', { mode: 'protect' });
+  applyEdit(created.taskPath);
+  return created;
+}
+
+function passLint(taskPath) {
+  assert.strictEqual(lintDraft(taskPath, 'businessDesign').status, 'pass');
+}
+
+test('record-manual-review writes a review state that passes the whole existing chain', () => {
+  const { taskPath } = manualChangeScenario(taskPath => {
+    // Minimal inline human edit: append a plain paragraph inside the last
+    // existing section (no new heading — keeps lint structure intact).
+    const draft = fs.readFileSync(draftPath(taskPath, 'businessDesign'), 'utf8');
+    fs.writeFileSync(draftPath(taskPath, 'businessDesign'), `${draft}\n人工补充：审批服务不可用时降级为逐级人工审批。\n`, 'utf8');
+  });
+  passLint(taskPath);
+
+  const summary = recordManualReview(taskPath, 'businessDesign', { reason: '补充审批降级策略' });
+  assert.strictEqual(summary.schemaVersion, 3);
+  assert.strictEqual(summary.status, 'pass');
+  assert.strictEqual(summary.reviewer, 'human');
+  assert.strictEqual(summary.manual, true);
+  assert.strictEqual(summary.reason, '补充审批降级策略');
+  assert.deepStrictEqual(summary.findingSummary, { blocking: 0, advisory: 0, risk: 0, total: 0 });
+  assert.ok(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.md')));
+
+  // Existing gates pass unchanged.
+  assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, true);
+  approveCurrentDesign(taskPath, 'businessDesign', {
+    approvedBy: 'human',
+    summary: 'manual-design-change: 补充审批降级策略',
+    acceptedRisks: [],
+  });
+  publish(taskPath, 'businessDesign');
+  syncDesignState(taskPath);
+
+  // New baseline is version 2.0.0 and approval binds it.
+  const artifact = readArtifactRef(taskPath, 'businessDesign');
+  assert.strictEqual(artifact.version, '2.0.0');
+  assert.strictEqual(designReady(taskPath).valid, false); // other required designs still missing
+  assert.strictEqual(
+    designReady(taskPath).issues.some(issue => issue.includes('businessDesign')),
+    false,
+    'businessDesign itself must not be the failing issue',
+  );
+
+  // Downstream entry gate passes for the manually changed upstream.
+  assert.strictEqual(validateDesignEntry(taskPath, 'solutionDesign').valid, true);
+});
+
+test('record-manual-review rejects missing reason with no writes', () => {
+  const { taskPath } = manualChangeScenario();
+  passLint(taskPath); // reason is checked after lint in the precondition order
+  assert.throws(() => recordManualReview(taskPath, 'businessDesign', {}), /non-empty reason/);
+  assert.throws(() => recordManualReview(taskPath, 'businessDesign', { reason: '   ' }), /non-empty reason/);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.json')), false);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.md')), false);
+});
+
+test('record-manual-review rejects when lint has not run for the current draft', () => {
+  const { taskPath } = manualChangeScenario(taskPath => {
+    // Edit WITHOUT running lint: no lint state binds the new draft.
+    const draft = fs.readFileSync(draftPath(taskPath, 'businessDesign'), 'utf8');
+    fs.writeFileSync(draftPath(taskPath, 'businessDesign'), `${draft}\n人工补充：未经 lint 的新内容。\n`, 'utf8');
+  });
+  assert.throws(() => recordManualReview(taskPath, 'businessDesign', { reason: 'x' }), /lint_not_ready/);
+  assert.strictEqual(fs.existsSync(path.join(taskPath, 'work', 'business-design', 'review.json')), false);
+});
+
+test('record-manual-review rejects when a review state already exists', () => {
+  const { taskPath } = manualChangeScenario();
+  passLint(taskPath);
+  recordManualReview(taskPath, 'businessDesign', { reason: 'first' });
+  assert.throws(
+    () => recordManualReview(taskPath, 'businessDesign', { reason: 'second' }),
+    /Review state already exists; reopen the design first/,
+  );
+});
+
+test('record-manual-review CLI works end to end', () => {
+  const { taskPath } = manualChangeScenario();
+  passLint(taskPath);
+  const input = path.join(taskPath, 'manual-input.json');
+  fs.writeFileSync(input, JSON.stringify({ reason: 'CLI 变更原因' }), 'utf8');
+  const out = capture([
+    'design', 'record-manual-review', '--task-path', taskPath,
+    '--design-type', 'businessDesign', '--input-file', input,
+  ]);
+  assert.strictEqual(out.exitCode, 0, out.stderr);
+  const summary = JSON.parse(out.stdout);
+  assert.strictEqual(summary.manual, true);
+  assert.strictEqual(validateReview(taskPath, 'businessDesign').valid, true);
+});
+
+test('HELP exposes record-manual-review', () => {
+  assert.match(HELP, /record-manual-review/);
 });
