@@ -172,6 +172,7 @@ function dispatchDesign(action, options, io) {
   requireAllowedOptions(options, [
     ...taskAndType,
     ...(['record-review', 'approve-current-design'].includes(action) ? ['input-file'] : []),
+    ...(action === 'reopen' ? ['mode'] : []),
   ]);
   const taskPath = resolvePathOption(options, 'task-path', io);
   const designType = requireOption(options, 'design-type');
@@ -192,7 +193,7 @@ function dispatchDesign(action, options, io) {
     case 'refresh-format-review': return design.refreshFormattingReview(taskPath, designType);
     case 'approve-current-design': return design.approveCurrentDesign(taskPath, designType, readStructuredInput(options, io));
     case 'publish': return design.publish(taskPath, designType);
-    case 'reopen': return design.reopenDesign(taskPath, designType);
+    case 'reopen': return design.reopenDesign(taskPath, designType, { mode: options.mode });
     default: throw new Error(`Unknown design action: ${action}`);
   }
 }

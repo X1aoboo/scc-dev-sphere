@@ -1537,7 +1537,11 @@ function copyAssetFiles(sourceRoot, targetRoot) {
   return true;
 }
 
-function reopenDesign(taskPath, designType) {
+function reopenDesign(taskPath, designType, options = {}) {
+  const mode = options.mode || 'standard';
+  if (!['standard', 'protect'].includes(mode)) {
+    throw new Error(`Invalid reopen mode: ${mode}`);
+  }
   const definition = definitionFor(designType);
   const artifact = artifactPath(taskPath, designType);
   const artifactAssets = artifactAssetsPath(taskPath, designType);
@@ -1550,9 +1554,19 @@ function reopenDesign(taskPath, designType) {
   fs.copyFileSync(artifact, history);
   copyAssetFiles(artifactAssets, historyAssets);
   initDesign(taskPath, designType);
-  removeDirectoryIfExists(draftAssetsPath(taskPath, designType));
-  copyAssetFiles(artifactAssets, draftAssetsPath(taskPath, designType));
-  fs.writeFileSync(draftPath(taskPath, designType), bumpMajorVersion(fs.readFileSync(artifact, 'utf8')), 'utf8');
+  const draftFile = draftPath(taskPath, designType);
+  if (mode === 'protect') {
+    // Protect an already hand-edited Draft: bump its version in place, never
+    // overwrite its content and never touch its assets directory.
+    if (!fs.existsSync(draftFile)) {
+      throw new Error('protect mode requires an existing Draft (use standard mode)');
+    }
+    fs.writeFileSync(draftFile, bumpMajorVersion(fs.readFileSync(draftFile, 'utf8')), 'utf8');
+  } else {
+    removeDirectoryIfExists(draftAssetsPath(taskPath, designType));
+    copyAssetFiles(artifactAssets, draftAssetsPath(taskPath, designType));
+    fs.writeFileSync(draftFile, bumpMajorVersion(fs.readFileSync(artifact, 'utf8')), 'utf8');
+  }
   unlinkIfExists(artifact);
   removeDirectoryIfExists(artifactAssets);
   unlinkIfExists(reviewSummaryPath(taskPath, designType));
@@ -1561,6 +1575,7 @@ function reopenDesign(taskPath, designType) {
   unlinkIfExists(approvalPath(taskPath, designType));
   return {
     designType,
+    mode,
     historyFile: history,
     historyAssets: ref.assets.length > 0 ? historyAssets : undefined,
     draft: draftPath(taskPath, designType),
