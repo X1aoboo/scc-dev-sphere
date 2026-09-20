@@ -277,3 +277,48 @@ test('record-manual-review CLI works end to end', () => {
 test('HELP exposes record-manual-review', () => {
   assert.match(HELP, /record-manual-review/);
 });
+
+test('design-manual-change skill is user-invocable only and forbids model invocation', () => {
+  const skill = read('skills/design-manual-change/SKILL.md');
+  assert.match(skill, /^name: design-manual-change$/m);
+  assert.match(skill, /人工设计变更|人工设计修改/);
+  assert.match(skill, /^disable-model-invocation: true$/m);
+  assert.doesNotMatch(skill, /^user-invocable:\s*false$/m);
+  assert.doesNotMatch(skill, /^context:\s*fork$/m);
+});
+
+test('design-manual-change skill orchestrates the manual change via devsphere CLI', () => {
+  const skill = read('skills/design-manual-change/SKILL.md');
+  const process = skill.match(/## 执行步骤([\s\S]*?)## 规则/)[1];
+  assert.strictEqual((process.match(/^\d+\. /gm) || []).length, 10);
+  for (const phrase of [
+    /state get-task-path/,
+    /inspect-design/,
+    /design reopen --mode standard/,
+    /design reopen --mode protect/,
+    /sync-design-status/,
+    /design lint/,
+    /validate-draft/,
+    /record-manual-review/,
+    /approve-current-design/,
+    /design publish/,
+  ]) assert.match(skill, phrase);
+  assert.match(skill, /## 集成契约/);
+  assert.match(skill, /## 完成/);
+});
+
+test('design-manual-change skill carries fidelity and approval rules', () => {
+  const skill = read('skills/design-manual-change/SKILL.md');
+  const rules = skill.match(/## 规则([\s\S]*?)## 完成/)[1];
+  assert.match(rules, /仅用户显式调用/);
+  assert.match(rules, /内容保真/);
+  assert.match(rules, /不得主动修改/);
+  assert.match(rules, /禁止裁剪|不得裁剪/);
+  assert.match(rules, /批准前.*确认|明确确认/);
+  assert.match(rules, /确定性执行/);
+});
+
+test('README lists design-manual-change in the skills table', () => {
+  const readme = read('README.md');
+  assert.match(readme, /design-manual-change/);
+});
