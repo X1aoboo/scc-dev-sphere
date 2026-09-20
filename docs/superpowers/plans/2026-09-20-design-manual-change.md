@@ -622,7 +622,7 @@ disable-model-invocation: true
 ## 执行步骤
 
 1. 定位目标：执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" state get-task-path --workspace-root "<workspaceRoot>"` 取当前任务；对四种设计类型逐一执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design inspect-design --task-path "<taskPath>" --design-type <designType>`，过滤出 `artifact` 存在的结果（`recovery` 为 `baseline_complete` 或 `needs_user_confirmation`），以单选列表呈现给用户。无可选时提示"无已发布基线的设计"并终止。
-2. 分流 reopen：`recovery === 'baseline_complete'` → 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --task-path "<taskPath>" --design-type <designType> --mode standard` 后**暂停**，提示用户直接编辑 `work/<slug>/draft.md` 及配套资产，等待用户明确确认修改完成；`recovery === 'needs_user_confirmation'` → 识别为已有人工修改，执行 `... --mode protect` 保护已改内容。
+2. 分流 reopen：`recovery === 'baseline_complete'` → 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --mode standard --task-path "<taskPath>" --design-type <designType>` 后**暂停**，提示用户直接编辑 `work/<slug>/draft.md` 及配套资产，等待用户明确确认修改完成；`recovery === 'needs_user_confirmation'` → 识别为已有人工修改，执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design reopen --mode protect --task-path "<taskPath>" --design-type <designType>` 保护已改内容。
 3. reopen 后执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" workflow sync-design-status --workspace-root "<workspaceRoot>"` 使任务状态回落。
 4. 收集变更原因：以自然语言向用户提问，必填非空。
 5. 执行 `"${CLAUDE_PLUGIN_ROOT}/bin/devsphere" design lint --task-path "<taskPath>" --design-type <designType>`；失败时按下述"内容保真"规则辅助修复，向用户展示修复 diff 并获确认后重跑，直至通过；无法保真修复时向用户说明冲突点并交回。
